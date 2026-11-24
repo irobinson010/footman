@@ -373,11 +373,82 @@ Each phase has **exit criteria**, so it's clear when it's done.
 - The phone web app, remote access via a tunnel, the voice kit, and the wake-word training kit.
 - Spanish and Japanese; Windows and macOS ports; packages.
 
-## 26. Open areas (next)
+## 26. Plugins (draft)
+
+### Protocol: one wire format, MCP plus Footman extensions
+
+Both plugin kinds speak **JSON-RPC 2.0 over stdio**, using MCP's message shapes (`initialize`, `tools/list`, `tools/call`, progress notifications). A Footman-native plugin is an MCP server that also announces the Footman extensions in its handshake:
+
+```json
+"capabilities": { "experimental": { "footman": { "version": 1 } } }
+```
+
+That handshake field is the "header" that says which kind it is. The core has **one plugin client**; plain MCP servers work unchanged and simply don't get the extensions. Plugin authors can use any MCP SDK, in any language.
+
+**Footman extensions** (only for plugins that announce them):
+
+| Method | Direction | Purpose |
+|---|---|---|
+| `footman/confirm` | plugin → core | Ask the user yes/no (by voice or UI) mid-task. |
+| `footman/notify` | plugin → core | Show a notification or speak a short status line. |
+| `footman/job` | plugin → core | Promote a long tool call to a background job with status and cancel. |
+| `footman/events.subscribe` | plugin → core | Receive bus events (needs the `events` permission). |
+
+### Manifest: `footman.toml` in the plugin folder
+
+```toml
+[plugin]
+id = "troupe"                        # unique, lowercase
+name = "Troupe"
+version = "0.1.0"
+description = "Queue and monitor audiobook renders on a Troupe server"
+license = "Apache-2.0"
+footman = ">=0.1"                    # compatible core versions
+
+[run]
+command = ["./bin/troupe-plugin"]    # or ["uvx", "some-mcp-server"], ["npx", …]
+idle_timeout = "5m"
+platforms = ["linux", "darwin", "windows"]
+
+[permissions]                        # requested; the user approves at install
+network = ["troupe.example.com:8443"]  # hosts, or "any"
+filesystem = { read = [], write = [] }
+desktop = false                      # type at cursor, read windows/clipboard
+events = false                       # subscribe to the event bus
+sandbox = "auto"                     # auto | always | never
+
+[config]                             # schema → web UI form + voice-settable keys
+url   = { type = "string", required = true, description = "Troupe server URL" }
+token = { type = "secret", description = "API token" }   # stored in the OS keychain
+
+[[tools]]                            # per-tool metadata (optional for MCP servers)
+name = "queue_render"
+permission = "act"                   # read | act | destructive | outward
+phrases = ["render {book}"]          # optional simple-tier fast-path triggers
+```
+
+### Permission mapping for plain MCP tools
+
+Each tool's permission is set in this order (the first one that applies wins):
+1. A `[[tools]]` entry in the manifest.
+2. The user's override.
+3. The MCP tool's annotations: `readOnlyHint` → read, `destructiveHint` → destructive, `openWorldHint` → outward.
+4. Otherwise **act**.
+
+Annotations are hints from the plugin, so they can only be trusted as far as the plugin's install approval and sandbox allow.
+
+### Lifecycle
+
+- **Install** from a release archive URL (prebuilt binaries per platform, with sha256), a git URL, a local path, or a package-runner command (`uvx` / `npx`) for existing MCP servers. The Butler shows the requested permissions and asks for approval. Each install is recorded in the install receipt.
+- **Tool metadata is cached at install**, so routing never has to start a plugin just to see what it offers.
+- **Lazy start** on first use, **idle shutdown**, and a **crash restart** with backoff. A plugin that keeps crashing is disabled, with a notification.
+- **Tool selection:** only the tools relevant to a request are sent to the AI (matched from plugin and tool descriptions), so many installed plugins don't bloat every prompt.
+- **Data:** each plugin gets its own data folder; removing a plugin asks whether to keep that folder.
+
+## 27. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
-- [ ] Plugin manifest spec (`footman` protocol details plus MCP adapter mapping).
 - [ ] Persona pack spec and voice-creation workflow.
 - [ ] Config schema.
 - [ ] TTS bake-off plan.
