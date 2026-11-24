@@ -34,7 +34,7 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | State | `config.toml` for settings, OS keychain for secrets, folders for plugins, personas, and models, **SQLite** for history, jobs, stats, and the action log. |
 | Packaging | **One `footman` binary.** No container for the core. |
 | License | **Apache-2.0**. |
-| Repo | **Public from day one** (free unlimited GitHub runners), under the user's GitHub org (*org name TBD*). |
+| Repo | **Public from day one** (free unlimited GitHub runners), at `github.com/irobinson010/footman`. |
 | Web UI | Plain HTML, CSS, and JS, embedded in the binary. No framework or build step. |
 | Built-in tools | Launcher, settings, system info, and timers are compiled in; everything else is a plugin. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
