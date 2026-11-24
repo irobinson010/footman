@@ -1,15 +1,15 @@
-# The Butler: Design
+# Footman: Design
 
 Status: **draft**. This document records the design decisions made so far. Sections marked *TBD* are still open.
 
 ## 1. What it is
 
-The Butler is an open-source voice layer for your computer. It has two jobs:
+Footman is an open-source voice layer for your computer. It has two jobs:
 
 1. **Dictation.** Speak, and clean text appears at your cursor. Filler words ("um", "uh", false starts) are removed. Optional speech coaching tracks your habits and suggests exercises.
-2. **Assistant.** Say the wake word ("Alfred, …") and the Butler acts: it opens things, answers questions, and runs background jobs such as editing code in a project or replying to a message, while you keep typing.
+2. **Assistant.** Say the wake word ("Alfred, …") and Footman acts: it opens things, answers questions, and runs background jobs such as editing code in a project or replying to a message, while you keep typing.
 
-Each user picks a **persona**, which sets the wake word, voice, personality, and how the Butler addresses them ("Yes, Master Ian").
+Each user picks a **persona**, which sets the wake word, voice, personality, and how Footman addresses them ("Yes, Master Ian").
 
 ## 2. Principles
 
@@ -30,20 +30,20 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | Worker agents | Built-in tool loop, **Claude Code** (`claude -p`), **Codex** (`codex exec`). |
 | Speech | `sherpa-onnx` (cgo) for speech detection, wake word, speech-to-text, and text-to-speech, plus cloud engines. Chosen per engine in config. |
 | Speech placement | **Inside the service** for now, behind interfaces, so engines can move into their own process later. |
-| Plugins | Separate processes. The manifest declares `protocol = "mcp"` or `"butler"`, and both adapt to one `Tool` interface. |
+| Plugins | Separate processes. The manifest declares `protocol = "mcp"` or `"footman"`, and both adapt to one `Tool` interface. |
 | State | `config.toml` for settings, OS keychain for secrets, folders for plugins, personas, and models, **SQLite** for history, jobs, stats, and the action log. |
-| Packaging | **One `butler` binary.** No container for the core. |
+| Packaging | **One `footman` binary.** No container for the core. |
 | License | **Apache-2.0**. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
 
 ## 4. Process model
 
 ```
-butler (single binary)
-├─ butler daemon     per-user background service (systemd user unit on Linux)
+footman (single binary)
+├─ footman daemon    per-user background service (systemd user unit on Linux)
 │   ├─ pipeline + event bus
 │   ├─ job manager
-│   ├─ plugin host (mcp | butler adapters)
+│   ├─ plugin host (mcp | footman adapters)
 │   ├─ speech registry   (vad · wake · stt · tts)
 │   ├─ llm registry      (claude · openai · gemini · ollama)
 │   ├─ worker registry   (builtin · claude-code · codex)
@@ -151,30 +151,30 @@ personas/ashford/
 | Settings, enabled plugins, chosen persona and providers | `<config>/config.toml` (hand-editable, reloaded on change) |
 | API keys and tokens | OS keychain |
 | Plugins, personas, models | `<data>/{plugins,personas,models}/` |
-| History, jobs, coaching stats, action log | `<data>/butler.db` (SQLite, pure Go, no server) |
+| History, jobs, coaching stats, action log | `<data>/footman.db` (SQLite, pure Go, no server) |
 | Pre-generated clips and other derived files | `<cache>/` |
-| Socket | `<runtime>/butler.sock` |
+| Socket | `<runtime>/footman.sock` |
 | Install receipt | `<data>/install-receipt.json` |
 
-On Linux these follow the XDG folders: `~/.config/butler`, `~/.local/share/butler`, `~/.cache/butler`, and `$XDG_RUNTIME_DIR`. Other OSes get their native locations through `Platform.Paths()`.
+On Linux these follow the XDG folders: `~/.config/footman`, `~/.local/share/footman`, `~/.cache/footman`, and `$XDG_RUNTIME_DIR`. Other OSes get their native locations through `Platform.Paths()`.
 
 Privacy: transcript storage can be turned off, and retention is configurable (for example, delete after 30 days).
 
 ## 11. Install and uninstall
 
-**Install:** download the binary or run the install script, then `butler setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service.
+**Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service.
 
-**Install receipt.** Every file, folder, service unit, keychain entry, and model the Butler creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else.
+**Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else.
 
-**`butler uninstall`** (also offered by the install script):
+**`footman uninstall`** (also offered by the install script):
 
 1. Stops the service and removes autostart.
 2. Lists what will be removed, grouped and with sizes:
    ```
-   Program        butler binary, service unit                     24 MB
+   Program        footman binary, service unit                    24 MB
    Models         whisper-turbo, kokoro, wake-word                1.9 GB
    Config         config.toml, enabled plugins, personas list      4 KB
-   Data           history, jobs, coaching stats (butler.db)       12 MB
+   Data           history, jobs, coaching stats (footman.db)      12 MB
    Personas       ashford, alfred (yours)                         130 MB
    Secrets        3 API keys in the OS keychain
    Cache          pre-generated clips                              40 MB
@@ -188,7 +188,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 Non-interactive flags: `--purge`, `--keep-config`, `--keep-data`, `--dry-run`.
 
-`butler plugin remove <name>` and `butler persona remove <name>` work the same way at a smaller scale, and each asks whether to keep that item's data.
+`footman plugin remove <name>` and `footman persona remove <name>` work the same way at a smaller scale, and each asks whether to keep that item's data.
 
 ## 12. Containers and sandboxing
 
@@ -201,7 +201,7 @@ Non-interactive flags: `--purge`, `--keep-config`, `--keep-data`, `--dry-run`.
 These are planned extras, not part of the core.
 
 1. **Phone web app.** The phone's browser connects directly to the desktop's web UI.
-2. **Native phone app.** It runs the Butler on the phone for phone-side actions, and can also send commands to the desktop ("on my computer, …").
+2. **Native phone app.** It runs Footman on the phone for phone-side actions, and can also send commands to the desktop ("on my computer, …").
 
 Reaching the desktop from outside the home network needs a tunnel or private network such as Cloudflare Tunnel, Twingate, or Tailscale. This is an **optional feature**, off by default.
 
@@ -240,7 +240,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 | Mid-dictation commands ("new paragraph", "scratch that", "all caps") | Fixed phrase list. | Understood from context. |
 
 - **Push-to-talk:** both hold-to-talk and tap-to-start / tap-to-stop. **The wake word stays a top priority**, so everything can be done by voice alone.
-- **Everything is configurable by voice.** Every setting can be changed by voice ("Butler, turn on quiet mode"), as well as from the web UI and CLI. The Butler can also explain where a setting lives and what it does.
+- **Everything is configurable by voice.** Every setting can be changed by voice ("Alfred, turn on quiet mode"), as well as from the web UI and CLI. Footman can also explain where a setting lives and what it does.
 - **Replies:** speech vs. notification-only is a setting, and there's a quiet mode.
 - **False wakes:** if no clear command follows the wake word, it is dropped silently.
 - **Languages:** English at launch. Spanish and Japanese are planned later, including a language-practice use case. Strings and command phrase lists are per-language from day one.
@@ -250,13 +250,13 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 - **Offline mode** is fully supported: Ollama plus local speech. A **local-first** mode is also supported, where it stays local unless you explicitly ask it to use the cloud ("ask the cloud model…").
 - **Context sharing** (window title, clipboard, selection) is off by default and enabled per item. There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
 - **Memory** is opt-in, and can be viewed, edited, and deleted from the web UI **and by voice** ("what do you remember about me?", "forget that").
-- **Cost guardrails:** a monthly cap per provider. The Butler warns as you approach it, then **asks when to remind you next**, so you don't get constant alerts.
+- **Cost guardrails:** a monthly cap per provider. Footman warns as you approach it, then **asks when to remind you next**, so you don't get constant alerts.
 
 ## 19. Jobs and plugins
 
 - Up to **2 simultaneous jobs** by default (configurable); more are queued.
 - **Code-edit jobs** run on a new branch or worktree and show the diff before finishing (on by default, configurable).
-- **Plugin trust:** when a plugin is installed, the Butler shows the permissions it requests and asks for approval. Unknown plugins are sandboxed by default. All of this is configurable, and the Butler can do it for you by voice.
+- **Plugin trust:** when a plugin is installed, Footman shows the permissions it requests and asks for approval. Unknown plugins are sandboxed by default. All of this is configurable, and Footman can do it for you by voice.
 
 ## 20. Diagrams
 
@@ -265,7 +265,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 
 ## 21. Name
 
-Working name: **Majordomo**, with "the Butler" as the friendly name. *Name collision check pending*; see the discussion notes.
+**Footman.** The binary, repo, and Go module are `footman`. Names checked on 2026-11-24: GitHub, Homebrew, crates.io, and Go module paths are free; PyPI and npm are taken by unrelated packages, which is irrelevant for a Go binary. "Majordomo" was dropped because it collides with an existing home-automation voice project. **A trademark search (USPTO, plus EUIPO if needed) is still to do before public launch.**
 
 ## 22. TTS strategy (risk area: prototype early)
 
@@ -275,16 +275,21 @@ The goal is a voice that sounds good, starts speaking in near real time, and nee
    - **Kokoro / StyleTTS2** (~82M parameters): the best quality for its size.
    - **Piper / VITS** (~20–60M parameters): the lightest, and it runs in real time on a CPU.
 2. **Pre-generated clips** for frequent lines (acknowledgements, quips), made with the big model at full quality. They play instantly and give the best quality where it's most noticed.
-3. **Streaming.** AI output is spoken sentence by sentence, so the Butler starts talking before the full reply is ready.
+3. **Streaming.** AI output is spoken sentence by sentence, so Footman starts talking before the full reply is ready.
 4. **Optional cloud voice** (ElevenLabs streaming) for users who want top quality and will pay for it.
 5. **A bake-off before committing**, in the spirit of Troupe Sprint 0. Measure time to first audio, how fast it generates relative to real time, RAM and GPU memory, and blind listening scores on several candidate small models.
 6. **Licensing check.** Confirm the license of each voice source's outputs and model weights before training on them. Some prohibit training other models, and some model weights are non-commercial only.
 
-## 23. Open areas (next)
+## 23. Wake words
+
+- **Early milestone:** wake-word detection built into the core (openWakeWord / sherpa-onnx keyword spotting) using **ready-made models** for a starter set of names. This comes right after dictation and is a high priority.
+- **Later:** a **wake-word training kit** that lets users train a custom wake word per persona from synthetic samples (many TTS voices plus background noise). It will reuse existing tooling from the user's other repos (Troupe / Resonance Lab), so it is ported rather than built from scratch.
+
+## 24. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
-- [ ] Plugin manifest spec (`butler` protocol details plus MCP adapter mapping).
+- [ ] Plugin manifest spec (`footman` protocol details plus MCP adapter mapping).
 - [ ] Persona pack spec and voice-creation workflow.
 - [ ] Config schema.
 - [ ] Repo layout, build, and doc structure.
