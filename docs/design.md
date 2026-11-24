@@ -318,10 +318,21 @@ footman/
 - **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name, and config picks one.
 - **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
 - **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
-- **Build variants:**
-  - Default: cgo with sherpa-onnx (CPU).
-  - `cuda` tag: a GPU build.
-  - `nocgo`: a cloud-speech-only build that is fully pure Go. It's tiny, cross-compiles anywhere, and is what CI uses for the Windows and macOS compile checks.
+- **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. `footman setup` detects the hardware, benchmarks briefly, and picks the best option, which the user can override in config:
+
+  | Hardware | Accelerator path |
+  |---|---|
+  | NVIDIA GPU | CUDA (ONNX Runtime / whisper.cpp) |
+  | AMD GPU (Linux) | Vulkan (whisper.cpp); ROCm where installed |
+  | Intel GPU / NPU | Vulkan; OpenVINO later |
+  | Any GPU on Windows | DirectML (ONNX Runtime); Vulkan |
+  | Apple Silicon (M-series, MacBook Air included) | Metal / CoreML |
+  | Snapdragon / other NPUs | later (QNN), CPU arm64 meanwhile |
+  | No usable GPU | CPU (AVX2 on x86, NEON on ARM), with smaller models picked automatically |
+
+  The speech-to-text interface allows more than one engine (sherpa-onnx and whisper.cpp). whisper.cpp's **Vulkan** backend is the universal GPU path for AMD, Intel, and NVIDIA.
+- **Release targets:** linux/amd64, linux/arm64, darwin/arm64, windows/amd64, windows/arm64. Public repos get free GitHub runners for Linux (x86 and ARM), Windows, and macOS, so every target is built and tested natively in CI.
+- **`nocgo` build:** cloud speech only and fully pure Go. It's tiny, builds for any OS, and is a fallback for unusual platforms.
 - **Releases** via GoReleaser, which builds binaries for each OS and architecture, checksums, and later the `.deb`, AUR, and Homebrew packages.
 
 ## 25. Phases (draft)
