@@ -33,7 +33,7 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | Plugins | Separate processes. The manifest declares `protocol = "mcp"` or `"butler"`, and both adapt to one `Tool` interface. |
 | State | `config.toml` for settings, OS keychain for secrets, folders for plugins, personas, and models, **SQLite** for history, jobs, stats, and the action log. |
 | Packaging | **One `butler` binary.** No container for the core. |
-| License | Open source (*TBD: MIT or Apache-2.0*). |
+| License | **Apache-2.0**. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
 
 ## 4. Process model
@@ -196,13 +196,98 @@ Non-interactive flags: `--purge`, `--keep-config`, `--keep-data`, `--dry-run`.
 - **Optional sandboxing** for risky work: worker jobs and untrusted plugins can run under `bubblewrap` on Linux with access to only what they need (`sandbox = true` per plugin or job).
 - Containers are fine for **remote components** (for example Ollama on another host) and for **reproducible builds**.
 
-## 13. Open areas (next)
+## 13. Remote and mobile access (later phase)
 
-- [ ] Local API: endpoints, event stream format, authentication, phone pairing.
-- [ ] Security model: permission levels, confirmation flow, the action log, remote access.
+These are planned extras, not part of the core.
+
+1. **Phone web app.** The phone's browser connects directly to the desktop's web UI.
+2. **Native phone app.** It runs the Butler on the phone for phone-side actions, and can also send commands to the desktop ("on my computer, …").
+
+Reaching the desktop from outside the home network needs a tunnel or private network such as Cloudflare Tunnel, Twingate, or Tailscale. This is an **optional feature**, off by default.
+
+## 14. Permissions and the action log
+
+Both are configurable in settings:
+- **Confirmation policy per permission level** (Read, Act, Destructive, Outward), with a per-plugin override.
+- **Whether the action log is on**, and how long entries are kept.
+
+## 15. Docs and optional components
+
+The docs have separate paths for each kind of user, so no one has to read about parts they don't use:
+- **Users:** install, set up, and use it.
+- **Voice creators:** build persona voices. This needs the **optional** voice kit. Nothing voice-training related is installed unless asked for.
+- **Plugin authors:** the plugin spec and examples.
+- **Contributors:** architecture, build, and tests.
+
+Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
+
+## 16. Testing
+
+- **Fast by default.** `go test ./...` runs in seconds with no GPU, no network, no desktop, and no API keys.
+- **Fakes at every interface** (Platform, STT, TTS, Provider, Worker, plugin host) let pipeline tests run end to end in memory.
+- **Fixtures:** recorded AI responses, short audio clips, and golden files for text cleanup.
+- **Opt-in integration tests** behind build tags (`integration`, `gpu`, `live`) for real models, a real desktop, and real APIs. They run manually or on a schedule, never by default.
+- **Quality evals are separate from tests**: routing accuracy, cleanup quality, and persona tone are measured with a small eval set, not pass/fail unit tests.
+- **CI:** `go vet`, a linter, unit tests on Linux, and a cross-compile check for Windows and macOS, so the platform interface stays honest before those platforms exist.
+
+## 17. Interaction decisions
+
+**Simple now, smart later.** Many features ship first as a simple, rule-based version (the **simple** tier) and later get an AI-assisted version (the **smart** tier) behind the same interface.
+
+| Area | Simple | Smart (later) |
+|---|---|---|
+| Dictation vs. command | Wake word followed by "dictate" or "write" is dictation; anything else is a command. Separate hotkeys for each. | A small, fast AI classifies the intent. |
+| Mid-dictation commands ("new paragraph", "scratch that", "all caps") | Fixed phrase list. | Understood from context. |
+
+- **Push-to-talk:** both hold-to-talk and tap-to-start / tap-to-stop. **The wake word stays a top priority**, so everything can be done by voice alone.
+- **Everything is configurable by voice.** Every setting can be changed by voice ("Butler, turn on quiet mode"), as well as from the web UI and CLI. The Butler can also explain where a setting lives and what it does.
+- **Replies:** speech vs. notification-only is a setting, and there's a quiet mode.
+- **False wakes:** if no clear command follows the wake word, it is dropped silently.
+- **Languages:** English at launch. Spanish and Japanese are planned later, including a language-practice use case. Strings and command phrase lists are per-language from day one.
+
+## 18. Privacy, providers, and memory
+
+- **Offline mode** is fully supported: Ollama plus local speech. A **local-first** mode is also supported, where it stays local unless you explicitly ask it to use the cloud ("ask the cloud model…").
+- **Context sharing** (window title, clipboard, selection) is off by default and enabled per item. There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
+- **Memory** is opt-in, and can be viewed, edited, and deleted from the web UI **and by voice** ("what do you remember about me?", "forget that").
+- **Cost guardrails:** a monthly cap per provider. The Butler warns as you approach it, then **asks when to remind you next**, so you don't get constant alerts.
+
+## 19. Jobs and plugins
+
+- Up to **2 simultaneous jobs** by default (configurable); more are queued.
+- **Code-edit jobs** run on a new branch or worktree and show the diff before finishing (on by default, configurable).
+- **Plugin trust:** when a plugin is installed, the Butler shows the permissions it requests and asks for approval. Unknown plugins are sandboxed by default. All of this is configurable, and the Butler can do it for you by voice.
+
+## 20. Diagrams
+
+- **Mermaid** is the in-repo source of truth. It renders natively on GitHub, so it stays the most up to date.
+- **Lucidchart** produces polished versions, exported to PDF in `docs/diagrams/`, refreshed at major releases or about monthly when there are big changes.
+
+## 21. Name
+
+Working name: **Majordomo**, with "the Butler" as the friendly name. *Name collision check pending*; see the discussion notes.
+
+## 22. TTS strategy (risk area: prototype early)
+
+The goal is a voice that sounds good, starts speaking in near real time, and needs little hardware.
+
+1. **Distill big into small.** Offline, a large, high-quality voice source (ElevenLabs, or Troupe's S2 Pro pipeline) generates 1–3 hours of speech in the target voice. A **small, fast model** is then fine-tuned on that data, so the big model is never used at runtime. Candidates for the small model:
+   - **Kokoro / StyleTTS2** (~82M parameters): the best quality for its size.
+   - **Piper / VITS** (~20–60M parameters): the lightest, and it runs in real time on a CPU.
+2. **Pre-generated clips** for frequent lines (acknowledgements, quips), made with the big model at full quality. They play instantly and give the best quality where it's most noticed.
+3. **Streaming.** AI output is spoken sentence by sentence, so the Butler starts talking before the full reply is ready.
+4. **Optional cloud voice** (ElevenLabs streaming) for users who want top quality and will pay for it.
+5. **A bake-off before committing**, in the spirit of Troupe Sprint 0. Measure time to first audio, how fast it generates relative to real time, RAM and GPU memory, and blind listening scores on several candidate small models.
+6. **Licensing check.** Confirm the license of each voice source's outputs and model weights before training on them. Some prohibit training other models, and some model weights are non-commercial only.
+
+## 23. Open areas (next)
+
+- [ ] Local API: endpoints, event stream format, authentication.
+- [ ] Security model details.
 - [ ] Plugin manifest spec (`butler` protocol details plus MCP adapter mapping).
 - [ ] Persona pack spec and voice-creation workflow.
 - [ ] Config schema.
-- [ ] Repo layout and build (cgo/sherpa-onnx, release matrix).
-- [ ] Phases and milestones.
-- [ ] License choice.
+- [ ] Repo layout, build, and doc structure.
+- [ ] Phases and milestones (first milestone: push-to-talk dictation on KDE Wayland with filler removal, plus the core, fakes, and CI underneath; wake word pushed hard right after).
+- [ ] TTS bake-off plan.
+
