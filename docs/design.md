@@ -285,14 +285,86 @@ The goal is a voice that sounds good, starts speaking in near real time, and nee
 - **Early milestone:** wake-word detection built into the core (openWakeWord / sherpa-onnx keyword spotting) using **ready-made models** for a starter set of names. This comes right after dictation and is a high priority.
 - **Later:** a **wake-word training kit** that lets users train a custom wake word per persona from synthetic samples (many TTS voices plus background noise). It will reuse existing tooling from the user's other repos (Troupe / Resonance Lab), so it is ported rather than built from scratch.
 
-## 24. Open areas (next)
+## 24. Repo layout and build (draft)
+
+```
+footman/
+├─ cmd/footman/              single binary: CLI + `footman daemon`
+├─ internal/                 everything private to the binary (free to refactor)
+│  ├─ core/                  pipeline state machine, router (simple → smart tiers)
+│  ├─ bus/                   event bus
+│  ├─ dictation/             filler cleanup, mid-dictation commands, insertion
+│  ├─ jobs/                  job manager · workers/{builtin,claudecode,codex,fake}
+│  ├─ permissions/           permission gate, confirmations, action log
+│  ├─ persona/               pack loading, address forms, clip cache
+│  ├─ config/                TOML schema, load/validate/watch, voice-settable keys
+│  ├─ store/                 SQLite + migrations
+│  ├─ api/                   Unix socket + HTTP/WebSocket; embeds web/
+│  ├─ install/               setup wizard, install receipt, uninstall
+│  ├─ platform/              interfaces · linux/ · windows/ · darwin/ · fake/
+│  ├─ speech/                interfaces · sherpa/ · cloud/{openai,elevenlabs,…} · fake/
+│  ├─ llm/                   interface · claude/ · openai/ · gemini/ · ollama/ · fake/
+│  └─ plugins/               plugin host (footman + mcp adapters) · builtin/ tools
+├─ sdk/go/                   public: helpers for writing footman-protocol plugins
+├─ web/                      web UI (embedded with go:embed)
+├─ personas/ashford/         shipped original persona(s)
+├─ voicekit/                 optional, Python: voice + (later) wake-word training
+├─ testdata/                 audio clips, recorded LLM responses, golden files
+├─ docs/  {users/, voices/, plugins/, contributing/, design.md, diagrams/}
+├─ scripts/install.sh
+└─ .github/workflows/
+```
+
+- **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name, and config picks one.
+- **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
+- **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
+- **Build variants:**
+  - Default: cgo with sherpa-onnx (CPU).
+  - `cuda` tag: a GPU build.
+  - `nocgo`: a cloud-speech-only build that is fully pure Go. It's tiny, cross-compiles anywhere, and is what CI uses for the Windows and macOS compile checks.
+- **Releases** via GoReleaser, which builds binaries for each OS and architecture, checksums, and later the `.deb`, AUR, and Homebrew packages.
+
+## 25. Phases (draft)
+
+Each phase has **exit criteria**, so it's clear when it's done.
+
+**Phase 0: Foundations and spikes**
+- Repo skeleton, interfaces, fakes, config, store, bus, and CI.
+- Spikes that prove the risky parts before building on them:
+  1. A global hotkey and typing at the cursor on KDE Wayland.
+  2. sherpa-onnx speech-to-text latency on CPU vs. GPU.
+  3. A start on the TTS bake-off (runs in parallel with the other work).
+- *Exit:* `go test ./...` passes in under 10 s; the spikes have answered each question with numbers.
+
+**Phase 1: Dictation MVP**
+- Hold-to-talk and tap-to-talk, speech detection, speech-to-text, simple filler cleanup, simple mid-dictation commands, and typing at the cursor.
+- `footman setup` and `footman uninstall` (with the install receipt), the systemd user service, and `footman status`.
+- *Exit:* dictation works in a terminal, browser, and editor on KDE Wayland. Text appears within about 1 s after a 10-second utterance. Idle RAM is under 50 MB with no models loaded. Uninstall leaves nothing behind.
+
+**Phase 2: Wake word and voice commands (simple tier)**
+- Wake word with ready-made models, the simple router, fast-path commands, and settings by voice.
+- The AI provider interface with Claude, a basic persona (style, address form), TTS (the bake-off winner) with the clip bank, the permission gate, and the action log.
+- *Exit:* "Alfred, open YouTube" works hands-free with spoken acknowledgement in under 300 ms; false wakes are under 1 per hour of normal room noise.
+
+**Phase 3: Assistant and jobs**
+- The tool loop and job manager, with Claude Code and Codex workers.
+- The plugin host (footman and MCP protocols), built-in plugins (disk report, web search), memory, cost guardrails, and the web UI.
+- *Exit:* a background code edit (on a new branch, with a diff shown) runs while the user keeps typing; an MCP server and a footman-protocol plugin both work.
+
+**Phase 4: Providers and smarts**
+- OpenAI, Gemini, and Ollama providers; offline and local-first modes; the context-sharing policies.
+- Speech coaching, and the smart tier (AI-based intent routing and mid-dictation commands).
+
+**Phase 5: Reach**
+- The phone web app, remote access via a tunnel, the voice kit, and the wake-word training kit.
+- Spanish and Japanese; Windows and macOS ports; packages.
+
+## 26. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
 - [ ] Plugin manifest spec (`footman` protocol details plus MCP adapter mapping).
 - [ ] Persona pack spec and voice-creation workflow.
 - [ ] Config schema.
-- [ ] Repo layout, build, and doc structure.
-- [ ] Phases and milestones (first milestone: push-to-talk dictation on KDE Wayland with filler removal, plus the core, fakes, and CI underneath; wake word pushed hard right after).
 - [ ] TTS bake-off plan.
 
