@@ -34,6 +34,9 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | State | `config.toml` for settings, OS keychain for secrets, folders for plugins, personas, and models, **SQLite** for history, jobs, stats, and the action log. |
 | Packaging | **One `footman` binary.** No container for the core. |
 | License | **Apache-2.0**. |
+| Repo | **Public from day one** (free unlimited GitHub runners), under the user's GitHub org (*org name TBD*). |
+| Web UI | Plain HTML, CSS, and JS, embedded in the binary. No framework or build step. |
+| Built-in tools | Launcher, settings, system info, and timers are compiled in; everything else is a plugin. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
 
 ## 4. Process model
@@ -343,7 +346,7 @@ Each phase has **exit criteria**, so it's clear when it's done.
 - Repo skeleton, interfaces, fakes, config, store, bus, and CI.
 - Spikes that prove the risky parts before building on them:
   1. A global hotkey and typing at the cursor on KDE Wayland.
-  2. sherpa-onnx speech-to-text latency on CPU vs. GPU.
+  2. Speech-to-text latency on CPU vs. GPU, covering CUDA and Vulkan (sherpa-onnx and whisper.cpp).
   3. A start on the TTS bake-off (runs in parallel with the other work).
 - *Exit:* `go test ./...` passes in under 10 s; the spikes have answered each question with numbers.
 
