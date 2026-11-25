@@ -29,7 +29,7 @@ const socketEnv = "FOOTMAN_SOCKET"
 // Windows).
 //
 // The client commands and the daemon both use this, so they agree on the
-// socket without the client having to load a platform (ADR-0024).
+// socket without the client having to load a platform (ADR-0025).
 func defaultPaths() userPaths {
 	home, _ := os.UserHomeDir()
 	env := func(name, fallback string) string {

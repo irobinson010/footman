@@ -1,0 +1,13 @@
+# id	engine	sha256	dest	url   (tab separated; read by fetch-models.sh and the ZenBook script)
+# sherpa-onnx tarballs: sha256 computed from the downloaded release assets (GitHub publishes none for most).
+# ggml files: sha256 is the Hugging Face LFS object id.
+whisper-tiny.en	sherpa	2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd	sherpa-onnx-whisper-tiny.en	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2
+whisper-base.en	sherpa	475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542	sherpa-onnx-whisper-base.en	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.en.tar.bz2
+whisper-small.en	sherpa	0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a	sherpa-onnx-whisper-small.en	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2
+whisper-turbo	sherpa	b11acbbcd660b44a8e0df33724feb5aaa709cf65668f2823d59f656312544f22	sherpa-onnx-whisper-turbo	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-turbo.tar.bz2
+parakeet-tdt-0.6b-v2	sherpa	6fc4426b54aa549a0019b8a75b8dea59164e71790a37ac56a045ad57f915f714	sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2
+whisper-tiny.en	whispercpp	921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f	ggml-tiny.en.bin	https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+whisper-base.en	whispercpp	a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002	ggml-base.en.bin	https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+whisper-small.en	whispercpp	c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d	ggml-small.en.bin	https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+whisper-turbo	whispercpp	1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69	ggml-large-v3-turbo.bin	https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+whisper-turbo-q5	whispercpp	394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2	ggml-large-v3-turbo-q5_0.bin	https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin

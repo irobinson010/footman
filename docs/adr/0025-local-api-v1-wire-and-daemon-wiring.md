@@ -1,4 +1,4 @@
-# 0024. Local API v1 wire details and daemon wiring
+# 0025. Local API v1 wire details and daemon wiring
 
 - Status: Accepted
 - Date: 2026-11-25
