@@ -1,0 +1,11 @@
+The test clips are utterances from LibriSpeech test-clean, converted to 16 kHz
+mono WAV.
+
+  LibriSpeech ASR corpus, V. Panayotov, G. Chen, D. Povey, S. Khudanpur,
+  "Librispeech: an ASR corpus based on public domain audio books", ICASSP 2015.
+  https://www.openslr.org/12
+  Licence: Creative Commons Attribution 4.0 International (CC-BY-4.0),
+  https://creativecommons.org/licenses/by/4.0/
+  Source recordings: LibriVox volunteers, public domain.
+
+The transcripts in clips.tsv are the corpus reference transcripts, unchanged.
