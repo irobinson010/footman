@@ -633,6 +633,5 @@ token = "keychain:plugin.troupe.token"
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
-
 - [ ] TTS bake-off plan.
 
