@@ -73,6 +73,13 @@ routing ─command──► acknowledgement clip ─► fast path │ AI + tools
 - **Acknowledgement clips.** The persona's pre-generated audio plays instantly while the AI works.
 - **AI cost control.** The system prompt and tool definitions are cached between calls, and only the tools relevant to a request are sent.
 
+How the walking skeleton (S0-05, `internal/bus`, `internal/core`, `internal/dictation`) fills in the details:
+- **Bus semantics.** Topics are typed and named (`pipeline.state`, `jobs.update`, …). Publishing never blocks. Each subscriber has a bounded buffer, and events that don't fit are dropped for that subscriber and counted. A bus-wide sequence number shows any gaps. The local API can subscribe to every topic at once.
+- **Only addressed speech is transcribed.** The wake word or a hotkey arms the pipeline, and the next end of speech is transcribed. Speech that ends while nothing is armed is never sent to speech-to-text.
+- **Break-glass first.** The stop phrase is checked right after transcription and before routing, even while another utterance is being handled. Every other utterance is refused as busy until the pipeline is idle again.
+- **Long tasks.** The AI hands a long task to the worker by calling a built-in `start_task` tool. Footman replies at once, the pipeline goes back to idle, and the job reports progress on the bus.
+- **Interim permission gate.** Until confirmations exist, read and act tools run, and destructive and outward tools are refused, with the refusal shown to the AI.
+
 ## 6. Core interfaces
 
 The Go definitions live in `internal/` (ADR-0021); this is the shape. Every method that may block or do I/O takes a `context.Context` first.
