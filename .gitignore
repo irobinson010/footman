@@ -25,3 +25,10 @@ __pycache__/
 
 # Claude Code local worktrees
 .claude/worktrees/
+
+# S0-09 candidate audio and answer key (never commit)
+spikes/tts-bakeoff/candidates/
+
+# S0-09 rendered output and reference audio (never commit)
+spikes/tts-bakeoff/dataset/out/
+spikes/tts-bakeoff/dataset/ref/
