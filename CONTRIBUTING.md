@@ -35,3 +35,12 @@ bin/footman models fetch              # download that model and the VAD
 ```
 
 whisper.cpp is built once into `~/.cache/footman-native/` (by `scripts/native/whispercpp.sh`; `eval "$(scripts/native/whispercpp.sh env)"` sets `CGO_CFLAGS` and `CGO_LDFLAGS` for your own `go build -tags native`). The native tests need models: point `FOOTMAN_TEST_MODELS` at a models folder (`footman models --dir DIR fetch whisper-tiny.en silero-vad parakeet-tdt-0.6b-v2`) and run `make test-native`; tests whose model is missing are skipped. `FOOTMAN_TEST_STT`, `FOOTMAN_TEST_WHISPER_MODEL` and `FOOTMAN_TEST_ACCEL` pick what `TestDaemonTranscribesWAV` runs, for example `FOOTMAN_TEST_STT=auto FOOTMAN_TEST_ACCEL=auto` for the GPU path.
+
+The end-to-end push-to-talk test (ADR-0030) needs KDE's `kwin_wayland`, a PulseAudio or PipeWire server, `paplay` and `python3-pyqt6` as well. It runs setup, the daemon and uninstall in a private headless KWin session with a virtual microphone, so it never touches your desktop, microphone or speakers:
+
+```bash
+eval "$(scripts/native/whispercpp.sh env)"
+FOOTMAN_TEST_MODELS=~/models go test -tags 'integration native' -v -count=1 -timeout 15m ./cmd/footman/ -run TestE2EPushToTalk
+```
+
+`FOOTMAN_E2E_STT`, `FOOTMAN_E2E_MODEL` and `FOOTMAN_E2E_ACCEL` pick the engine (default whispercpp, `whisper-tiny.en`, cpu), and `FOOTMAN_E2E_RUNS` sets how many 10-second utterances are timed.

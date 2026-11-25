@@ -59,9 +59,16 @@ func parseHotkeys(combos []string) ([]hotkey, error) {
 }
 
 // Hotkeys registers the combinations and reports their presses and releases
-// until ctx is done. With the portal, the desktop may bind a different key
+// until ctx is done. The desktop may have the shortcut on a different key
 // than asked (the user can change it in the desktop's settings); events still
 // carry the combination as given here.
+//
+// On KDE it registers with KGlobalAccel directly, keeping the key stored for
+// each shortcut: KDE's GlobalShortcuts portal shows its "Global Shortcuts
+// Requested" dialog for every new session, even when every shortcut is
+// already bound, which would mean a dialog at each login (ADR-0030). Setup
+// binds through the portal (BindHotkeys), so the shortcuts are already
+// stored under Footman's app id. Elsewhere the portal is used.
 func (in *Input) Hotkeys(ctx context.Context, combos []string) (<-chan platform.HotkeyEvent, error) {
 	hs, err := parseHotkeys(combos)
 	if err != nil {
@@ -74,10 +81,13 @@ func (in *Input) Hotkeys(ctx context.Context, combos []string) (<-chan platform.
 	if err != nil {
 		return nil, fmt.Errorf("linux input: %w: %w", platform.ErrUnsupported, err)
 	}
-	if !in.forceKGlobalAccel && p.version(ctx, portalGS) > 0 {
+	if in.forcePortal {
 		return in.portalHotkeys(ctx, p, hs)
 	}
-	return in.kglobalaccelHotkeys(ctx, hs)
+	if _, _, kerr := in.kglobalaccel(ctx); kerr == nil || in.forceKGlobalAccel || p.version(ctx, portalGS) == 0 {
+		return in.kglobalaccelHotkeys(ctx, hs)
+	}
+	return in.portalHotkeys(ctx, p, hs)
 }
 
 // bindPortal opens a GlobalShortcuts session and binds hs in it, returning
@@ -213,18 +223,24 @@ func (in *Input) kglobalaccelHotkeys(ctx context.Context, hs []hotkey) (<-chan p
 		}
 	}
 	for _, h := range hs {
-		if err := in.kgaCheckFree(ctx, ka, h); err != nil {
-			unregister()
-			return nil, err
-		}
 		id := in.kgaActionID(h)
+		// A key stored for the shortcut (bound by setup, or moved by the
+		// user in System Settings) is kept. Only a shortcut with no key
+		// gets the asked-for one, and only if no other app uses it.
+		keys := in.kgaStoredKeys(ctx, ka, id)
+		if keys == nil {
+			if err := in.kgaCheckFree(ctx, ka, h); err != nil {
+				unregister()
+				return nil, err
+			}
+			keys = []kgaKeys{{[]int32{h.qtKey(), 0, 0, 0}}}
+		}
 		if err := ka.CallWithContext(ctx, kglobalaccelIface+".doRegister", 0, id).Err; err != nil {
 			unregister()
 			return nil, fmt.Errorf("linux input: KGlobalAccel: %w", err)
 		}
 		registered = append(registered, id)
 		var got []kgaKeys
-		keys := []kgaKeys{{[]int32{h.qtKey(), 0, 0, 0}}}
 		if err := ka.CallWithContext(ctx, kglobalaccelIface+".setShortcutKeys", 0, id, keys, uint32(kgaSetPresent|kgaNoAutoloading)).Store(&got); err != nil {
 			unregister()
 			return nil, fmt.Errorf("linux input: KGlobalAccel: %w", err)
@@ -282,11 +298,26 @@ func (in *Input) kglobalaccelHotkeys(ctx context.Context, hs []hotkey) (<-chan p
 	return out, nil
 }
 
-// kgaShortcutInfo is one entry of globalShortcutsByKey, a(ssssssaiai).
+// kgaStoredKeys returns the keys KGlobalAccel has stored for action id, or
+// nil if it has none.
+func (in *Input) kgaStoredKeys(ctx context.Context, ka dbus.BusObject, id []string) []kgaKeys {
+	var keys []kgaKeys
+	if err := ka.CallWithContext(ctx, kglobalaccelIface+".shortcutKeys", 0, id).Store(&keys); err != nil {
+		return nil
+	}
+	if len(keys) == 0 || len(keys[0].Keys) == 0 || keys[0].Keys[0] == 0 {
+		return nil
+	}
+	return keys
+}
+
+// kgaShortcutInfo is one entry of globalShortcutsByKey, a(ssssssaiai), in
+// KGlobalShortcutInfo's wire order: the action, its component, its context
+// (checked against KDE Plasma 6's kglobalaccel in the nested tests).
 type kgaShortcutInfo struct {
-	ContextUnique, ContextFriendly     string
-	ComponentUnique, ComponentFriendly string
 	UniqueName, FriendlyName           string
+	ComponentUnique, ComponentFriendly string
+	ContextUnique, ContextFriendly     string
 	Keys, DefaultKeys                  []int32
 }
 
@@ -337,10 +368,14 @@ func (in *Input) BindHotkeys(ctx context.Context, combos []string) ([]platform.H
 	_, ka, kerr := in.kglobalaccel(ctx)
 	changed := false
 	for _, h := range hs {
-		if sameTrigger(got[h.id()], h) {
+		if kerr != nil {
 			continue
 		}
-		if kerr != nil {
+		// KDE's portal may report the suggested key although it left the
+		// shortcut without one (when another app holds the key), so what
+		// KGlobalAccel stored is what counts.
+		if stored := in.kgaStoredKeys(ctx, ka, in.kgaActionID(h)); stored != nil && stored[0].Keys[0] == h.qtKey() {
+			got[h.id()] = h.combo
 			continue
 		}
 		if err := in.kgaCheckFree(ctx, ka, h); err != nil {
@@ -369,7 +404,11 @@ func (in *Input) BindHotkeys(ctx context.Context, combos []string) ([]platform.H
 	}
 	out := make([]platform.HotkeyBinding, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, platform.HotkeyBinding{Hotkey: h.combo, Trigger: got[h.id()]})
+		t := got[h.id()]
+		if sameTrigger(t, h) {
+			t = h.combo // "Meta+Shift+Space" for "Super+Shift+Space"
+		}
+		out = append(out, platform.HotkeyBinding{Hotkey: h.combo, Trigger: t})
 	}
 	return out, nil
 }

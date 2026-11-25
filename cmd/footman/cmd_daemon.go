@@ -135,6 +135,9 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	if err != nil {
 		return err
 	}
+	// Closed after the pipeline: this ends the desktop sessions (on Linux,
+	// the RemoteDesktop portal session and the hotkeys' portal connection).
+	defer closeIfCloser(deps.Platform)
 	logSpeech(logf, o.dataDir, deps.STT, deps.VAD)
 	// Speech models unload when idle and load again on use
 	// (speech.unload_after, ADR-0028).
@@ -148,7 +151,8 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		logf("WARNING: running with --dev-fakes; fakes stand in for: %v", fakedAreas(impl))
 	}
 
-	p, err := core.New(deps, pipelineConfig(cfg))
+	pcfg := pipelineConfig(cfg)
+	p, err := core.New(deps, pcfg)
 	if err != nil {
 		return err
 	}
@@ -164,11 +168,34 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	defer transcripts.Close()
 	bg.Go(func() {
 		for ev := range transcripts.C() {
+			if ev.Data.Audio > 0 {
+				logf("turn %d: transcribed %.1f s of speech in %d ms", ev.Data.Turn, ev.Data.Audio.Seconds(), ev.Data.Took.Milliseconds())
+			}
 			if cfgFile.Current().Bool("history.transcripts") {
 				if _, err := st.AddHistory(bctx, "transcript", ev.Data.Text); err != nil {
 					logf("history: %v", err)
 				}
 			}
+		}
+	})
+	// Timings of each dictation, for the log (never the text).
+	inserts := bus.Subscribe(b, core.Inserted, 64)
+	defer inserts.Close()
+	bg.Go(func() {
+		for ev := range inserts.C() {
+			d := ev.Data
+			line := fmt.Sprintf("turn %d: %s %d characters in %d ms", d.Turn, d.Method, len([]rune(d.Text)), d.Took.Milliseconds())
+			if d.Latency > 0 {
+				line += fmt.Sprintf("; key up to text %d ms", d.Latency.Milliseconds())
+			}
+			logf("%s", line)
+		}
+	})
+	failures := bus.Subscribe(b, core.Failed, 64)
+	defer failures.Close()
+	bg.Go(func() {
+		for ev := range failures.C() {
+			logf("turn %d: %s", ev.Data.Turn, ev.Data.Err)
 		}
 	})
 
@@ -183,6 +210,16 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			cfgFile.Replace(c)
 		})
 	})
+
+	// Get the permission to type and paste, and the session that does it,
+	// now rather than at the first dictation (ADR-0030).
+	if is, ok := deps.Platform.Input().(platform.InputSetup); ok && deps.VAD != nil {
+		bg.Go(func() {
+			if err := is.PrepareInsert(bctx); err != nil && bctx.Err() == nil {
+				logf("text insertion not ready yet (it is tried again at the first dictation): %v", err)
+			}
+		})
+	}
 
 	// The microphone and hotkeys, when there is a VAD to split speech.
 	if deps.VAD != nil {
@@ -200,7 +237,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	srv := api.NewServer()
 	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
-		Socket: o.socket, ConfigPath: o.configPath,
+		Socket: o.socket, ConfigPath: o.configPath, Hotkeys: hotkeyInfo(pcfg),
 	}})
 	l, err := api.Listen(o.socket)
 	if err != nil {
@@ -373,8 +410,29 @@ func pipelineConfig(cfg *config.Config) core.Config {
 	}
 	return core.Config{
 		DictateHotkey: cfg.String("input.dictate.key"),
+		DictateMode:   core.TalkMode(cfg.String("input.dictate.mode")),
 		CommandHotkey: cfg.String("input.command.key"),
+		CommandMode:   core.TalkMode(cfg.String("input.command.mode")),
 		Mic:           mic,
 		Insert:        dictation.InsertMode(cfg.String("dictation.insert")),
 	}
+}
+
+// hotkeyInfo describes the push-to-talk keys for status.get.
+func hotkeyInfo(c core.Config) []api.HotkeyInfo {
+	var out []api.HotkeyInfo
+	for _, k := range []struct {
+		action, key string
+		mode        core.TalkMode
+	}{{"dictate", c.DictateHotkey, c.DictateMode}, {"command", c.CommandHotkey, c.CommandMode}} {
+		if k.key == "" {
+			continue
+		}
+		mode := k.mode
+		if mode == "" {
+			mode = core.HoldToTalk
+		}
+		out = append(out, api.HotkeyInfo{Action: k.action, Key: k.key, Mode: string(mode)})
+	}
+	return out
 }

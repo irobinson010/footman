@@ -42,6 +42,10 @@ type (
 		Turn    uint64 `json:"turn"`
 		Trigger string `json:"trigger"`
 		Text    string `json:"text"`
+		// AudioMS and STTMS are the speech's length and how long
+		// speech-to-text took; absent for text that was not spoken.
+		AudioMS float64 `json:"audio_ms,omitempty"`
+		STTMS   float64 `json:"stt_ms,omitempty"`
 	}
 	routeData struct {
 		Turn  uint64 `json:"turn"`
@@ -52,6 +56,11 @@ type (
 		Turn   uint64 `json:"turn"`
 		Text   string `json:"text"`
 		Method string `json:"method"`
+		// LatencyMS is from the push-to-talk key coming up to the insertion
+		// finishing; absent when unknown.
+		LatencyMS float64 `json:"latency_ms,omitempty"`
+		// InsertMS is how long typing or pasting took.
+		InsertMS float64 `json:"insert_ms,omitempty"`
 	}
 	fastPathData struct {
 		Turn  uint64 `json:"turn"`
@@ -111,11 +120,11 @@ func eventData(data any) any {
 	case core.StateChange:
 		return stateData{From: d.From.String(), To: d.To.String(), Turn: d.Turn}
 	case core.Transcript:
-		return transcriptData{Turn: d.Turn, Trigger: d.Trigger.String(), Text: d.Text}
+		return transcriptData{Turn: d.Turn, Trigger: d.Trigger.String(), Text: d.Text, AudioMS: ms(d.Audio), STTMS: ms(d.Took)}
 	case core.Routed:
 		return routeData{Turn: d.Turn, Route: d.Route.Kind.String(), Text: d.Route.Text}
 	case core.Insertion:
-		return insertedData{Turn: d.Turn, Text: d.Text, Method: string(d.Method)}
+		return insertedData{Turn: d.Turn, Text: d.Text, Method: string(d.Method), LatencyMS: ms(d.Latency), InsertMS: ms(d.Took)}
 	case core.FastPathRan:
 		return fastPathData{Turn: d.Turn, Rule: d.Rule, Error: d.Err}
 	case core.ToolRan:

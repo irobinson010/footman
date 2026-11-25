@@ -89,6 +89,28 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	_, _ = fmt.Fprintf(stdout, "footman %s is running (pid %d, up %s, API %s)\n", s.Version, s.PID, uptime, s.API)
 	_, _ = fmt.Fprintf(stdout, "  state:       %s\n", s.State)
 	_, _ = fmt.Fprintf(stdout, "  microphone:  %s\n", mic)
+	if len(s.Hotkeys) > 0 {
+		var keys []string
+		for _, h := range s.Hotkeys {
+			mode := "hold"
+			if h.Mode == string(core.TapToTalk) {
+				mode = "tap"
+			}
+			if h.Error != "" {
+				keys = append(keys, fmt.Sprintf("%s %s NOT REGISTERED: %s", h.Action, h.Key, h.Error))
+				continue
+			}
+			keys = append(keys, fmt.Sprintf("%s %s (%s to talk)", h.Action, h.Key, mode))
+		}
+		_, _ = fmt.Fprintf(stdout, "  hotkeys:     %s\n", strings.Join(keys, ", "))
+	}
+	if d := s.LastDictation; d != nil {
+		line := fmt.Sprintf("%d characters by %s, %s ago", d.Chars, d.Method, time.Since(d.At).Round(time.Second))
+		if d.LatencyMS > 0 {
+			line += fmt.Sprintf(", %.0f ms after the key came up", d.LatencyMS)
+		}
+		_, _ = fmt.Fprintf(stdout, "  dictated:    %s\n", line)
+	}
 	_, _ = fmt.Fprintf(stdout, "  jobs:        %s\n", jobs)
 	var parts []string
 	for _, a := range []string{"platform", "stt", "vad", "wake", "tts", "llm", "worker"} {
@@ -121,6 +143,10 @@ func micText(s api.StatusResult) string {
 		return "on"
 	case core.MicMuted:
 		return "muted (after a stop)"
+	case core.MicPushToTalk:
+		return "closed; opens while a push-to-talk key records"
+	case core.MicRecording:
+		return "recording (push-to-talk)"
 	}
 	if s.Muted {
 		return "muted (after a stop)"

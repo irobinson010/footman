@@ -33,3 +33,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0027](0027-native-speech-build-and-runtime-backends.md) | Native speech build: one binary, whisper.cpp backends loaded at run time | Accepted |
 | [0028](0028-setup-models-benchmark-and-idle-unload.md) | Setup fetches models and benchmarks; speech models unload when idle | Accepted |
 | [0029](0029-linux-input-implementation.md) | Linux input: app identity, hotkey binding, clipboard handling and layout check | Accepted |
+| [0030](0030-push-to-talk-and-service.md) | Push-to-talk, the KDE hotkey path and the systemd user service | Accepted |

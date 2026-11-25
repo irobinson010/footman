@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/dictation"
@@ -70,6 +71,9 @@ type Transcript struct {
 	Turn    uint64
 	Trigger Trigger
 	Text    string
+	// Audio is how long the transcribed audio was, and Took how long
+	// speech-to-text took; both 0 for text that was not spoken.
+	Audio, Took time.Duration
 }
 
 // Routed is published with the router's decision.
@@ -83,6 +87,11 @@ type Insertion struct {
 	Turn   uint64
 	Text   string
 	Method dictation.InsertMethod
+	// Latency is the time from the end of speech (the push-to-talk key
+	// coming up) to the insertion finishing, or 0 when unknown.
+	Latency time.Duration
+	// Took is how long typing or pasting took.
+	Took time.Duration
 }
 
 // FastPathRan is published when a command was handled by a fast-path rule.

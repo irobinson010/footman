@@ -32,6 +32,32 @@ type Info struct {
 	Implementations map[string]string
 	// Socket and ConfigPath are the socket and config file in use.
 	Socket, ConfigPath string
+	// Hotkeys are the push-to-talk keys the pipeline registers.
+	Hotkeys []HotkeyInfo
+}
+
+// HotkeyInfo is one push-to-talk key, for status.get.
+type HotkeyInfo struct {
+	// Action is "dictate" or "command".
+	Action string `json:"action"`
+	// Key is the combination, such as "F8".
+	Key string `json:"key"`
+	// Mode is "hold" or "toggle" (tap to talk).
+	Mode string `json:"mode"`
+	// Error says why the key could not be registered; empty if it was (or
+	// registration has not finished).
+	Error string `json:"error,omitempty"`
+}
+
+// LastDictation is the most recent dictated insertion, for status.get. The
+// text itself is not included.
+type LastDictation struct {
+	At     time.Time `json:"at"`
+	Chars  int       `json:"chars"`
+	Method string    `json:"method"`
+	// LatencyMS is from the push-to-talk key coming up to the text being
+	// inserted; 0 when the dictation did not come from a key.
+	LatencyMS float64 `json:"latency_ms"`
 }
 
 // Deps are what the v1 methods act on.
@@ -101,6 +127,10 @@ type StatusResult struct {
 	Config          string            `json:"config"`
 	// Models says whether each speech model is in memory (ADR-0028).
 	Models ModelsStatus `json:"models"`
+	// Hotkeys are the push-to-talk keys (ADR-0030).
+	Hotkeys []HotkeyInfo `json:"hotkeys"`
+	// LastDictation is the most recent dictation, if any.
+	LastDictation *LastDictation `json:"last_dictation,omitempty"`
 }
 
 // ModelsStatus is the state of the speech models that unload when idle.
@@ -146,7 +176,21 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 			models.Models = []ModelState{}
 		}
 	}
+	hotkeys := slices.Clone(m.d.Info.Hotkeys)
+	if hotkeys == nil {
+		hotkeys = []HotkeyInfo{}
+	}
+	errs := p.HotkeyErrors()
+	for i := range hotkeys {
+		hotkeys[i].Error = errs[hotkeys[i].Key]
+	}
+	var last *LastDictation
+	if ins, at, ok := p.LastInsertion(); ok {
+		last = &LastDictation{At: at, Chars: len([]rune(ins.Text)), Method: string(ins.Method), LatencyMS: ms(ins.Latency)}
+	}
 	return StatusResult{
+		Hotkeys:         hotkeys,
+		LastDictation:   last,
 		Models:          models,
 		Version:         m.d.Info.Version,
 		API:             APIVersion,

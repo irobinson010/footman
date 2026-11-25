@@ -66,13 +66,44 @@ func openPortal(dial func(...dbus.ConnOption) (*dbus.Conn, error), appID string)
 		}
 	}
 	if appID != "" {
-		// Errors are ignored on purpose: an old portal has no registry, and
-		// everything still works, only attributed to another app.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = c.Object(portalDest, portalPath).CallWithContext(ctx, portalRegistry+".Register", 0, appID, map[string]dbus.Variant{}).Err
-		cancel()
+		if err := register(c, appID); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
 	}
 	return p, nil
+}
+
+// Registration timing (ADR-0030).
+var (
+	// registerWait bounds retrying Register while the portal has not yet
+	// noticed a .desktop file setup has just written.
+	registerWait = 3 * time.Second
+	// registerRetry is the pause between tries.
+	registerRetry = 100 * time.Millisecond
+)
+
+// register registers appID with the portal's host registry. A portal without
+// the registry (before xdg-desktop-portal 1.19) is fine: everything works,
+// only attributed to whatever started Footman. Any other refusal is an error,
+// because going on would bind shortcuts and grant permissions to another app
+// (the terminal setup was run from, say). The portal reads .desktop files
+// through a cache that takes a moment to see a new one, so a refusal is
+// retried for up to registerWait.
+func register(c *dbus.Conn, appID string) error {
+	deadline := time.Now().Add(registerWait)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := c.Object(portalDest, portalPath).CallWithContext(ctx, portalRegistry+".Register", 0, appID, map[string]dbus.Variant{}).Err
+		cancel()
+		if err == nil || noPortalMethod(err) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the desktop portal does not accept the app id %s (is its .desktop file installed? run footman setup): %w", appID, err)
+		}
+		time.Sleep(registerRetry)
+	}
 }
 
 func (p *portalConn) close() error { return p.conn.Close() }

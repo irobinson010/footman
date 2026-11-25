@@ -68,9 +68,9 @@ var schema = []Key{
 	{Path: "personas.overrides.*.quips", Type: String, Description: "How often this persona quips.", VoiceSettable: true, Reload: Live},
 
 	{Path: "input.dictate.key", Type: String, Default: "Super+Space", Description: "Hotkey for dictation.", Reload: Restart},
-	{Path: "input.dictate.mode", Type: String, Default: "hold", Enum: []string{"hold", "toggle"}, Description: "Dictation hotkey behaviour.", Reload: Restart},
+	{Path: "input.dictate.mode", Type: String, Default: "hold", Enum: []string{"hold", "toggle"}, Description: "Dictation hotkey: hold (hold to talk, releasing ends) or toggle (tap to talk; the end of speech or a second tap ends).", Reload: Restart},
 	{Path: "input.command.key", Type: String, Default: "Super+Shift+Space", Description: "Hotkey for spoken commands.", Reload: Restart},
-	{Path: "input.command.mode", Type: String, Default: "hold", Enum: []string{"hold", "toggle"}, Description: "Command hotkey behaviour.", Reload: Restart},
+	{Path: "input.command.mode", Type: String, Default: "hold", Enum: []string{"hold", "toggle"}, Description: "Command hotkey: hold (hold to talk, releasing ends) or toggle (tap to talk; the end of speech or a second tap ends).", Reload: Restart},
 	{Path: "input.wake_word", Type: Bool, Default: true, Description: "Listen for the wake word.", VoiceSettable: true, Reload: Live},
 	{Path: "input.microphone", Type: String, Default: "default", Description: "Microphone device name, or \"default\".", Reload: Live},
 
