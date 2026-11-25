@@ -106,6 +106,7 @@ type Pipeline struct {
 	muted     bool
 	unmuted   chan struct{} // closed by Unmute
 	micCancel context.CancelFunc
+	mic       micLoop
 	jobSeq    int
 	jobs      map[string]jobs.Job
 }
