@@ -668,16 +668,11 @@ func SetFile(path, key string, value any) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(d.src); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op after a successful rename
+	_, werr := tmp.Write(d.src)
+	cerr := tmp.Chmod(mode)
+	clerr := tmp.Close()
+	if err := errors.Join(werr, cerr, clerr); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
