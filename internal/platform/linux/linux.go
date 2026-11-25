@@ -54,7 +54,7 @@ func New(cfg registry.Config) (*Platform, error) {
 			return nil, fmt.Errorf("linux platform: %w", err)
 		}
 	}
-	return newPlatform(dbus.ConnectSessionBus, defaultRun), nil
+	return newPlatform(connectSessionBus, defaultRun), nil
 }
 
 func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc) *Platform {

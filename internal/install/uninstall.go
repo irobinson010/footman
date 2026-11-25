@@ -160,6 +160,8 @@ func (pg PlanGroup) summary() string {
 			continue
 		case it.Kind == KindService:
 			n = "service unit"
+		case it.Kind == KindDesktop:
+			n = "desktop shortcuts and permissions"
 		case it.Name != "":
 			n = it.Name
 		default:
@@ -216,6 +218,8 @@ func describe(e Entry) string {
 		return "service " + e.Name
 	case KindSecret:
 		return "keychain entry " + e.Name
+	case KindDesktop:
+		return "desktop " + e.Name
 	}
 	return e.Path
 }
@@ -321,6 +325,11 @@ func (pl *Plan) remove(ctx context.Context, e Entry) error {
 		return pl.p.Service().Uninstall(ctx)
 	case KindSecret:
 		return pl.p.Secrets().Delete(ctx, e.Name)
+	case KindDesktop:
+		if r, ok := pl.p.Input().(platform.InputReset); ok {
+			return r.ResetInput(ctx, e.Name)
+		}
+		return nil
 	case KindTree, KindModel:
 		return os.RemoveAll(e.Path)
 	case KindFile:

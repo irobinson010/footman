@@ -50,7 +50,7 @@ var errWaylandGone = errors.New("wayland connection closed")
 // XDG_RUNTIME_DIR, or "" if there is none.
 func waylandSocket() string {
 	d := os.Getenv("WAYLAND_DISPLAY")
-	if d == "" {
+	if d == "" || realDisplayRefused() {
 		return ""
 	}
 	if filepath.IsAbs(d) {

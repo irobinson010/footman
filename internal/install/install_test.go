@@ -210,6 +210,8 @@ func TestSetupRecordsEverything(t *testing.T) {
 		{Kind: install.KindFile, Group: install.GroupConfig, Path: res.ConfigPath},
 		{Kind: install.KindFile, Group: install.GroupData, Path: filepath.Join(e.paths().Data(), install.DatabaseFile)},
 		{Kind: install.KindService, Group: install.GroupProgram, Name: install.ServiceName},
+		{Kind: install.KindDesktop, Group: install.GroupProgram, Name: platform.ResetShortcuts},
+		{Kind: install.KindDesktop, Group: install.GroupProgram, Name: platform.ResetPermissions},
 	}
 	for _, w := range want {
 		if !slices.Contains(rec.Entries, w) {
@@ -234,8 +236,8 @@ func TestSetupDesktopIntegration(t *testing.T) {
 	}
 	// Setup binds the chosen key itself rather than trusting the desktop's
 	// suggestion (ADR-0022), and the command key on its own (ADR-0030).
-	if got := in.Bound(); !slices.Equal(got, []string{"F9", "Super+Shift+Space"}) {
-		t.Errorf("bound %v, want [F9 Super+Shift+Space]", got)
+	if got := in.Bound(); !slices.Equal(got, []string{"F9", "Shift+F8"}) {
+		t.Errorf("bound %v, want [F9 Shift+F8]", got)
 	}
 	// It asks for permission to insert text now, not at the first dictation.
 	if in.Prepared() != 1 {
@@ -755,5 +757,28 @@ func TestSetupSpeechFailureKeepsTheReceiptAndSkipsTheService(t *testing.T) {
 	}
 	if _, err := install.LoadReceipt(install.ReceiptPath(e.paths())); err != nil {
 		t.Errorf("receipt: %v", err)
+	}
+}
+
+func TestUninstallUndoesDesktopGrants(t *testing.T) {
+	e := newEnv(t)
+	in := e.p.Input().(*fake.Input)
+	res := e.setup(install.SetupOptions{Hotkey: "F8", NoService: true})
+	rec, err := install.LoadReceipt(res.ReceiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{platform.ResetShortcuts, platform.ResetPermissions} {
+		if w := (install.Entry{Kind: install.KindDesktop, Group: install.GroupProgram, Name: name}); !slices.Contains(rec.Entries, w) {
+			t.Errorf("receipt missing %+v", w)
+		}
+	}
+	if _, err := install.Uninstall(ctx, install.UninstallOptions{Platform: e.p, Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	got := in.Resets()
+	slices.Sort(got)
+	if want := []string{platform.ResetPermissions, platform.ResetShortcuts}; !slices.Equal(got, want) {
+		t.Errorf("reset %v, want %v", got, want)
 	}
 }
