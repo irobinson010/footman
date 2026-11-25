@@ -189,7 +189,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 **Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service.
 
-**Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else.
+**Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 
 **`footman uninstall`** (also offered by the install script):
 
@@ -205,13 +205,15 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
    Cache          pre-generated clips                              40 MB
    ```
 3. Asks what to keep:
-   - **Remove everything**: a full purge.
+   - **Remove everything**: keeps nothing (keychain secrets still need step 4).
    - **Keep config and data**: keeps config, history, and personas, and removes the program, models, and cache. Reinstalling picks up where you left off.
    - **Keep config only.**
-4. Removes keychain secrets only with an explicit confirmation.
+4. Removes keychain secrets only with an explicit, separate confirmation.
 5. Prints a summary of what was removed and the path of anything that was kept.
 
-Non-interactive flags: `--purge`, `--keep-config`, `--keep-data`, `--dry-run`.
+Non-interactive flags: `--purge` (everything, secrets included, no questions), `--keep-config`, `--keep-data`, `--remove-secrets` (the explicit confirmation for step 4), `--dry-run` (changes nothing, service included). With no terminal and none of `--purge`, `--keep-config` or `--keep-data`, uninstall refuses to guess. When data is kept, the receipt is kept too and rewritten to list only what remains (ADR-0023).
+
+**Setup flags:** `--name`, `--persona`, `--provider`, `--api-key-stdin` (the key is never a flag), `--hotkey` (default F8, ADR-0022), `--no-service`, `--non-interactive`. Run on a terminal, setup asks for whatever was not given.
 
 `footman plugin remove <name>` and `footman persona remove <name>` work the same way at a smaller scale, and each asks whether to keep that item's data.
 

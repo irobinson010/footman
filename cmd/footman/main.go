@@ -21,6 +21,8 @@ Usage:
   footman <command>
 
 Commands:
+  setup     install the service and write the first config
+  uninstall remove everything footman installed
   version   print the version
   help      show this help
 `
@@ -31,6 +33,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "setup":
+		return cmdSetup(args[1:], stdout, stderr)
+	case "uninstall":
+		return cmdUninstall(args[1:], stdout, stderr)
 	case "version", "--version":
 		_, _ = fmt.Fprintln(stdout, "footman", version)
 	case "help", "--help", "-h":
