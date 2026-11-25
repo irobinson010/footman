@@ -31,6 +31,15 @@ def tail_db(path):
     return 20 * math.log10(max(float(np.sqrt((x ** 2).mean())), 1e-9))
 
 
+def load16k(p):
+    """Decode to 16 kHz mono float32 with the ffmpeg CLI (avoids PyAV version issues)."""
+    import subprocess
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(p), "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+                         check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, type=Path)
@@ -50,7 +59,7 @@ def main():
     recs = []
     for r in rows:
         p = a.out / "wavs" / f"{r['id']}.wav"
-        segs, _ = asr.transcribe(str(p), language="en")
+        segs, _ = asr.transcribe(load16k(p), language="en")
         hyp = " ".join(s.text for s in segs)
         wer = word_error_rate(r["text"], hyp)
         errs = round(wer * max(1, len(normalize(r["text"]))))
