@@ -97,7 +97,7 @@ type Platform interface {
     Launcher() Launcher    // open URL / app / file
     Notifier() Notifier    // notifications (with click actions), tray status
     Clipboard() Clipboard
-    Audio() Audio          // mic / speaker devices: Capture → <-chan Frame, Play(Stream)
+    Audio() Audio          // mic / speaker devices: Capture → <-chan Frame, Play(Stream)  (Linux: pactl/parec/pacat, ADR-0026)
     Service() Service      // autostart install/remove
     Secrets() Secrets      // OS keychain
     Paths() Paths          // config / data / cache / runtime dirs
