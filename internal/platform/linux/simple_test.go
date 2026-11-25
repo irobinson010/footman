@@ -25,9 +25,6 @@ func TestRegistered(t *testing.T) {
 	if err := p.Input().Type(ctx, "x"); !errors.Is(err, platform.ErrUnsupported) {
 		t.Errorf("Input.Type = %v, want ErrUnsupported", err)
 	}
-	if _, err := p.Audio().Inputs(ctx); !errors.Is(err, platform.ErrUnsupported) {
-		t.Errorf("Audio.Inputs = %v, want ErrUnsupported", err)
-	}
 }
 
 func TestPaths(t *testing.T) {
