@@ -26,25 +26,45 @@ func Watch(ctx context.Context, path string, opts WatchOptions, onReload func(*C
 	if opts.Debounce <= 0 {
 		opts.Debounce = 250 * time.Millisecond
 	}
-	last := stamp(path)
-	var changedAt time.Time
 	t := time.NewTicker(opts.Poll)
 	defer t.Stop()
+	watch(ctx, path, opts.Debounce, onReload, watchEnv{
+		tick:  t.C,
+		now:   time.Now,
+		stamp: stamp,
+		load:  Load,
+	})
+}
+
+// watchEnv holds the things Watch gets from the outside world, so tests can
+// replace them and drive time explicitly.
+type watchEnv struct {
+	tick      <-chan time.Time
+	now       func() time.Time
+	stamp     func(path string) fileStamp
+	load      func(path string) (*Config, error)
+	afterTick func() // optional; called after each tick is fully handled
+}
+
+func watch(ctx context.Context, path string, debounce time.Duration, onReload func(*Config, error), env watchEnv) {
+	last := env.stamp(path)
+	var changedAt time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-env.tick:
 		}
-		if s := stamp(path); s != last {
+		if s := env.stamp(path); s != last {
 			last = s
-			changedAt = time.Now()
-			continue
-		}
-		if !changedAt.IsZero() && time.Since(changedAt) >= opts.Debounce {
+			changedAt = env.now()
+		} else if !changedAt.IsZero() && env.now().Sub(changedAt) >= debounce {
 			changedAt = time.Time{}
-			cfg, err := Load(path)
+			cfg, err := env.load(path)
 			onReload(cfg, err)
+		}
+		if env.afterTick != nil {
+			env.afterTick()
 		}
 	}
 }
