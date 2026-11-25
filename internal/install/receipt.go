@@ -214,7 +214,14 @@ func (r *Receipt) Save(path string) error {
 // Components that install things (the daemon, plugin and persona installs,
 // the model downloader) call it so that uninstall knows about them.
 func Record(p platform.Platform, entries ...Entry) error {
-	path := ReceiptPath(p.Paths())
+	return RecordIn(p.Paths().Data(), entries...)
+}
+
+// RecordIn is Record for the receipt in the data directory dataDir, for
+// callers that know the directory but have no platform (the daemon and the
+// CLI work out their directories without one, ADR-0025).
+func RecordIn(dataDir string, entries ...Entry) error {
+	path := filepath.Join(dataDir, ReceiptFile)
 	r, err := LoadReceipt(path)
 	if errors.Is(err, ErrNoReceipt) {
 		r = NewReceipt()

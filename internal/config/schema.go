@@ -81,9 +81,9 @@ var schema = []Key{
 	{Path: "replies.speak", Type: String, Default: "when-voice", Enum: []string{"always", "when-voice", "never"}, Description: "When replies are spoken aloud.", VoiceSettable: true, Reload: Live},
 	{Path: "replies.quiet_hours", Type: String, Default: "", Format: "timerange", Description: "Local time range with no spoken replies, like 22:00-07:00. Empty means none.", VoiceSettable: true, Reload: Live},
 
-	{Path: "speech.stt.engine", Type: String, Default: "whisper-local", Description: "Speech-to-text engine.", Reload: Restart},
+	{Path: "speech.stt.engine", Type: String, Default: "auto", Description: "Speech-to-text engine (whispercpp, sherpa-parakeet), or \"auto\" to pick by hardware.", Reload: Restart},
 	{Path: "speech.stt.model", Type: String, Default: "auto", Description: "Speech-to-text model, or \"auto\".", Reload: Restart},
-	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text (auto, cpu, gpu, ...).", Reload: Restart},
+	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text: auto, cpu, gpu, vulkan or cuda.", Reload: Restart},
 	{Path: "speech.tts.engine", Type: String, Default: "persona", Description: "Text-to-speech engine; \"persona\" uses the persona's voice.", Reload: Live},
 	{Path: "speech.unload_after", Type: String, Default: "10m", Format: "duration", Description: "Unload speech models after this much idle time.", Reload: Live},
 

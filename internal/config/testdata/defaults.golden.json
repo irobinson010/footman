@@ -33,7 +33,7 @@
   "replies.quiet_hours": "",
   "replies.speak": "when-voice",
   "speech.stt.accelerator": "auto",
-  "speech.stt.engine": "whisper-local",
+  "speech.stt.engine": "auto",
   "speech.stt.model": "auto",
   "speech.tts.engine": "persona",
   "speech.unload_after": "10m",
