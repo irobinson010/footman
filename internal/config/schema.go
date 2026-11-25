@@ -84,8 +84,9 @@ var schema = []Key{
 	{Path: "speech.stt.engine", Type: String, Default: "auto", Description: "Speech-to-text engine (whispercpp, sherpa-parakeet), or \"auto\" to pick by hardware.", Reload: Restart},
 	{Path: "speech.stt.model", Type: String, Default: "auto", Description: "Speech-to-text model, or \"auto\".", Reload: Restart},
 	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text: auto, cpu, gpu, vulkan or cuda.", Reload: Restart},
+	{Path: "speech.vad.min_silence", Type: Float, Default: 0.5, Min: f(0.1), Max: f(5), Description: "Seconds of silence that end an utterance. Lower ends dictation sooner but splits it at short pauses.", Reload: Restart},
 	{Path: "speech.tts.engine", Type: String, Default: "persona", Description: "Text-to-speech engine; \"persona\" uses the persona's voice.", Reload: Live},
-	{Path: "speech.unload_after", Type: String, Default: "10m", Format: "duration", Description: "Unload speech models after this much idle time.", Reload: Live},
+	{Path: "speech.unload_after", Type: String, Default: "10m", Format: "duration", Description: "Unload the speech models (speech-to-text, VAD, text-to-speech) after this much idle time, and load them again on next use. 0s keeps them loaded.", Reload: Live},
 
 	{Path: "ai.mode", Type: String, Default: "cloud", Enum: []string{"cloud", "local-first", "offline"}, Description: "Where AI requests may go.", VoiceSettable: true, Reload: Live, Sensitive: true},
 	{Path: "ai.provider", Type: String, Default: "claude", Description: "Name of the provider (under ai.providers) to use.", VoiceSettable: true, Reload: Live},

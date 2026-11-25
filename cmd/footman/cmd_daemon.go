@@ -131,13 +131,15 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	b := bus.New()
 	defer b.Close()
 
-	deps, impl, err := wire(cfg, o, logf)
+	deps, impl, reload, err := wire(cfg, o, logf)
 	if err != nil {
 		return err
 	}
-	defer closeIfCloser(deps.STT)
-	defer closeIfCloser(deps.VAD)
 	logSpeech(logf, o.dataDir, deps.STT, deps.VAD)
+	// Speech models unload when idle and load again on use
+	// (speech.unload_after, ADR-0028).
+	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
+	defer models.Close()
 	deps.Bus = b
 	if o.deps != nil {
 		o.deps(&deps)
@@ -196,7 +198,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	srv := api.NewServer()
-	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Info: api.Info{
+	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
 		Socket: o.socket, ConfigPath: o.configPath,
 	}})
@@ -234,7 +236,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 // Speech-to-text "auto" (the default) is resolved by planSTT. It returns the
 // pipeline dependencies (without the bus) and, per area, the name of what it
 // chose ("" for none).
-func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d core.Deps, impl map[string]string, err error) {
+func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d core.Deps, impl map[string]string, rl reloaders, err error) {
 	impl = map[string]string{}
 	devFakes, fakesOnly := o.devFakes || o.fakesOnly, o.fakesOnly
 	name := func(want string) string {
@@ -268,7 +270,7 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 	// Only the speech engines take options from config so far; every other
 	// factory gets none.
 	if d.Platform, impl["platform"], err = pick(platform.Platforms, name(runtime.GOOS), nil, devFakes); err != nil {
-		return d, nil, err
+		return d, nil, rl, err
 	}
 
 	// Speech-to-text: "auto" and the native engines go through planSTT.
@@ -284,30 +286,35 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 		}
 	}
 	if d.STT, impl["stt"], err = pick(speech.STTs, plan.name, plan.opts, devFakes); err != nil {
-		return d, nil, fmt.Errorf("%w\n(for development, run with --dev-fakes to use fakes)", err)
+		return d, nil, rl, fmt.Errorf("%w\n(for development, run with --dev-fakes to use fakes)", err)
 	}
 	// The VAD is optional: without it the microphone is not used.
 	vadName := speechName(defaultVAD)
-	if d.VAD, impl["vad"], err = pick(speech.VADs, vadName, vadOptions(vadName, dirs), devFakes); err != nil {
+	vadOpts := vadOptions(vadName, dirs, cfg.Float("speech.vad.min_silence"))
+	if d.VAD, impl["vad"], err = pick(speech.VADs, vadName, vadOpts, devFakes); err != nil {
 		logf("VAD unavailable: %v", err)
 		d.VAD, impl["vad"], err = nil, "", nil
 	}
 
+	rl.stt = reloader(speech.STTs, impl["stt"], plan.opts)
+	rl.vad = reloader(speech.VADs, impl["vad"], vadOpts)
+
 	if cfg.Bool("input.wake_word") {
 		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), nil, devFakes); err != nil {
-			return d, nil, err
+			return d, nil, rl, err
 		}
 	} else {
 		impl["wake"] = ""
 	}
 	if d.TTS, impl["tts"], err = pick(speech.TTSs, name(cfg.String("speech.tts.engine")), nil, devFakes); err != nil {
-		return d, nil, err
+		return d, nil, rl, err
 	}
+	rl.tts = reloader(speech.TTSs, impl["tts"], nil)
 	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
-		return d, nil, err
+		return d, nil, rl, err
 	}
 	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), nil, devFakes); err != nil {
-		return d, nil, err
+		return d, nil, rl, err
 	}
 
 	// The pipeline cannot run without a platform and speech-to-text.
@@ -319,11 +326,11 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 		{"stt", sttWhat, speech.STTs.Names()},
 	} {
 		if impl[area.key] == "" {
-			return d, nil, fmt.Errorf("this build has no %s (registered: %v); "+
+			return d, nil, rl, fmt.Errorf("this build has no %s (registered: %v); "+
 				"for development, run with --dev-fakes to use fakes", area.what, area.names)
 		}
 	}
-	return d, impl, nil
+	return d, impl, rl, nil
 }
 
 // pick builds the implementation registered as want, or the fake when want

@@ -187,7 +187,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 ## 11. Install and uninstall
 
-**Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service. Models are fetched with `footman models fetch` into `<data>/models`, checked against pinned SHA-256s and recorded in the receipt; setup will call it (ADR-0027).
+**Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service. Models are fetched with `footman models fetch` into `<data>/models`, checked against pinned SHA-256s and recorded in the receipt; setup calls it for the engine it picked, then warms up the GPU and benchmarks the GPU against the CPU, and picks the CPU (writing `speech.stt.accelerator = "cpu"` with a comment) if the GPU is slower. It works offline when the models are already there (ADR-0028).
 
 **Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 
@@ -213,7 +213,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 Non-interactive flags: `--purge` (everything, secrets included, no questions), `--keep-config`, `--keep-data`, `--remove-secrets` (the explicit confirmation for step 4), `--dry-run` (changes nothing, service included). With no terminal and none of `--purge`, `--keep-config` or `--keep-data`, uninstall refuses to guess. When data is kept, the receipt is kept too and rewritten to list only what remains (ADR-0023).
 
-**Setup flags:** `--name`, `--persona`, `--provider`, `--api-key-stdin` (the key is never a flag), `--hotkey` (default F8, ADR-0022), `--no-service`, `--non-interactive`. Run on a terminal, setup asks for whatever was not given.
+**Setup flags:** `--name`, `--persona`, `--provider`, `--api-key-stdin` (the key is never a flag), `--hotkey` (default F8, ADR-0022), `--no-service`, `--skip-models` (no model download, warm-up or benchmark), `--non-interactive`. Run on a terminal, setup asks for whatever was not given.
 
 `footman plugin remove <name>` and `footman persona remove <name>` work the same way at a smaller scale, and each asks whether to keep that item's data.
 
@@ -347,7 +347,7 @@ footman/
 - **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name in the area's `registry.Registry`, and config picks one (ADR-0021).
 - **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
 - **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
-- **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. The daemon detects the hardware at start and picks the best option by the ADR-0024 table (`speech.stt.engine = "auto"`); the user can override engine, model and accelerator in config. Setup will add a short benchmark. whisper.cpp is built with its GPU backends as plugins, so one binary loads CPU, Vulkan or CUDA at run time (ADR-0027):
+- **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. The daemon detects the hardware at start and picks the best option by the ADR-0024 table (`speech.stt.engine = "auto"`); the user can override engine, model and accelerator in config. Setup runs a short benchmark of the GPU against the CPU and picks the CPU if the GPU is slower (ADR-0028). whisper.cpp is built with its GPU backends as plugins, so one binary loads CPU, Vulkan or CUDA at run time (ADR-0027):
 
   | Hardware | Accelerator path |
   |---|---|
@@ -606,7 +606,8 @@ quiet_hours = "22:00-07:00"
 [speech]
 stt = { engine = "auto", model = "auto", accelerator = "auto" }   # or whispercpp | sherpa-parakeet; cpu | gpu | vulkan | cuda
 tts = { engine = "persona" }     # persona | elevenlabs | …
-unload_after = "10m"
+unload_after = "10m"             # unload speech models after this idle time; 0s = never (ADR-0028)
+vad = { min_silence = 0.5 }      # seconds of silence that end an utterance
 
 [ai]
 mode = "cloud"                   # cloud | local-first | offline

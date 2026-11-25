@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/irobinson010/footman/internal/api"
+	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/core"
 	"github.com/irobinson010/footman/internal/platform"
 	platformfake "github.com/irobinson010/footman/internal/platform/fake"
@@ -385,5 +386,87 @@ func TestDaemonBadConfig(t *testing.T) {
 		"--config", cfg, "--data", dir}, &log, &log)
 	if code != 1 || !strings.Contains(log.String(), "dictation.insert") {
 		t.Errorf("daemon with bad config = %d:\n%s", code, log.String())
+	}
+}
+
+// TestModelsUnloadWhenIdleAndReloadOnUse covers speech.unload_after
+// (ADR-0028) end to end: the daemon reports the STT as unloaded after the
+// idle time, and transcribing loads it again.
+func TestModelsUnloadWhenIdleAndReloadOnUse(t *testing.T) {
+	wav := filepath.Join(shortTempDir(t), "hello.wav")
+	f, err := os.Create(wav)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := audio.EncodeWAV(f, audio.Clip{Format: audio.Speech, Samples: make([]float32, 1600)}); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	d := startDaemonWith(t, func(o *daemonOptions) {
+		if err := os.MkdirAll(filepath.Dir(o.configPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(o.configPath, []byte("version = 1\n[speech]\nunload_after = \"200ms\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	stt := func() api.ModelState {
+		t.Helper()
+		_, out, _ := d.cli(t, "status", "--json")
+		var s api.StatusResult
+		if err := json.Unmarshal([]byte(out), &s); err != nil {
+			t.Fatalf("status: %v: %s", err, out)
+		}
+		if s.Models.UnloadAfter != "200ms" {
+			t.Fatalf("unload_after = %q", s.Models.UnloadAfter)
+		}
+		for _, m := range s.Models.Models {
+			if m.Name == "stt" {
+				return m
+			}
+		}
+		t.Fatalf("no stt in %+v", s.Models)
+		return api.ModelState{}
+	}
+	if m := stt(); !m.Loaded || m.Engine != "fake" || m.Loads != 1 {
+		t.Fatalf("at start: %+v", m)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for stt().Loaded {
+		if time.Now().After(deadline) {
+			t.Fatal("stt never unloaded")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "stt unloaded") || !strings.Contains(out, "unload after 200ms idle") {
+		t.Errorf("status text:\n%s", out)
+	}
+	// A freshly loaded fake has no transcript queued, so the call itself
+	// fails with the fake's error; that it reached a new engine is the point.
+	if code, out, errOut := d.cli(t, "transcribe", "--no-vad", wav); code != 1 || !strings.Contains(errOut, "no transcript queued") {
+		t.Fatalf("transcribe = %d\n%s%s", code, out, errOut)
+	}
+	if m := stt(); m.Loads != 2 {
+		t.Fatalf("after use: %+v (want a second load)", m)
+	}
+}
+
+func TestModelsLine(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	got := modelsLine(api.ModelsStatus{UnloadAfter: "10m0s", Models: []api.ModelState{
+		{Name: "stt", Loaded: true},
+		{Name: "vad", Loaded: true, InUse: 1},
+		{Name: "tts", Since: now.Add(-4 * time.Minute)},
+	}}, now)
+	want := "stt loaded, vad loaded (in use), tts unloaded 4m0s ago (unload after 10m0s idle)"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	if got := modelsLine(api.ModelsStatus{UnloadAfter: "0s", Models: []api.ModelState{{Name: "stt", Loaded: true}}}, now); got != "stt loaded (never unload)" {
+		t.Errorf("got %q", got)
+	}
+	if got := modelsLine(api.ModelsStatus{}, now); got != "none" {
+		t.Errorf("got %q", got)
 	}
 }

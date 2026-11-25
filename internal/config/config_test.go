@@ -340,3 +340,63 @@ func TestWatchDebounce(t *testing.T) {
 		t.Errorf("reload called %d times, want 1", n)
 	}
 }
+
+func TestVADMinSilence(t *testing.T) {
+	if got := Defaults().Float("speech.vad.min_silence"); got != 0.5 {
+		t.Fatalf("default min_silence = %v, want 0.5", got)
+	}
+	c, err := Parse([]byte("version = 1\n[speech.vad]\nmin_silence = 0.25\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Float("speech.vad.min_silence"); got != 0.25 {
+		t.Fatalf("min_silence = %v, want 0.25", got)
+	}
+	for _, bad := range []string{"0", "0.01", "9", `"long"`} {
+		if _, err := Parse([]byte("version = 1\n[speech.vad]\nmin_silence = " + bad + "\n")); err == nil {
+			t.Errorf("min_silence = %s was accepted", bad)
+		}
+	}
+}
+
+func TestUnloadAfterValidation(t *testing.T) {
+	for _, ok := range []string{"0s", "30s", "10m", "1h"} {
+		if _, err := Parse([]byte("version = 1\n[speech]\nunload_after = \"" + ok + "\"\n")); err != nil {
+			t.Errorf("unload_after %q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"soon", "-5m", "10"} {
+		if _, err := Parse([]byte("version = 1\n[speech]\nunload_after = \"" + bad + "\"\n")); err == nil {
+			t.Errorf("unload_after %q was accepted", bad)
+		}
+	}
+}
+
+func TestSetFileComment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("# mine\nversion = 1\n\n[speech.stt]\nengine = \"auto\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the second call changes nothing
+		if err := SetFileComment(path, "speech.stt.accelerator", "cpu", "Set by setup: the GPU was slower.\nDelete this line to let footman choose."); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := os.ReadFile(path)
+	want := "# mine\nversion = 1\n\n[speech.stt]\nengine = \"auto\"\n# Set by setup: the GPU was slower.\n# Delete this line to let footman choose.\naccelerator = \"cpu\"\n"
+	if string(got) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	c, err := Load(path)
+	if err != nil || c.String("speech.stt.accelerator") != "cpu" {
+		t.Fatalf("reload: %v %v", c, err)
+	}
+	// An unchanged value keeps the comment from being added twice, and a
+	// changed one keeps it too.
+	if err := SetFileComment(path, "speech.stt.accelerator", "cpu", "Set by setup: the GPU was slower.\nDelete this line to let footman choose."); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(path); string(again) != want {
+		t.Fatalf("not idempotent:\n%s", again)
+	}
+}

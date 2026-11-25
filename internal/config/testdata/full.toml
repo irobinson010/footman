@@ -29,6 +29,7 @@ quiet_hours = "22:00-07:00"
 [speech]
 stt = { engine = "whispercpp", model = "auto", accelerator = "auto" }
 tts = { engine = "persona" }     # persona | elevenlabs | …
+vad = { min_silence = 0.5 }
 unload_after = "10m"
 
 [ai]

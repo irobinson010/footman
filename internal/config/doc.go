@@ -495,6 +495,34 @@ func (d *Doc) Set(key string, value any) error {
 	return nil
 }
 
+// Comment puts a "# text" line above key's line, unless that exact comment is
+// already there. Multi-line text becomes several comment lines. The key must
+// already be in the file.
+func (d *Doc) Comment(key, text string) error {
+	sp, ok := d.spans[key]
+	if !ok {
+		return &Error{Key: key, Msg: "cannot comment a key that is not in the file"}
+	}
+	at := sp.start
+	for at > 0 && d.src[at-1] != '\n' {
+		at--
+	}
+	var b strings.Builder
+	for _, l := range strings.Split(strings.TrimSpace(text), "\n") {
+		b.WriteString(strings.TrimRight("# "+l, " ") + "\n")
+	}
+	c := b.String()
+	if at >= len(c) && string(d.src[at-len(c):at]) == c {
+		return nil
+	}
+	nd, err := newDoc(insertAt(d.src, at, c))
+	if err != nil {
+		return err
+	}
+	*d = *nd
+	return nil
+}
+
 // sameValue reports whether the value already in the file means the same as
 // lit, so an unchanged Set keeps the user's own formatting (quotes, 10 vs
 // 10.0, spacing) byte for byte.
@@ -649,6 +677,21 @@ func replace(src []byte, start, end int, s string) []byte {
 // SetFile edits a config file in place, atomically. A missing file is
 // created. It is safe to call while Watch is running.
 func SetFile(path, key string, value any) error {
+	return editFile(path, func(d *Doc) error { return d.Set(key, value) })
+}
+
+// SetFileComment is SetFile that also leaves a comment above the key saying
+// why it was set, for values Footman chose rather than the user.
+func SetFileComment(path, key string, value any, comment string) error {
+	return editFile(path, func(d *Doc) error {
+		if err := d.Set(key, value); err != nil {
+			return err
+		}
+		return d.Comment(key, comment)
+	})
+}
+
+func editFile(path string, edit func(*Doc) error) error {
 	src, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -657,7 +700,7 @@ func SetFile(path, key string, value any) error {
 	if err != nil {
 		return tagFile(err, path)
 	}
-	if err := d.Set(key, value); err != nil {
+	if err := edit(d); err != nil {
 		return err
 	}
 	mode := os.FileMode(0o600)

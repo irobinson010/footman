@@ -26,8 +26,10 @@ func init() {
 	}})
 }
 
-// Seams for tests: the input, the platform and the path of the running program.
+// Seams for tests: the input, the platform, the path of the running program
+// and the speech step of setup.
 var (
+	speechStep            = setupSpeech
 	stdin       io.Reader = os.Stdin
 	executable            = os.Executable
 	newPlatform           = func() (platform.Platform, error) { return platform.Platforms.New(runtime.GOOS, nil) }
@@ -65,6 +67,7 @@ func cmdSetup(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&keyStdin, "api-key-stdin", false, "read the provider's API key from standard input")
 	fs.StringVar(&o.Hotkey, "hotkey", "", "push-to-talk key (default "+install.DefaultHotkey+")")
 	fs.BoolVar(&o.NoService, "no-service", false, "do not install the background service")
+	fs.BoolVar(&o.SkipModels, "skip-models", false, "do not fetch speech models, warm up the GPU or benchmark (run `footman models fetch` later)")
 	fs.BoolVar(&nonInteractive, "non-interactive", false, "never ask questions")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -106,12 +109,9 @@ func cmdSetup(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	o.Out = stdout // each step prints as it happens; models take a while
+	o.Speech = speechStep(stderr)
 	res, err := install.Setup(context.Background(), o)
-	if res != nil {
-		for _, l := range res.Lines {
-			_, _ = fmt.Fprintln(stdout, l)
-		}
-	}
 	if err != nil {
 		return fail(stderr, err)
 	}

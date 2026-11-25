@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,6 +51,31 @@ type SetupOptions struct {
 	Hotkey string
 	// NoService skips installing the background service.
 	NoService bool
+	// SkipModels skips the speech step: no model downloads, warm-up or
+	// benchmark.
+	SkipModels bool
+	// Speech does the speech part of setup (ADR-0028): it fetches models,
+	// warms up and benchmarks. It runs after the config and database exist
+	// and before the service is installed, so the service never starts
+	// without its models. Nil, or SkipModels, skips it.
+	Speech func(ctx context.Context, env SpeechEnv) error
+	// Out, if set, receives each step's line as it happens, so a long step
+	// shows progress. The lines are also returned in SetupResult.
+	Out io.Writer
+}
+
+// SpeechEnv is what the speech step of setup gets.
+type SpeechEnv struct {
+	// ConfigPath is the config file, which exists by now.
+	ConfigPath string
+	// DataDir and CacheDir are the data and cache folders.
+	DataDir, CacheDir string
+	// Record adds an entry to the install receipt and saves the receipt
+	// at once, so a download that is interrupted is still undone by
+	// uninstall (ADR-0023).
+	Record func(Entry) error
+	// Step reports a line of progress.
+	Step func(format string, a ...any)
 }
 
 // SetupResult reports what setup did.
@@ -87,7 +113,13 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 		ConfigPath:  filepath.Join(paths.Config(), "config.toml"),
 		ReceiptPath: ReceiptPath(paths),
 	}
-	step := func(format string, a ...any) { res.Lines = append(res.Lines, fmt.Sprintf(format, a...)) }
+	step := func(format string, a ...any) {
+		line := fmt.Sprintf(format, a...)
+		res.Lines = append(res.Lines, line)
+		if o.Out != nil {
+			_, _ = fmt.Fprintln(o.Out, line)
+		}
+	}
 
 	rec, err := LoadReceipt(res.ReceiptPath)
 	if errors.Is(err, ErrNoReceipt) {
@@ -180,6 +212,25 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 	}
 	rec.Add(Entry{Kind: KindFile, Group: GroupData, Path: db})
 	step("database     %s", db)
+
+	switch {
+	case o.SkipModels:
+		step("speech       skipped (--skip-models); run `footman models fetch` before the first start")
+	case o.Speech != nil:
+		err := o.Speech(ctx, SpeechEnv{
+			ConfigPath: res.ConfigPath, DataDir: paths.Data(), CacheDir: paths.Cache(), Step: step,
+			Record: func(e Entry) error {
+				if err := e.validate(); err != nil {
+					return err
+				}
+				rec.Add(e)
+				return rec.Save(res.ReceiptPath)
+			},
+		})
+		if err != nil {
+			return res, fmt.Errorf("speech models: %w", err)
+		}
+	}
 
 	if !o.NoService {
 		// Recorded first: a half-installed service must still be undone.
