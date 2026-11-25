@@ -1,0 +1,10 @@
+# Spike outputs that must not be committed
+/clips/
+/bin/
+/dist/
+/results/
+*.jsonl
+*.zip
+*.exe
+*.dll
+*.so
