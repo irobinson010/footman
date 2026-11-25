@@ -1,6 +1,6 @@
 # 0019. Voice source licensing
 
-- Status: Accepted
+- Status: Accepted (amended by 0020)
 - Date: 2026-11-24
 
 ## Context
