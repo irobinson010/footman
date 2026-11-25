@@ -105,7 +105,7 @@ func newRig(t *testing.T, config string) *rig {
 			if err != nil {
 				return "", err
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			return m.Path(dir), f.Truncate(m.Size)
 		},
 		Open: func(_ context.Context, c accel.Choice) (speech.STT, error) {
