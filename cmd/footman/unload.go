@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"runtime/debug"
 	"time"
 
 	"github.com/irobinson010/footman/internal/api"
@@ -10,6 +11,7 @@ import (
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
 	"github.com/irobinson010/footman/internal/speech/idle"
+	"github.com/irobinson010/footman/internal/speech/memtrim"
 )
 
 // reloaders build a fresh engine for an area, to load it again after it was
@@ -54,7 +56,12 @@ type speechModels struct {
 // them. Areas without an engine are left alone.
 func manageSpeech(d *core.Deps, impl map[string]string, rl reloaders, after func() time.Duration) *speechModels {
 	m := &speechModels{after: after}
-	o := idle.Options{After: after}
+	// Unloading only lowers the daemon's memory if the freed heap goes back
+	// to the OS: the engines' (C) and the recordings' (Go).
+	o := idle.Options{After: after, OnUnload: func() {
+		memtrim.Trim()
+		debug.FreeOSMemory()
+	}}
 	add := func(h interface {
 		State() idle.State
 		Close() error

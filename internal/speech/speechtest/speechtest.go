@@ -21,11 +21,26 @@ const ModelsEnv = "FOOTMAN_TEST_MODELS"
 // Reference is the transcript of Clip (LibriSpeech 1580-141084-0011).
 const Reference = "WHEN WE WERE OUT IN THE DARKNESS OF THE QUADRANGLE WE AGAIN LOOKED UP AT THE WINDOWS"
 
+// Reference10 is the transcript of the 10-second clip (LibriSpeech
+// 260-123288-0010).
+const Reference10 = "ON THE MAST ALREADY I SEE THE LIGHT PLAY OF A LAMBENT SAINT ELMO'S FIRE THE OUTSTRETCHED SAIL CATCHES NOT A BREATH OF WIND AND HANGS LIKE A SHEET OF LEAD"
+
 // ClipPath returns the path of the 5-second test clip in testdata/speech.
 func ClipPath(t testing.TB) string {
 	t.Helper()
+	return speechFile(t, "librispeech-1580-141084-0011.wav")
+}
+
+// Clip10Path returns the path of the 10-second test clip in testdata/speech.
+func Clip10Path(t testing.TB) string {
+	t.Helper()
+	return speechFile(t, "librispeech-260-123288-0010.wav")
+}
+
+func speechFile(t testing.TB, name string) string {
+	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
-	p := filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "speech", "librispeech-1580-141084-0011.wav")
+	p := filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "speech", name)
 	if _, err := os.Stat(p); err != nil {
 		t.Fatal(err)
 	}

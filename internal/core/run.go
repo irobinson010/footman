@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 
 	"github.com/irobinson010/footman/internal/audio"
+	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/speech"
 )
@@ -17,18 +19,23 @@ import (
 // by a stop it keeps serving the hotkeys and reopens the microphone on
 // Unmute.
 //
-// Microphone frames go to the wake-word spotter and the VAD. The wake word or
-// a hotkey arms the pipeline (Listening); the VAD's next end of speech is then
+// The dictation and command hotkeys are push-to-talk (ADR-0030): a press
+// opens the microphone for that utterance alone, and the release (hold to
+// talk) or the VAD's end of speech or a second tap (tap to talk) ends it.
+//
+// With a wake-word engine, the microphone is also open the whole time:
+// frames go to the wake-word spotter and the VAD. The wake word (or Arm)
+// arms the pipeline (Listening), and the VAD's next end of speech is then
 // transcribed and handled. Speech that ends while nothing is armed is
 // ignored, so nothing said without the wake word or a hotkey is ever
-// transcribed. Hotkeys work on press; push-to-talk release is not used yet,
-// so the VAD ends the utterance in both hold and toggle modes.
+// transcribed. Without one, the microphone is closed except while a hotkey
+// records, and Run returns only when ctx is done.
 func (p *Pipeline) Run(ctx context.Context) error {
 	if p.d.VAD == nil {
 		return errors.New("core: Run needs a VAD")
 	}
 	p.mu.Lock()
-	p.mic = micLoop{started: true}
+	p.mic = micLoop{started: true, pttOnly: p.d.Wake == nil}
 	p.mu.Unlock()
 	err := p.microphone(ctx)
 	p.mu.Lock()
@@ -51,6 +58,11 @@ const (
 	MicMuted MicState = "muted"
 	// MicStopped means the loop has returned and will not listen again.
 	MicStopped MicState = "stopped"
+	// MicPushToTalk means there is no wake word: the microphone is closed
+	// and opens only while a push-to-talk hotkey records.
+	MicPushToTalk MicState = "push_to_talk"
+	// MicRecording means a push-to-talk hotkey is recording right now.
+	MicRecording MicState = "recording"
 )
 
 // MicStatus is the microphone loop's state. Error says why it stopped.
@@ -62,7 +74,10 @@ type MicStatus struct {
 // micLoop records how Run went, for Mic.
 type micLoop struct {
 	started, ended bool
-	err            error
+	// pttOnly means there is no wake-word loop: the microphone opens only
+	// for push-to-talk.
+	pttOnly bool
+	err     error
 }
 
 // Mic reports what the microphone loop is doing: whether it is on, muted by a
@@ -80,8 +95,12 @@ func (p *Pipeline) Mic() MicStatus {
 		return MicStatus{State: MicStopped, Error: msg}
 	case !p.mic.started:
 		return MicStatus{State: MicOff}
+	case p.rec != nil:
+		return MicStatus{State: MicRecording}
 	case p.muted:
 		return MicStatus{State: MicMuted}
+	case p.mic.pttOnly:
+		return MicStatus{State: MicPushToTalk}
 	}
 	return MicStatus{State: MicOn}
 }
@@ -89,17 +108,27 @@ func (p *Pipeline) Mic() MicStatus {
 // microphone is the body of Run, after the VAD check.
 func (p *Pipeline) microphone(ctx context.Context) error {
 	hctx, stopHotkeys := context.WithCancel(ctx)
-	var hotkeys sync.WaitGroup
+	var hotkeys, recs sync.WaitGroup
 	defer func() {
 		stopHotkeys()
 		hotkeys.Wait()
+		recs.Wait()
 	}()
 	if combos := nonEmpty(p.cfg.DictateHotkey, p.cfg.CommandHotkey, p.cfg.StopHotkey); len(combos) > 0 {
-		ch, err := p.d.Platform.Input().Hotkeys(hctx, combos)
+		chans, err := p.registerHotkeys(hctx, combos)
 		if err != nil {
 			return err
 		}
-		hotkeys.Go(func() { p.hotkeyLoop(ch) })
+		for _, ch := range chans {
+			hotkeys.Go(func() { p.hotkeyLoop(hctx, &recs, ch) })
+		}
+	}
+
+	if p.d.Wake == nil {
+		// Push-to-talk only: nothing listens until a hotkey is pressed.
+		p.setMic(platform.MicOff)
+		<-ctx.Done()
+		return ctx.Err()
 	}
 
 	var turns sync.WaitGroup
@@ -135,6 +164,50 @@ func (p *Pipeline) microphone(ctx context.Context) error {
 	}
 }
 
+// registerHotkeys registers combos together, or, if that fails, each on its
+// own, so that a key another app holds (say the command key) does not take
+// dictation down with it. It fails only if none can be registered; the keys
+// that failed are reported by HotkeyErrors and published as failures.
+func (p *Pipeline) registerHotkeys(ctx context.Context, combos []string) ([]<-chan platform.HotkeyEvent, error) {
+	in := p.d.Platform.Input()
+	ch, err := in.Hotkeys(ctx, combos)
+	if err == nil || len(combos) == 1 {
+		if err != nil {
+			return nil, err
+		}
+		return []<-chan platform.HotkeyEvent{ch}, nil
+	}
+	var chans []<-chan platform.HotkeyEvent
+	failed := map[string]string{}
+	for _, c := range combos {
+		ch, cerr := in.Hotkeys(ctx, []string{c})
+		if cerr != nil {
+			failed[c] = cerr.Error()
+			continue
+		}
+		chans = append(chans, ch)
+	}
+	if len(chans) == 0 {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.hotkeyErrs = failed
+	p.mu.Unlock()
+	for _, c := range combos {
+		if msg, ok := failed[c]; ok {
+			bus.Publish(p.d.Bus, Failed, Failure{State: Idle, Err: "hotkey " + c + ": " + msg})
+		}
+	}
+	return chans, nil
+}
+
+// HotkeyErrors returns, for each hotkey that could not be registered, why.
+func (p *Pipeline) HotkeyErrors() map[string]string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return maps.Clone(p.hotkeyErrs)
+}
+
 func nonEmpty(ss ...string) []string {
 	var out []string
 	for _, s := range ss {
@@ -145,18 +218,17 @@ func nonEmpty(ss ...string) []string {
 	return out
 }
 
-func (p *Pipeline) hotkeyLoop(ch <-chan platform.HotkeyEvent) {
+func (p *Pipeline) hotkeyLoop(ctx context.Context, recs *sync.WaitGroup, ch <-chan platform.HotkeyEvent) {
 	for ev := range ch {
-		if !ev.Pressed {
-			continue
-		}
 		switch ev.Hotkey {
 		case p.cfg.StopHotkey:
-			p.stop(StopHotkey)
+			if ev.Pressed {
+				p.stop(StopHotkey)
+			}
 		case p.cfg.DictateHotkey:
-			p.Arm(TriggerDictate)
+			p.talkKey(ctx, recs, ev, TriggerDictate, p.cfg.DictateMode)
 		case p.cfg.CommandHotkey:
-			p.Arm(TriggerCommand)
+			p.talkKey(ctx, recs, ev, TriggerCommand, p.cfg.CommandMode)
 		}
 	}
 }

@@ -252,8 +252,9 @@ func TestDictationHotkeyPastesMultiline(t *testing.T) {
 	}
 }
 
-// Hotkeys arrive through platform.Input: the stop hotkey stops, the dictation
-// hotkey arms, and Unmute reopens the microphone.
+// Hotkeys arrive through platform.Input: the stop hotkey stops, and Unmute
+// reopens the wake-word microphone, where an armed utterance is handled.
+// (The push-to-talk keys are covered in ptt_test.go.)
 func TestHotkeys(t *testing.T) {
 	r := newRig(t, nil)
 	r.p.Stop() // start muted so Run waits on the hotkeys
@@ -273,7 +274,7 @@ func TestHotkeys(t *testing.T) {
 		t.Errorf("stop source %q, want hotkey", got.Source)
 	}
 	r.path()
-	r.input().Press("F8", true)
+	r.p.Arm(core.TriggerDictate)
 	await(t, r.states, func(c core.StateChange) bool { return c.To == core.Listening })
 	r.p.Unmute()
 	if err := <-done; err != nil {

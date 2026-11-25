@@ -198,12 +198,19 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 		}
 	}
 	step("config       %s", res.ConfigPath)
-	if hotkey != "" {
-		step("hotkey       push-to-talk on %s", hotkey)
+	cfg, err := config.Load(res.ConfigPath)
+	if err != nil {
+		return res, err
 	}
+	keys := []struct{ key, what string }{
+		{cfg.String("input.dictate.key"), "dictation"},
+		{cfg.String("input.command.key"), "commands"},
+	}
+	step("hotkey       push-to-talk on %s (%s to talk)", keys[0].key, cfg.String("input.dictate.mode"))
 
-	// Desktop integration: the files that name Footman to the desktop, and
-	// the push-to-talk key bound to exactly the key the user chose.
+	// Desktop integration: the files that name Footman to the desktop, the
+	// push-to-talk keys bound to exactly the keys in the config, and the
+	// permission to type and paste.
 	if is, ok := o.Platform.Input().(platform.InputSetup); ok {
 		if o.Binary != "" {
 			files, err := is.SetupInput(ctx, o.Binary)
@@ -220,8 +227,17 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 				step("desktop      %s", f)
 			}
 		}
-		if hotkey != "" {
-			step("%s", bindLine(ctx, is, hotkey))
+		for _, k := range keys {
+			if k.key != "" {
+				step("%s", bindLine(ctx, is, k.key, k.what))
+			}
+		}
+		// The permission dialog appears now, while the user is at setup,
+		// rather than in the middle of the first dictation.
+		if err := is.PrepareInsert(ctx); err != nil {
+			step("insert       not allowed yet (%v); the desktop asks again at the first dictation", err)
+		} else {
+			step("insert       allowed to type and paste at the cursor")
 		}
 	}
 
@@ -261,25 +277,27 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 		if err := o.Platform.Service().Install(ctx); err != nil {
 			return res, fmt.Errorf("install service: %w", err)
 		}
-		step("service      %s installed and enabled", ServiceName)
+		step("service      %s installed, enabled and started", ServiceName)
 	}
 	return res, nil
 }
 
-// bindLine binds the push-to-talk key with the desktop and describes the
-// result. Failing to bind does not fail setup: the service binds the key
-// again when it starts, and the user can set it in the desktop's settings.
-func bindLine(ctx context.Context, is platform.InputSetup, hotkey string) string {
+// bindLine binds a push-to-talk key (for what: "dictation" or "commands")
+// with the desktop and describes the result. Each key is bound on its own,
+// so one that is taken does not stop the other. Failing to bind does not
+// fail setup: the service binds the key again when it starts, and the user
+// can set it in the desktop's settings.
+func bindLine(ctx context.Context, is platform.InputSetup, hotkey, what string) string {
 	got, err := is.BindHotkeys(ctx, []string{hotkey})
 	switch {
 	case errors.Is(err, platform.ErrUnsupported):
-		return fmt.Sprintf("hotkey       %s not bound: this desktop has no global shortcut service", hotkey)
+		return fmt.Sprintf("hotkey       %s (%s) not bound: this desktop has no global shortcut service", hotkey, what)
 	case err != nil:
-		return fmt.Sprintf("hotkey       %s not bound: %v", hotkey, err)
+		return fmt.Sprintf("hotkey       %s (%s) not bound: %v", hotkey, what, err)
 	case len(got) == 0 || got[0].Trigger == "":
-		return fmt.Sprintf("hotkey       %s has no key yet: set it in the desktop's shortcut settings (Footman)", hotkey)
+		return fmt.Sprintf("hotkey       %s (%s) has no key yet: set it in the desktop's shortcut settings (Footman)", hotkey, what)
 	case got[0].Trigger != hotkey:
-		return fmt.Sprintf("hotkey       %s is bound to %s by the desktop", hotkey, got[0].Trigger)
+		return fmt.Sprintf("hotkey       %s (%s) is bound to %s by the desktop", hotkey, what, got[0].Trigger)
 	}
-	return fmt.Sprintf("hotkey       %s bound with the desktop", hotkey)
+	return fmt.Sprintf("hotkey       %s bound with the desktop (%s)", hotkey, what)
 }

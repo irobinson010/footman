@@ -1,10 +1,13 @@
 librispeech-1580-141084-0011.wav
+librispeech-260-123288-0010.wav
 
-Utterance 1580-141084-0011 from LibriSpeech test-clean, converted from FLAC to
-16 kHz mono 16-bit WAV with ffmpeg (no other change; 5.0 s).
+Utterances 1580-141084-0011 (5.0 s) and 260-123288-0010 (10.0 s) from
+LibriSpeech test-clean, converted from FLAC to 16 kHz mono 16-bit WAV with
+ffmpeg (no other change).
 
-Reference transcript (unchanged from the corpus):
-WHEN WE WERE OUT IN THE DARKNESS OF THE QUADRANGLE WE AGAIN LOOKED UP AT THE WINDOWS
+Reference transcripts (unchanged from the corpus):
+1580-141084-0011  WHEN WE WERE OUT IN THE DARKNESS OF THE QUADRANGLE WE AGAIN LOOKED UP AT THE WINDOWS
+260-123288-0010   ON THE MAST ALREADY I SEE THE LIGHT PLAY OF A LAMBENT SAINT ELMO'S FIRE THE OUTSTRETCHED SAIL CATCHES NOT A BREATH OF WIND AND HANGS LIKE A SHEET OF LEAD
 
   LibriSpeech ASR corpus, V. Panayotov, G. Chen, D. Povey, S. Khudanpur,
   "Librispeech: an ASR corpus based on public domain audio books", ICASSP 2015.
