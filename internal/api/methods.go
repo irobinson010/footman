@@ -16,6 +16,7 @@ import (
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/config"
 	"github.com/irobinson010/footman/internal/core"
+	"github.com/irobinson010/footman/internal/speech"
 )
 
 // Info describes the running daemon for status.get.
@@ -39,6 +40,10 @@ type Deps struct {
 	Bus      *bus.Bus
 	Config   *ConfigFile
 	Info     Info
+	// STT and VAD are the daemon's speech engines, for speech.transcribe.
+	// Nil means none.
+	STT speech.STT
+	VAD speech.VAD
 	// Now is the clock for uptime (default time.Now).
 	Now func() time.Time
 }
@@ -59,6 +64,7 @@ func Register(s *Server, d Deps) {
 	s.Handle("config.set", m.configSet)
 	s.Handle("config.schema", m.configSchema)
 	s.Handle("system.stop_everything", m.stopEverything)
+	s.Handle("speech.transcribe", m.speechTranscribe)
 }
 
 type methods struct {

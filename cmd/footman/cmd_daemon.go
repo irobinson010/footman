@@ -22,6 +22,7 @@ import (
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
+	"github.com/irobinson010/footman/internal/speech/accel"
 	"github.com/irobinson010/footman/internal/store"
 )
 
@@ -32,18 +33,20 @@ func init() {
 // fakeName is the registry name every area's fake registers under (ADR-0021).
 const fakeName = "fake"
 
-// Names of the speech engines that have no config key yet. The sherpa-onnx
-// engines (design §24, speech/sherpa) will register under these.
-const (
-	defaultVAD  = "sherpa"
-	defaultWake = "sherpa"
-)
+// defaultWake is the wake-word engine (no config key yet). The sherpa-onnx
+// keyword spotter will register under it.
+const defaultWake = "sherpa"
 
 // daemonOptions configure runDaemon.
 type daemonOptions struct {
 	socket     string
 	configPath string
 	dataDir    string
+	// cacheDir is the cache folder (the Vulkan shader cache goes in it);
+	// empty means the default.
+	cacheDir string
+	// modelsDir is the speech models folder; empty means <data>/models.
+	modelsDir string
 	// devFakes lets areas without a registered real implementation fall
 	// back to their fakes, so the daemon runs on a machine (or in a build)
 	// without platform or speech support. For development and tests only.
@@ -53,6 +56,11 @@ type daemonOptions struct {
 	// fakesOnly uses the fakes even where a real implementation is
 	// registered, so tests never touch the desktop.
 	fakesOnly bool
+	// realSpeech, with fakesOnly, still uses the real speech-to-text and
+	// VAD engines (for the native tests).
+	realSpeech bool
+	// hardware, if set, replaces accelerator detection.
+	hardware func() accel.Hardware
 	// deps, if set, edits the pipeline's dependencies after wiring, so a
 	// test can swap in scripted fakes.
 	deps func(*core.Deps)
@@ -67,7 +75,8 @@ func cmdDaemon(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	var o daemonOptions
 	fs.StringVar(&o.socket, "socket", defaultSocket(), "Unix socket to serve the local API on (or set $"+socketEnv+")")
 	fs.StringVar(&o.configPath, "config", filepath.Join(paths.Config, "config.toml"), "config file")
-	fs.StringVar(&o.dataDir, "data", paths.Data, "data directory (footman.db)")
+	fs.StringVar(&o.dataDir, "data", paths.Data, "data directory (footman.db, models/)")
+	o.cacheDir = paths.Cache
 	fs.BoolVar(&o.devFakes, "dev-fakes", false, "DEVELOPMENT ONLY: use fake platform, speech, AI and worker implementations wherever no real one is registered")
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(stderr, "Usage: footman daemon [options]\n\nRuns the footman service in the foreground until SIGTERM or Ctrl-C.\n\nOptions:\n")
@@ -117,10 +126,13 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	b := bus.New()
 	defer b.Close()
 
-	deps, impl, err := wire(cfg, o.devFakes, o.fakesOnly)
+	deps, impl, err := wire(cfg, o, logf)
 	if err != nil {
 		return err
 	}
+	defer closeIfCloser(deps.STT)
+	defer closeIfCloser(deps.VAD)
+	logSpeech(logf, o.dataDir, deps.STT, deps.VAD)
 	deps.Bus = b
 	if o.deps != nil {
 		o.deps(&deps)
@@ -179,7 +191,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	srv := api.NewServer()
-	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, Info: api.Info{
+	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
 		Socket: o.socket, ConfigPath: o.configPath,
 	}})
@@ -214,45 +226,82 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 
 // wire picks an implementation for every area from the registries: the one
 // the config names when it is registered, otherwise (with devFakes) the fake.
-// It returns the pipeline dependencies (without the bus) and, per area, the
-// name of what it chose ("" for none).
-func wire(cfg *config.Config, devFakes, fakesOnly bool) (core.Deps, map[string]string, error) {
-	impl := map[string]string{}
-	devFakes = devFakes || fakesOnly
+// Speech-to-text "auto" (the default) is resolved by planSTT. It returns the
+// pipeline dependencies (without the bus) and, per area, the name of what it
+// chose ("" for none).
+func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d core.Deps, impl map[string]string, err error) {
+	impl = map[string]string{}
+	devFakes, fakesOnly := o.devFakes || o.fakesOnly, o.fakesOnly
 	name := func(want string) string {
 		if fakesOnly {
 			return fakeName
 		}
 		return want
 	}
-	var d core.Deps
-	var err error
+	speechName := name
+	if o.realSpeech {
+		speechName = func(want string) string { return want }
+	}
+	dirs := speechDirs{models: o.modelsDir, cache: o.cacheDir}
+	if dirs.models == "" {
+		dirs.models = modelsDir(o.dataDir)
+	}
+	if dirs.cache == "" {
+		dirs.cache = defaultPaths().Cache
+	}
+	hw := o.hardware
+	if hw == nil {
+		hw = accel.Detect
+	}
+	defer func() {
+		if err != nil {
+			closeIfCloser(d.STT)
+			closeIfCloser(d.VAD)
+		}
+	}()
 
-	// Real implementations get their options from config once they exist;
-	// until then every factory gets none.
-	if d.Platform, impl["platform"], err = pick(platform.Platforms, name(runtime.GOOS), devFakes); err != nil {
+	// Only the speech engines take options from config so far; every other
+	// factory gets none.
+	if d.Platform, impl["platform"], err = pick(platform.Platforms, name(runtime.GOOS), nil, devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.STT, impl["stt"], err = pick(speech.STTs, name(cfg.String("speech.stt.engine")), devFakes); err != nil {
-		return d, nil, err
+
+	// Speech-to-text: "auto" and the native engines go through planSTT.
+	sttWhat := "speech-to-text engine " + cfg.String("speech.stt.engine")
+	plan := sttPlan{name: fakeName}
+	if speechName("") != fakeName {
+		if p, perr := planSTT(cfg, dirs, hw); perr != nil {
+			sttWhat = "speech-to-text engine (" + perr.Error() + ")"
+			plan = sttPlan{}
+		} else {
+			plan = p
+			logf("speech-to-text: %s", describePlan(plan))
+		}
 	}
-	if d.VAD, impl["vad"], err = pick(speech.VADs, name(defaultVAD), devFakes); err != nil {
-		return d, nil, err
+	if d.STT, impl["stt"], err = pick(speech.STTs, plan.name, plan.opts, devFakes); err != nil {
+		return d, nil, fmt.Errorf("%w\n(for development, run with --dev-fakes to use fakes)", err)
 	}
+	// The VAD is optional: without it the microphone is not used.
+	vadName := speechName(defaultVAD)
+	if d.VAD, impl["vad"], err = pick(speech.VADs, vadName, vadOptions(vadName, dirs), devFakes); err != nil {
+		logf("VAD unavailable: %v", err)
+		d.VAD, impl["vad"], err = nil, "", nil
+	}
+
 	if cfg.Bool("input.wake_word") {
-		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), devFakes); err != nil {
+		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), nil, devFakes); err != nil {
 			return d, nil, err
 		}
 	} else {
 		impl["wake"] = ""
 	}
-	if d.TTS, impl["tts"], err = pick(speech.TTSs, name(cfg.String("speech.tts.engine")), devFakes); err != nil {
+	if d.TTS, impl["tts"], err = pick(speech.TTSs, name(cfg.String("speech.tts.engine")), nil, devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), devFakes); err != nil {
+	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), devFakes); err != nil {
+	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), nil, devFakes); err != nil {
 		return d, nil, err
 	}
 
@@ -262,7 +311,7 @@ func wire(cfg *config.Config, devFakes, fakesOnly bool) (core.Deps, map[string]s
 		names     []string
 	}{
 		{"platform", "platform " + runtime.GOOS, platform.Platforms.Names()},
-		{"stt", "speech-to-text engine " + cfg.String("speech.stt.engine"), speech.STTs.Names()},
+		{"stt", sttWhat, speech.STTs.Names()},
 	} {
 		if impl[area.key] == "" {
 			return d, nil, fmt.Errorf("this build has no %s (registered: %v); "+
@@ -275,19 +324,23 @@ func wire(cfg *config.Config, devFakes, fakesOnly bool) (core.Deps, map[string]s
 // pick builds the implementation registered as want, or the fake when want
 // is not registered and devFakes is set. It returns the zero T and "" when
 // neither is available.
-func pick[T any](reg *registry.Registry[T], want string, devFakes bool) (T, string, error) {
+func pick[T any](reg *registry.Registry[T], want string, opts registry.Config, devFakes bool) (T, string, error) {
 	name := ""
 	switch {
 	case want != "" && reg.Has(want):
 		name = want
 	case devFakes && reg.Has(fakeName):
-		name = fakeName
+		name, opts = fakeName, nil
 	default:
 		var zero T
 		return zero, "", nil
 	}
-	v, err := reg.New(name, nil)
-	return v, name, err
+	v, err := reg.New(name, opts)
+	if err != nil {
+		var zero T
+		return zero, "", err
+	}
+	return v, name, nil
 }
 
 func fakedAreas(impl map[string]string) []string {
