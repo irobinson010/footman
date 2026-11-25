@@ -21,8 +21,31 @@ func startBus(t *testing.T) string {
 	if err != nil {
 		t.Skip("dbus-daemon is not installed; skipping the private-session-bus test")
 	}
-	sock := filepath.Join(t.TempDir(), "bus")
-	cmd := exec.Command(path, "--session", "--nofork", "--print-address=1", "--address=unix:path="+sock)
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "bus")
+	// A minimal config instead of --session: the stock session config adds the
+	// standard service directories, so on a desktop machine the bus would
+	// auto-start the real notification daemon or keyring and the "no server"
+	// tests would hang until the activation timeout.
+	conf := filepath.Join(dir, "bus.conf")
+	const busConf = `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>%LISTEN%</listen>
+  <keep_umask/>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+`
+	if err := os.WriteFile(conf, []byte(strings.Replace(busConf, "%LISTEN%", "unix:path="+sock, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(path, "--config-file="+conf, "--nofork", "--print-address=1")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
