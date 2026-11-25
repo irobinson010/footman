@@ -53,8 +53,14 @@ build() {
     whispercpp-vulkan) build_whisper vulkan ;;
     nocgo)   (cd "$root" && CGO_ENABLED=0 go build -o bin/stt-bench-nocgo .) ;;
     all-linux) build nocgo; build sherpa; build whispercpp-cpu
-               command -v nvcc >/dev/null && build whispercpp-cuda || echo "skip cuda: no nvcc"
-               [[ -f /usr/include/vulkan/vulkan.h ]] && command -v glslc >/dev/null && build whispercpp-vulkan || echo "skip vulkan: no vulkan headers or glslc" ;;
+               # Plain if/else: inside `a && b || c` bash ignores set -e, so a failed
+               # build would fall through and still print "built".
+               if command -v nvcc >/dev/null; then build whispercpp-cuda; else echo "skip cuda: no nvcc"; fi
+               if [[ -f /usr/include/vulkan/vulkan.h ]] && command -v glslc >/dev/null; then
+                 build whispercpp-vulkan
+               else
+                 echo "skip vulkan: no vulkan headers or glslc"
+               fi ;;
     *) echo "unknown target $1" >&2; exit 2 ;;
   esac
 }
