@@ -1,6 +1,6 @@
 # 0016. Break-glass stop
 
-- Status: Accepted
+- Status: Superseded by 0017
 - Date: 2026-11-24
 
 ## Context

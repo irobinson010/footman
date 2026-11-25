@@ -19,4 +19,6 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0013](0013-tts-distill-big-into-small.md) | TTS: distill big voices into small models | Proposed |
 | [0014](0014-web-ui-plain-html.md) | Web UI in plain HTML | Accepted |
 | [0015](0015-security-confirmations-and-untrusted-content.md) | Security: confirmations and untrusted content | Accepted |
-| [0016](0016-break-glass-stop.md) | Break-glass stop | Accepted |
+| [0016](0016-break-glass-stop.md) | Break-glass stop | Superseded by 0017 |
+| [0017](0017-break-glass-stop-requires-wake-word.md) | Break-glass stop requires the wake word | Accepted |
+| [0018](0018-local-api-json-rpc.md) | Local API: JSON-RPC over socket and WebSocket, public and versioned | Accepted |

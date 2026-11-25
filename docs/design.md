@@ -681,8 +681,8 @@ Anything that enters the AI's context from outside (web pages, messages, emails,
 ### Action log
 Append-only. Each entry records: **who** (recognized speaker), **what** (tool and arguments, with secrets redacted), **result**, **how it was confirmed**, and **why** (the request that led to it).
 
-### Break-glass stop (ADR-0016)
-A dedicated phrase ("stop everything" / "cancel everything") **always works, even without the wake word**. It is spotted on the device at all times. A hotkey and the tray icon do the same. All three cancel every job, stop speech, and mute the mic. A false trigger only cancels and mutes, which is the safe direction.
+### Break-glass stop (ADR-0017)
+"Alfred, stop everything" or "Alfred, cancel everything" (**wake word required**, so saying "stop everything" to someone on a call does nothing). It is handled first, ahead of everything else, so it always works instantly. A hotkey and the tray icon do the same without the wake word. All three cancel every job, stop speech, and mute the mic.
 
 ### Guests
 Once the owner clicks to allow a guest, the guest can do read-level and harmless actions (questions, weather, music, opening a page). Anything that changes, deletes, or sends still needs the owner's click. The permission lasts until the end of the day. The owner can save a guest as a named regular ("always allow").
@@ -690,8 +690,63 @@ Once the owner clicks to allow a guest, the guest can do read-level and harmless
 ### Updates
 Releases are signed (checksums plus a signature). Footman *notifies* you about updates and installs one only when asked ("Alfred, update yourself"). It never updates silently.
 
-## 30. Open areas (next)
+## 30. Local API (ADR-0018)
 
-- [ ] Local API: endpoints, event stream format, authentication.
-- [ ] TTS bake-off plan.
+- **JSON-RPC 2.0** everywhere: the CLI over the Unix socket (named pipe on Windows); the web UI, phone, and third-party clients over a **WebSocket**.
+- **Events** (pipeline state, job progress, confirmations needed, transcripts) are pushed as JSON-RPC notifications on the same connection. Clients subscribe by topic.
+- **Client audio** is designed in now: a client can open an audio session and stream mic frames as binary WebSocket messages. This will be implemented in the phone phase.
+- **Public, versioned API (`v1`)**, documented for third-party clients and marked experimental until Footman 1.0.
+- Authentication is per §29 (socket file permissions; token plus Origin/Host checks for HTTP; per-device tokens for remote access).
+
+Method groups (sketch):
+| Group | Examples |
+|---|---|
+| `status.*` | `status.get` |
+| `events.*` | `events.subscribe`, `events.unsubscribe` |
+| `say.*` | `say.text` (send a command as text), `say.audio.start` / `say.audio.end` |
+| `jobs.*` | `jobs.list`, `jobs.get`, `jobs.cancel` |
+| `confirm.*` | `confirm.list`, `confirm.answer` |
+| `config.*` | `config.get`, `config.set`, `config.schema` |
+| `plugins.*` / `personas.*` | `list`, `install`, `remove`, `enable` |
+| `history.*` / `memory.*` | `list`, `search`, `delete` |
+| `system.*` | `system.stop_everything`, `system.update` |
+
+## 31. TTS bake-off plan
+
+**Goal:** choose the small runtime voice model (ADR-0013) and confirm the dataset pipeline works.
+
+**What Troupe already taught us** (its `spikes/engine-audition`, `tts-bakeoff`, `voice-design-studio`):
+- IndexTTS-2.5 (RTF ≈ 0.43, peak ≈ 12.7 GB VRAM), VoxCPM2 (≈ 0.52, ≈ 14.6 GB), and Fish S2 Pro q6_k (≈ 1.2, ≈ 13 GB) are all too heavy for Footman's runtime, but **good dataset generators**.
+- "Shift then clone" (pitch/formant-shift a real clip, then clone it) beat pure text design in the owner's blind test. Pure text design tends to produce a different-sounding person.
+- Qwen3-TTS Base cloning fell into repetition, so it isn't used.
+- Troupe has blind-listening tooling (`troupe.listening`) and a voice analyzer (speaker embeddings, accent, pitch) that we can reuse.
+
+**Steps**
+1. **Source voice:** design Ashford (ElevenLabs Voice Design or Resonance Lab), and keep about a minute of reference audio.
+2. **Dataset:** a phonetically balanced script of about 1,500–3,000 sentences, rendered by Troupe with IndexTTS-2.5 or VoxCPM2 overnight. ASR-verify every line, and drop lines that fail or drift (Troupe's voice-drift check).
+3. **Train the candidates** on the same dataset:
+   - **Kokoro / StyleTTS2** fine-tune.
+   - **Piper** (VITS) fine-tune from a base checkpoint.
+   - Optional: any small model Troupe finds promising in the meantime.
+4. **Measure** on three machines:
+   - RTX 4080 GPU.
+   - Ryzen 9 7900X, CPU only.
+   - **ASUS ZenBook (Windows)**: the integrated-GPU and low-power reference.
+5. **Listen:** a blind A/B web page (reusing Troupe's listening tooling) compares each candidate with the reference clips. The owner listens first; friends later.
+
+**Pass bar**
+| Metric | Target |
+|---|---|
+| Time to first audio | < 300 ms GPU, < 600 ms CPU |
+| Real-time factor | < 0.3 on CPU |
+| Blind preference vs. reference | Candidate chosen ≥ 35% of the time |
+| Size | Voice model ≤ ~350 MB |
+
+**Licensing gate:** check the licenses of every source (ElevenLabs terms on using its outputs, and the IndexTTS-2.5, VoxCPM2, and S2 Pro weights) before any trained voice ships publicly. Personal use isn't blocked.
+
+## 32. Open areas (next)
+
+- [ ] ZenBook hardware details for the bake-off (CPU / GPU / NPU).
+- [ ] Trademark search for "Footman" before public launch.
+
 
