@@ -529,6 +529,8 @@ quips   = ["I shall add it to my list of grievances."]
 | **Pettigrew** | An eager, slightly hapless valet (the comic one). |
 | **Lucy** | A calm, precise AI assistant. |
 
+**Klaus at launch:** speaks **English with a German accent and manner**, with an occasional German word ("Jawohl, Herr Ian"). A German-language Klaus comes with German language support later.
+
 ### Voice-creation workflow (voice kit, optional, phase 5)
 1. **Source:** a description (ElevenLabs voice design), Troupe / Resonance Lab, or the user's own recordings with consent.
 2. **Dataset:** generate 1–3 h of speech from a balanced script (about 1,500–3,000 sentences).
@@ -629,9 +631,64 @@ url = "https://troupe.example.com:8443"
 token = "keychain:plugin.troupe.token"
 ```
 
-## 29. Open areas (next)
+**Profiles (phase 4):** named sets of settings you can switch between by voice ("Alfred, work mode"), for example work, home, and gaming.
+
+## 29. Security model (draft)
+
+### Threats we design for
+| Threat | Example |
+|---|---|
+| Someone else speaking | A coworker, a guest, a kid. |
+| Played-back audio | A TV, a video, or a speakerphone saying "Alfred, delete…". |
+| Prompt injection | A web page, email, Teams message, or file the AI reads that says "ignore your instructions and…". |
+| Malicious plugin or persona pack | A plugin that reads files it shouldn't; a persona style prompt carrying instructions. |
+| Other local processes and users | Another program or user calling the local API. |
+| Network attackers | Once remote or phone access is enabled. |
+
+### Who is speaking (speaker recognition)
+- **Setup enrolls the owner's voice** with a short sample, using an on-device speaker-recognition model (sherpa-onnx speaker embeddings).
+- **An unknown voice gets asked about:** "Should I allow this person?" Someone must **physically click yes** on screen; a voice "yes" doesn't count.
+- An allowed guest gets a limited permission level for a limited time (see open questions).
+- Until speaker recognition ships, every voice is treated as the owner, and the click-to-confirm rules below are the safety net.
+
+### Confirmations
+| Action | How it's confirmed |
+|---|---|
+| Read | No confirmation. |
+| Act | Per config (default: none). |
+| Destructive or outward | Voice "yes" or a click (per config). |
+| **Security-sensitive changes**: loosening permissions, what the AI may see, enabling remote access, granting plugin permissions, allowing a new speaker | **A physical click only.** Voice never counts, because voice can be spoofed or played back. Tightening security takes effect immediately by voice. |
+
+A click is a desktop notification action or a web UI button (later, a paired phone).
+
+### Untrusted content rule
+Anything that enters the AI's context from outside (web pages, messages, emails, file contents, plugin output) is **untrusted data**. Once untrusted content is in the current task's context, **every outward or destructive action in that task needs confirmation**, whatever the config says. The confirmation shows exactly what will be sent or deleted. This blocks the common "the email told the AI to forward your files" attack without tracking content in detail.
+
+### Local API
+- **Unix socket** with user-only file permissions (0600).
+- **HTTP** binds to 127.0.0.1 only and requires a token (set as a cookie by `footman open`). It checks Host and Origin headers to block web pages from calling it (CSRF / DNS rebinding).
+- **Remote and phone access (later):** pairing by QR code, one revocable token per device, and only over a tunnel or private network.
+
+### Plugins and workers
+- **Sandbox (Linux: bubblewrap).** File access is limited to the manifest's paths plus the plugin's data folder. Network is on or off. Per-host filtering through a local proxy comes later.
+- **Plugins never see the user's secrets** except the ones in their own config, injected at start.
+- **Worker agents** (Claude Code, Codex) run in a git worktree with restricted permission settings that Footman passes in.
+
+### Secrets and privacy
+- API keys live in the OS keychain, are never sent to the AI, and are redacted from logs, transcripts, and the action log.
+- Wake-word and speaker detection run on the device. **Audio is not stored by default.** A tray icon always shows whether the mic is off, listening for the wake word, or recording.
+
+### Action log
+Append-only. Each entry records: **who** (recognized speaker), **what** (tool and arguments, with secrets redacted), **result**, **how it was confirmed**, and **why** (the request that led to it).
+
+### Emergency stop
+"Alfred, stop" or "cancel everything", a hotkey, or the tray icon cancels all jobs, stops speech, and mutes the mic.
+
+### Updates
+Releases are signed (checksums plus a signature). Footman *notifies* you about updates and installs one only when asked ("Alfred, update yourself"). It never updates silently.
+
+## 30. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
-- [ ] Security model details.
 - [ ] TTS bake-off plan.
 
