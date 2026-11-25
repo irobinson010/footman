@@ -202,6 +202,29 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 		step("hotkey       push-to-talk on %s", hotkey)
 	}
 
+	// Desktop integration: the files that name Footman to the desktop, and
+	// the push-to-talk key bound to exactly the key the user chose.
+	if is, ok := o.Platform.Input().(platform.InputSetup); ok {
+		if o.Binary != "" {
+			files, err := is.SetupInput(ctx, o.Binary)
+			for _, f := range files.Program {
+				rec.Add(Entry{Kind: KindFile, Group: GroupProgram, Path: f})
+			}
+			for _, f := range files.State {
+				rec.Add(Entry{Kind: KindFile, Group: GroupData, Path: f})
+			}
+			if err != nil {
+				return res, fmt.Errorf("desktop integration: %w", err)
+			}
+			for _, f := range files.Program {
+				step("desktop      %s", f)
+			}
+		}
+		if hotkey != "" {
+			step("%s", bindLine(ctx, is, hotkey))
+		}
+	}
+
 	db := filepath.Join(paths.Data(), DatabaseFile)
 	st, err := store.Open(ctx, db)
 	if err != nil {
@@ -241,4 +264,22 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 		step("service      %s installed and enabled", ServiceName)
 	}
 	return res, nil
+}
+
+// bindLine binds the push-to-talk key with the desktop and describes the
+// result. Failing to bind does not fail setup: the service binds the key
+// again when it starts, and the user can set it in the desktop's settings.
+func bindLine(ctx context.Context, is platform.InputSetup, hotkey string) string {
+	got, err := is.BindHotkeys(ctx, []string{hotkey})
+	switch {
+	case errors.Is(err, platform.ErrUnsupported):
+		return fmt.Sprintf("hotkey       %s not bound: this desktop has no global shortcut service", hotkey)
+	case err != nil:
+		return fmt.Sprintf("hotkey       %s not bound: %v", hotkey, err)
+	case len(got) == 0 || got[0].Trigger == "":
+		return fmt.Sprintf("hotkey       %s has no key yet: set it in the desktop's shortcut settings (Footman)", hotkey)
+	case got[0].Trigger != hotkey:
+		return fmt.Sprintf("hotkey       %s is bound to %s by the desktop", hotkey, got[0].Trigger)
+	}
+	return fmt.Sprintf("hotkey       %s bound with the desktop", hotkey)
 }

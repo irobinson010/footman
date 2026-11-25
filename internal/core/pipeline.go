@@ -44,8 +44,9 @@ type Deps struct {
 	// Worker runs long tasks in the background. Nil means the AI is not
 	// offered the start_task tool.
 	Worker jobs.Worker
-	// Layout decides what auto insertion can type (default
-	// dictation.ASCIILayout).
+	// Layout decides what auto insertion can type. Nil means the platform
+	// Input's own check when it has one (on Linux, the compositor's keymap),
+	// else dictation.ASCIILayout.
 	Layout dictation.Layout
 	// Gate decides whether a tool call may run (default DefaultGate).
 	Gate Gate
@@ -117,7 +118,11 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 		return nil, errors.New("core: Bus, Platform and STT are required")
 	}
 	if d.Layout == nil {
-		d.Layout = dictation.ASCIILayout{}
+		if l, ok := d.Platform.Input().(dictation.Layout); ok {
+			d.Layout = l
+		} else {
+			d.Layout = dictation.ASCIILayout{}
+		}
 	}
 	if d.Gate == nil {
 		d.Gate = DefaultGate{}

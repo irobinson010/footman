@@ -195,6 +195,45 @@ func TestDictationEndToEnd(t *testing.T) {
 	}
 }
 
+// layoutInput is a fake Input that knows the keyboard layout
+// (dictation.Layout), like the Linux one.
+type layoutInput struct {
+	*pfake.Input
+	typeable func(string) bool
+}
+
+func (l layoutInput) Typeable(s string) bool { return l.typeable(s) }
+
+type layoutPlatform struct {
+	*pfake.Platform
+	in layoutInput
+}
+
+func (p layoutPlatform) Input() platform.Input { return p.in }
+
+// Auto insertion asks the platform's Input which text the layout can type,
+// instead of assuming ASCII.
+func TestAutoInsertUsesPlatformLayout(t *testing.T) {
+	var asked []string
+	var lp layoutPlatform
+	r := newRig(t, func(d *core.Deps, _ *core.Config) {
+		lp = layoutPlatform{Platform: d.Platform.(*pfake.Platform)}
+		lp.in = layoutInput{Input: lp.Platform.Input().(*pfake.Input), typeable: func(s string) bool {
+			asked = append(asked, s)
+			return true // say, a French layout: é is on it
+		}}
+		d.Platform = lp
+	})
+	r.p.Arm(core.TriggerDictate)
+	r.say(2)
+	r.transcript("café au lait")
+	if err := r.p.Run(r.ctx()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	equal(t, "typed", lp.in.Typed(), []string{"café au lait"})
+	equal(t, "asked", asked, []string{"café au lait"})
+}
+
 // The dictation hotkey always means dictation; text with a line break is
 // pasted (ADR-0022).
 func TestDictationHotkeyPastesMultiline(t *testing.T) {
