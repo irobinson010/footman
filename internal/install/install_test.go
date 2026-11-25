@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -559,7 +560,7 @@ func TestPrompter(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := install.SetupOptions{Name: "Ian", Persona: "ashford", Provider: "openai", APIKey: "sk-x", Hotkey: "F9"}
-		if o != want {
+		if !reflect.DeepEqual(o, want) { // SetupOptions has func fields
 			t.Errorf("got %+v, want %+v", o, want)
 		}
 		if strings.Contains(out.String(), "sk-x") {
@@ -610,4 +611,93 @@ func TestPrompter(t *testing.T) {
 			t.Errorf("ok=%v err=%v o=%+v\n%s", ok, err, o, out.String())
 		}
 	})
+}
+
+// speechStep stands in for the speech part of setup: it downloads a "model"
+// and a cache folder, recording them as it goes.
+func (e *env) speechStep(sawService *bool) func(context.Context, install.SpeechEnv) error {
+	return func(_ context.Context, se install.SpeechEnv) error {
+		*sawService = e.service()
+		models := filepath.Join(se.DataDir, "models")
+		model := filepath.Join(models, "m.bin")
+		if err := se.Record(install.Entry{Kind: install.KindDir, Group: install.GroupModels, Path: models}); err != nil {
+			return err
+		}
+		if err := se.Record(install.Entry{Kind: install.KindModel, Group: install.GroupModels, Path: model, Name: "m"}); err != nil {
+			return err
+		}
+		e.write(model, "weights")
+		if err := se.Record(install.Entry{Kind: install.KindDir, Group: install.GroupCache, Path: se.CacheDir}); err != nil {
+			return err
+		}
+		cache := filepath.Join(se.CacheDir, "vulkan")
+		if err := se.Record(install.Entry{Kind: install.KindTree, Group: install.GroupCache, Path: cache}); err != nil {
+			return err
+		}
+		e.write(filepath.Join(cache, "shader"), "compiled")
+		se.Step("speech       fetched m")
+		return nil
+	}
+}
+
+func TestSetupSpeechStepRunsBeforeTheServiceAndUninstallRemovesItsFiles(t *testing.T) {
+	e := newEnv(t)
+	before := e.snapshot()
+	var sawService bool
+	var out bytes.Buffer
+	o := fullSetup()
+	o.Speech = e.speechStep(&sawService)
+	o.Out = &out
+	res := e.setup(o)
+	if sawService {
+		t.Error("the service was installed before the models were fetched")
+	}
+	if !e.service() {
+		t.Error("service not installed after the speech step")
+	}
+	if !strings.Contains(out.String(), "speech       fetched m\n") || !strings.Contains(strings.Join(res.Lines, "\n"), "fetched m") {
+		t.Errorf("progress not streamed: out=%q lines=%v", out.String(), res.Lines)
+	}
+	if _, err := install.Uninstall(ctx, install.UninstallOptions{Platform: e.p, Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if d := diff(before, e.snapshot()); len(d) != 0 {
+		t.Errorf("tree differs after purge:\n%s", strings.Join(d, "\n"))
+	}
+}
+
+func TestSetupSkipModels(t *testing.T) {
+	e := newEnv(t)
+	o := fullSetup()
+	o.SkipModels = true
+	o.Speech = func(context.Context, install.SpeechEnv) error {
+		t.Error("speech step ran with SkipModels")
+		return nil
+	}
+	res := e.setup(o)
+	if !strings.Contains(strings.Join(res.Lines, "\n"), "--skip-models") || !e.service() {
+		t.Errorf("lines %v service %v", res.Lines, e.service())
+	}
+}
+
+func TestSetupSpeechFailureKeepsTheReceiptAndSkipsTheService(t *testing.T) {
+	e := newEnv(t)
+	o := fullSetup()
+	o.Platform = e.p
+	o.Speech = func(_ context.Context, se install.SpeechEnv) error {
+		if err := se.Record(install.Entry{Kind: install.KindDir, Group: install.GroupModels, Path: filepath.Join(se.DataDir, "models")}); err != nil {
+			return err
+		}
+		return errors.New("no route to host")
+	}
+	_, err := install.Setup(ctx, o)
+	if err == nil || !strings.Contains(err.Error(), "no route to host") {
+		t.Fatalf("err = %v", err)
+	}
+	if e.service() {
+		t.Error("service installed although models are missing")
+	}
+	if _, err := install.LoadReceipt(install.ReceiptPath(e.paths())); err != nil {
+		t.Errorf("receipt: %v", err)
+	}
 }

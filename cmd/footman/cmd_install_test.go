@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/irobinson010/footman/internal/install"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/platform/fake"
 	"github.com/irobinson010/footman/internal/registry"
@@ -29,8 +31,13 @@ func installEnv(t *testing.T, input string) (home string, p *fake.Platform) {
 	if err := os.WriteFile(exe, []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	oldIn, oldExe, oldPlat := stdin, executable, newPlatform
-	t.Cleanup(func() { stdin, executable, newPlatform = oldIn, oldExe, oldPlat })
+	oldIn, oldExe, oldPlat, oldSpeech := stdin, executable, newPlatform, speechStep
+	t.Cleanup(func() { stdin, executable, newPlatform, speechStep = oldIn, oldExe, oldPlat, oldSpeech })
+	// Tests never download models or touch the GPU (a -tags native build
+	// would); the speech step has its own tests.
+	speechStep = func(io.Writer) func(context.Context, install.SpeechEnv) error {
+		return func(context.Context, install.SpeechEnv) error { return nil }
+	}
 	stdin = strings.NewReader(input)
 	executable = func() (string, error) { return exe, nil }
 	newPlatform = func() (platform.Platform, error) { return p, nil }
@@ -109,4 +116,45 @@ func TestSetupFlagErrors(t *testing.T) {
 	if code, _, _ := runCmd("setup", "extra"); code != 2 {
 		t.Errorf("extra arg = %d", code)
 	}
+}
+
+func TestSetupSpeechStep(t *testing.T) {
+	t.Run("runs by default and its lines print as they happen", func(t *testing.T) {
+		installEnv(t, "")
+		var ran bool
+		speechStep = func(io.Writer) func(context.Context, install.SpeechEnv) error {
+			return func(_ context.Context, se install.SpeechEnv) error {
+				ran = true
+				se.Step("speech       warming up")
+				return nil
+			}
+		}
+		code, out, errs := runCmd("setup", "--non-interactive")
+		if code != 0 || !ran || strings.Count(out, "speech       warming up") != 1 {
+			t.Fatalf("setup = %d ran=%v\n%s%s", code, ran, out, errs)
+		}
+	})
+	t.Run("--skip-models skips it", func(t *testing.T) {
+		installEnv(t, "")
+		speechStep = func(io.Writer) func(context.Context, install.SpeechEnv) error {
+			return func(context.Context, install.SpeechEnv) error { t.Error("speech step ran"); return nil }
+		}
+		code, out, errs := runCmd("setup", "--non-interactive", "--skip-models")
+		if code != 0 || !strings.Contains(out, "skipped (--skip-models)") {
+			t.Fatalf("setup = %d\n%s%s", code, out, errs)
+		}
+	})
+	t.Run("a failed download fails setup and names the fix", func(t *testing.T) {
+		_, p := installEnv(t, "")
+		speechStep = func(io.Writer) func(context.Context, install.SpeechEnv) error {
+			return func(context.Context, install.SpeechEnv) error { return io.ErrUnexpectedEOF }
+		}
+		code, _, errs := runCmd("setup", "--non-interactive")
+		if code != 1 || !strings.Contains(errs, "speech models") {
+			t.Fatalf("setup = %d %s", code, errs)
+		}
+		if ok, _ := p.Service().Installed(context.Background()); ok {
+			t.Error("service installed with no models")
+		}
+	})
 }

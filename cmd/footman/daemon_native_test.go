@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/irobinson010/footman/internal/api"
+	"github.com/irobinson010/footman/internal/install"
+	"github.com/irobinson010/footman/internal/speech/accel"
 	"github.com/irobinson010/footman/internal/speech/speechtest"
 )
 
@@ -114,4 +117,100 @@ func envOr(name, def string) string {
 		return v
 	}
 	return def
+}
+
+// TestDaemonUnloadsAndReloadsEngines runs speech.unload_after against the
+// real engines (ADR-0028): after the idle time the whisper.cpp model is
+// freed and `footman status` says so; the next transcription loads it again
+// and still gets the right text.
+func TestDaemonUnloadsAndReloadsEngines(t *testing.T) {
+	models := speechtest.ModelsDir(t, "silero-vad", "whisper-tiny.en")
+	d := startDaemonWith(t, func(o *daemonOptions) {
+		o.realSpeech = true
+		o.modelsDir = models
+		o.cacheDir = t.TempDir()
+		cfg := "[input]\nwake_word = false\n[speech]\nunload_after = \"1s\"\n[speech.stt]\nengine = \"whispercpp\"\nmodel = \"whisper-tiny.en\"\naccelerator = \"cpu\"\n"
+		if err := os.MkdirAll(filepath.Dir(o.configPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(o.configPath, []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	state := func() api.ModelState {
+		t.Helper()
+		_, out, _ := d.cli(t, "status", "--json")
+		var s api.StatusResult
+		if err := json.Unmarshal([]byte(out), &s); err != nil {
+			t.Fatalf("status: %v: %s", err, out)
+		}
+		for _, m := range s.Models.Models {
+			if m.Name == "stt" {
+				return m
+			}
+		}
+		t.Fatalf("no stt model in status: %s", out)
+		return api.ModelState{}
+	}
+	transcribe := func() string {
+		t.Helper()
+		code, out, errOut := d.cli(t, "transcribe", "--json", speechtest.ClipPath(t))
+		if code != 0 {
+			t.Fatalf("footman transcribe = %d: %s", code, errOut)
+		}
+		var r api.TranscribeResult
+		if err := json.Unmarshal([]byte(out), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.Text
+	}
+	if m := state(); !m.Loaded || m.Engine != "whispercpp" {
+		t.Fatalf("at start: %+v", m)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for state().Loaded {
+		if time.Now().After(deadline) {
+			t.Fatal("stt was not unloaded after the idle time")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if w := speechtest.WER(speechtest.Reference, transcribe()); w > 0.2 {
+		t.Errorf("word error rate %.0f%% after reload", 100*w)
+	}
+	if m := state(); m.Loads < 2 {
+		t.Errorf("after use: %+v, want a reload", m)
+	}
+}
+
+// TestSetupSpeechStepWithRealEngines runs the speech step of `footman setup`
+// against the engines in this build, with the models already in place, so it
+// must not need the network. The machine is pretended to have no GPU, so the
+// CPU engine is chosen and nothing is benchmarked.
+func TestSetupSpeechStepWithRealEngines(t *testing.T) {
+	models := speechtest.ModelsDir(t, "silero-vad", "whisper-tiny.en")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := "version = 1\n[speech.stt]\nengine = \"whispercpp\"\nmodel = \"whisper-tiny.en\"\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var steps, recorded []string
+	se := install.SpeechEnv{
+		ConfigPath: cfgPath, DataDir: dir, CacheDir: filepath.Join(dir, "cache"),
+		Step:   func(f string, a ...any) { steps = append(steps, fmt.Sprintf(f, a...)) },
+		Record: func(e install.Entry) error { recorded = append(recorded, string(e.Kind)+" "+e.Name); return nil },
+	}
+	hw := accel.Hardware{RAM: 16 << 30, CPUs: 4}
+	if err := runSpeechSetup(t.Context(), se, speechDirs{models: models, cache: se.CacheDir}, hw, accel.Engines(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	log := strings.Join(steps, "\n")
+	for _, want := range []string{"whispercpp whisper-tiny.en on cpu", "whisper-tiny.en already downloaded", "silero-vad already downloaded"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("progress lacks %q:\n%s", want, log)
+		}
+	}
+	if got := strings.Join(recorded, ","); !strings.Contains(got, "model whisper-tiny.en") || !strings.Contains(got, "model silero-vad") {
+		t.Errorf("receipt entries: %s", got)
+	}
 }

@@ -44,6 +44,9 @@ type Deps struct {
 	// Nil means none.
 	STT speech.STT
 	VAD speech.VAD
+	// Models, if set, reports which speech models are loaded, for
+	// status.get.
+	Models func() ModelsStatus
 	// Now is the clock for uptime (default time.Now).
 	Now func() time.Time
 }
@@ -95,6 +98,31 @@ type StatusResult struct {
 	Implementations map[string]string `json:"implementations"`
 	Socket          string            `json:"socket"`
 	Config          string            `json:"config"`
+	// Models says whether each speech model is in memory (ADR-0028).
+	Models ModelsStatus `json:"models"`
+}
+
+// ModelsStatus is the state of the speech models that unload when idle.
+type ModelsStatus struct {
+	// UnloadAfter is speech.unload_after as a duration, such as "10m0s";
+	// "0s" means models are never unloaded.
+	UnloadAfter string `json:"unload_after"`
+	// Models has one entry per speech model: stt, vad and tts.
+	Models []ModelState `json:"models"`
+}
+
+// ModelState is one speech model.
+type ModelState struct {
+	Name   string `json:"name"`
+	Engine string `json:"engine"`
+	// Loaded is true while the model is in memory.
+	Loaded bool `json:"loaded"`
+	// Since is when it was last loaded or unloaded.
+	Since time.Time `json:"since"`
+	// Loads counts loads, the first one included.
+	Loads int `json:"loads"`
+	// InUse is how many callers hold it right now.
+	InUse int `json:"in_use"`
 }
 
 func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage) (any, error) {
@@ -110,7 +138,15 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 	if jobs == nil {
 		jobs = []string{}
 	}
+	models := ModelsStatus{Models: []ModelState{}}
+	if m.d.Models != nil {
+		models = m.d.Models()
+		if models.Models == nil {
+			models.Models = []ModelState{}
+		}
+	}
 	return StatusResult{
+		Models:          models,
 		Version:         m.d.Info.Version,
 		API:             APIVersion,
 		PID:             os.Getpid(),
