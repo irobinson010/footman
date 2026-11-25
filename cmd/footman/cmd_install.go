@@ -17,6 +17,15 @@ import (
 	"github.com/irobinson010/footman/internal/platform"
 )
 
+func init() {
+	register(command{name: "setup", summary: "install the service and write the first config", run: func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+		return cmdSetup(args, stdout, stderr)
+	}})
+	register(command{name: "uninstall", summary: "remove everything footman installed", run: func(_ context.Context, args []string, stdout, stderr io.Writer) int {
+		return cmdUninstall(args, stdout, stderr)
+	}})
+}
+
 // Seams for tests: the input, the platform and the path of the running program.
 var (
 	stdin       io.Reader = os.Stdin
