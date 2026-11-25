@@ -1,0 +1,27 @@
+# Binaries and build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local environment
+.env
+*.local
+
+# Python (voicekit)
+__pycache__/
+.venv/
+
+# Claude Code local worktrees
+.claude/worktrees/
