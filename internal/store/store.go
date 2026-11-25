@@ -172,7 +172,7 @@ func (s *Store) RecentHistory(ctx context.Context, kind string, limit int) ([]Hi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []HistoryEntry
 	for rows.Next() {
 		var e HistoryEntry
@@ -248,7 +248,7 @@ func (s *Store) ListJobs(ctx context.Context, status string) ([]Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Job
 	for rows.Next() {
 		var j Job
@@ -298,7 +298,7 @@ func (s *Store) RecentActions(ctx context.Context, limit int) ([]ActionEntry, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []ActionEntry
 	for rows.Next() {
 		var e ActionEntry
@@ -393,7 +393,7 @@ func (s *Store) Facts(ctx context.Context) ([]Fact, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Fact
 	for rows.Next() {
 		var f Fact

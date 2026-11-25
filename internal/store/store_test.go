@@ -35,7 +35,7 @@ func TestMigrateIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	var n int
 	_ = s2.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n)
 	if n != 1 {
