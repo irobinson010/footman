@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/irobinson010/footman/internal/api"
+	"github.com/irobinson010/footman/internal/core"
 )
 
 func init() {
@@ -79,10 +80,7 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return fail(stderr, err)
 	}
-	mic := "on"
-	if s.Muted {
-		mic = "muted (after a stop)"
-	}
+	mic := micText(s)
 	jobs := "none"
 	if len(s.Jobs) > 0 {
 		jobs = strings.Join(s.Jobs, ", ")
@@ -107,6 +105,26 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	_, _ = fmt.Fprintf(stdout, "  socket:      %s\n", s.Socket)
 	_, _ = fmt.Fprintf(stdout, "  config:      %s\n", s.Config)
 	return 0
+}
+
+// micText describes the microphone loop for footman status. A stopped loop is
+// shown as stopped with the error that stopped it. A daemon too old to report
+// the loop's state gets the muted flag alone.
+func micText(s api.StatusResult) string {
+	switch s.Microphone.State {
+	case core.MicStopped:
+		return "stopped: " + s.Microphone.Error
+	case core.MicOff:
+		return "not in use"
+	case core.MicOn:
+		return "on"
+	case core.MicMuted:
+		return "muted (after a stop)"
+	}
+	if s.Muted {
+		return "muted (after a stop)"
+	}
+	return "on"
 }
 
 func cmdSay(ctx context.Context, args []string, stdout, stderr io.Writer) int {

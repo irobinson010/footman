@@ -281,6 +281,16 @@ func TestBusyAndStopEverything(t *testing.T) {
 	}
 }
 
+func TestStatusReportsMicrophone(t *testing.T) {
+	f := newFixture(t)
+	// The fixture never runs the microphone loop, so it is off.
+	var raw json.RawMessage
+	f.mustCall("status.get", nil, &raw)
+	if !strings.Contains(string(raw), `"microphone":{"state":"off"}`) {
+		t.Errorf("status = %s, want the microphone reported as off", raw)
+	}
+}
+
 func TestJobs(t *testing.T) {
 	f := newFixture(t)
 	f.worker.Queue(jobsfake.Outcome{Hold: true})

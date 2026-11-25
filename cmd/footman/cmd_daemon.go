@@ -96,6 +96,11 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	logf := func(format string, args ...any) { _, _ = fmt.Fprintf(logw, "footman daemon: "+format+"\n", args...) }
 	started := time.Now()
 
+	// Refuse a socket path the OS cannot bind before starting anything, so
+	// the microphone is not opened for a daemon that cannot serve.
+	if err := api.CheckSocketPath(o.socket); err != nil {
+		return err
+	}
 	cfg, err := config.Load(o.configPath)
 	if err != nil {
 		return err
