@@ -1,0 +1,80 @@
+version = 1
+
+[user]
+name = "Ian"
+language = "en"
+
+[personas]
+default = "ashford"
+listening = ["ashford"]          # more than one = several personas at once
+[personas.overrides.ashford]
+title = "Master"
+quips = "often"
+
+[input]
+dictate = { key = "Super+Space", mode = "toggle" }        # hold | toggle
+command = { key = "Super+Shift+Space", mode = "hold" }
+wake_word = true
+microphone = "default"
+
+[dictation]
+cleanup = "simple"               # off | simple | smart
+commands = "simple"              # off | simple | smart
+insert = "auto"                  # auto | type | paste
+
+[replies]
+speak = "when-voice"             # always | when-voice | never
+quiet_hours = "22:00-07:00"
+
+[speech]
+stt = { engine = "whisper-local", model = "auto", accelerator = "auto" }
+tts = { engine = "persona" }     # persona | elevenlabs | …
+unload_after = "10m"
+
+[ai]
+mode = "cloud"                   # cloud | local-first | offline
+provider = "claude"
+[ai.providers.claude]
+api_key = "keychain:claude"
+model = "claude-haiku-5-5"
+[ai.providers.ollama]
+url = "http://localhost:11434"
+model = "llama3.2"
+[ai.budget.claude]
+monthly_usd = 10
+warn_at = 0.8
+
+[context]                        # what the AI may see besides your words
+local = []                       # e.g. ["window_title", "clipboard", "selection"] or ["all"]
+cloud = []
+
+[memory]
+enabled = false
+
+[history]
+transcripts = true
+retention_days = 30
+
+[permissions]                    # auto | confirm | deny, per level
+read = "auto"
+act = "auto"
+destructive = "confirm"
+outward = "confirm"
+action_log = true
+action_log_retention_days = 90
+
+[jobs]
+max_concurrent = 2
+worker = "claude-code"           # builtin | claude-code | codex
+code_edits = { new_branch = true, show_diff = true }
+
+[coaching]
+enabled = false
+
+[web]
+listen = "127.0.0.1:7878"        # restart required
+
+[plugins.troupe]                 # one table per installed plugin, keys from its manifest schema
+enabled = true
+url = "https://troupe.example.com:8443"
+token = "keychain:plugin.troupe.token"

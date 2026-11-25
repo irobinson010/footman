@@ -1,0 +1,22 @@
+# My footman config. Keep this comment!
+[user]
+name = 'Old'      # single-quoted on purpose
+language = "en"
+
+# How replies are spoken
+[replies]
+speak = "when-voice"   # always | when-voice | never
+
+[input]
+# hotkeys
+dictate = { key = "Super+Space", mode = "hold" }   # inline
+command = { key = "Super+Shift+Space" }
+
+[personas]
+listening = [ "ashford" ]   # spaced array
+
+[history]
+transcripts = true
+
+[jobs]
+max_concurrent = 3

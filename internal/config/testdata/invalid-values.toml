@@ -1,0 +1,20 @@
+version = 1
+
+[dictation]
+cleanup = "loud"
+
+[jobs]
+max_concurrent = 0
+worker = 5
+
+[replies]
+quiet_hours = "late"
+
+[ai.providers.claude]
+api_key = "sk-not-allowed"
+
+[ai.budget.claude]
+warn_at = 1.5
+
+[web]
+listn = "x"
