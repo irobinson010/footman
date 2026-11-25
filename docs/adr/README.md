@@ -22,3 +22,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0016](0016-break-glass-stop.md) | Break-glass stop | Superseded by 0017 |
 | [0017](0017-break-glass-stop-requires-wake-word.md) | Break-glass stop requires the wake word | Accepted |
 | [0018](0018-local-api-json-rpc.md) | Local API: JSON-RPC over socket and WebSocket, public and versioned | Accepted |
+| [0019](0019-voice-source-licensing.md) | Voice source licensing | Accepted |
