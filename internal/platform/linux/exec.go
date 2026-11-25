@@ -85,5 +85,5 @@ func defaultRun(ctx context.Context, s runSpec) (runResult, error) {
 
 // unsupportedTool wraps a missing-tool error with platform.ErrUnsupported.
 func unsupportedTool(what, hint string, err error) error {
-	return fmt.Errorf("linux %s: %w (%v; %s)", what, platform.ErrUnsupported, err, hint)
+	return fmt.Errorf("linux %s: %w (%w; %s)", what, platform.ErrUnsupported, err, hint)
 }
