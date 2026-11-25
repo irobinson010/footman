@@ -731,7 +731,7 @@ Method groups (sketch):
 4. **Measure** on three machines:
    - RTX 4080 GPU.
    - Ryzen 9 7900X, CPU only.
-   - **ASUS ZenBook (Windows)**: the integrated-GPU and low-power reference.
+   - **ASUS ZenBook (Windows, Intel Core Ultra 7 155H: Arc iGPU + NPU)**: the integrated-GPU and low-power reference.
 5. **Listen:** a blind A/B web page (reusing Troupe's listening tooling) compares each candidate with the reference clips. The owner listens first; friends later.
 
 **Pass bar**
@@ -744,9 +744,12 @@ Method groups (sketch):
 
 **Licensing gate:** check the licenses of every source (ElevenLabs terms on using its outputs, and the IndexTTS-2.5, VoxCPM2, and S2 Pro weights) before any trained voice ships publicly. Personal use isn't blocked.
 
-## 32. Open areas (next)
+## 32. Planning
 
-- [ ] ZenBook hardware details for the bake-off (CPU / GPU / NPU).
+Work is tracked as **sprints = GitHub milestones** (Sprint 0–10; phases map onto them), task issues with `type:` / `status:` / `model:` labels, and the [Footman project board](https://github.com/users/irobinson010/projects/3). Each sprint has a plan in [`docs/sprints/`](sprints/). Future sprints have one epic issue that is broken into tasks at the previous sprint's wrap-up.
+
+## 33. Open areas (next)
+
 - [ ] Trademark search for "Footman" before public launch.
 
 
