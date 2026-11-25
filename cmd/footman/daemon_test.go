@@ -88,7 +88,14 @@ var startTimeout = 5 * time.Second
 // returns once it is accepting connections.
 func startDaemon(t *testing.T) *testDaemon {
 	t.Helper()
-	return startDaemonWith(t, nil)
+	if len(tweak) == 0 {
+		return startDaemonWith(t, nil)
+	}
+	return startDaemonWith(t, func(o *daemonOptions) {
+		for _, f := range tweak {
+			f(o)
+		}
+	})
 }
 
 // startDaemonWith is startDaemon with the options edited by edit (if not
