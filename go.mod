@@ -3,6 +3,7 @@ module github.com/irobinson010/footman
 go 1.26.0
 
 require (
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/pelletier/go-toml/v2 v2.4.3
 	modernc.org/sqlite v1.63.0
 )
