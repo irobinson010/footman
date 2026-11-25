@@ -1,6 +1,6 @@
 # Footman: Design
 
-Status: **draft**. This document records the design decisions made so far. Sections marked *TBD* are still open.
+Status: **draft**. This document describes the current design. **The reasons behind each decision are recorded as ADRs in [`docs/adr/`](adr/README.md)**; when a decision changes, a new ADR supersedes the old one and this document is updated. Sections marked *TBD* are still open.
 
 ## 1. What it is
 
@@ -681,8 +681,11 @@ Anything that enters the AI's context from outside (web pages, messages, emails,
 ### Action log
 Append-only. Each entry records: **who** (recognized speaker), **what** (tool and arguments, with secrets redacted), **result**, **how it was confirmed**, and **why** (the request that led to it).
 
-### Emergency stop
-"Alfred, stop" or "cancel everything", a hotkey, or the tray icon cancels all jobs, stops speech, and mutes the mic.
+### Break-glass stop (ADR-0016)
+A dedicated phrase ("stop everything" / "cancel everything") **always works, even without the wake word**. It is spotted on the device at all times. A hotkey and the tray icon do the same. All three cancel every job, stop speech, and mute the mic. A false trigger only cancels and mutes, which is the safe direction.
+
+### Guests
+Once the owner clicks to allow a guest, the guest can do read-level and harmless actions (questions, weather, music, opening a page). Anything that changes, deletes, or sends still needs the owner's click. The permission lasts until the end of the day. The owner can save a guest as a named regular ("always allow").
 
 ### Updates
 Releases are signed (checksums plus a signature). Footman *notifies* you about updates and installs one only when asked ("Alfred, update yourself"). It never updates silently.
