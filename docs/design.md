@@ -445,11 +445,89 @@ Annotations are hints from the plugin, so they can only be trusted as far as the
 - **Tool selection:** only the tools relevant to a request are sent to the AI (matched from plugin and tool descriptions), so many installed plugins don't bloat every prompt.
 - **Data:** each plugin gets its own data folder; removing a plugin asks whether to keep that folder.
 
-## 27. Open areas (next)
+### Decided
+- **Install by URL** to start. A community plugin index repo comes later.
+- **Event access** is allowed, but only with the explicit `events` permission approved at install.
+- **SDKs:** `sdk/go` plus a thin **Python helper** over the official MCP Python SDK (phase 3).
+
+## 27. Persona packs (draft)
+
+A persona pack is a folder (or a `.tar.zst` archive with a sha256), installed by URL just like plugins:
+
+```
+personas/ashford/
+  persona.toml
+  style.md               # personality prompt (spoken/chat replies only)
+  lines.en.toml          # acknowledgement / status / quip lines, one file per language
+  voice/ashford.onnx     # TTS voice for the local engine
+  wake/ashford.onnx      # optional custom wake-word model
+  clips/                 # optional pre-generated clips for lines without {address}
+```
+
+```toml
+[persona]
+id = "ashford"
+name = "Ashford"
+description = "A dignified British butler with a dry wit"
+version = "1.0.0"
+license = "CC-BY-4.0"
+languages = ["en"]
+
+[wake]
+words = ["ashford", "hey ashford"]
+model = "wake/ashford.onnx"      # optional; otherwise ready-made / keyword spotting
+sensitivity = 0.5
+
+[address]                        # how the persona addresses the user
+form = "{title} {name}"          # → "Master Ian"
+title = "Master"
+fallback = "sir"                 # used until the user sets a name
+# Users can override all of this in their config.
+
+[voice]
+engine = "kokoro"                # local engine for voice/…; or "piper"
+model = "voice/ashford.onnx"
+speed = 1.0
+cloud = { provider = "elevenlabs", voice_id = "" }   # optional premium voice
+
+[style]
+prompt = "style.md"
+formality = 0.8                  # 0–1
+humor = 0.4                      # 0–1
+verbosity = "brief"              # brief | normal | chatty
+quips = "sometimes"              # never | sometimes | often (user-overridable)
+```
+
+```toml
+# lines.en.toml — {address} is filled in per user
+ack     = ["Right away, {address}.", "Very good, {address}."]
+working = ["One moment, {address}.", "Seeing to it now."]
+done    = ["It is done, {address}."]
+confirm = ["Shall I proceed, {address}?"]
+error   = ["I'm afraid that didn't work, {address}."]
+quips   = ["I shall add it to my list of grievances."]
+```
+
+**Clips:** lines without `{address}` can ship pre-generated in the pack. Lines with `{address}` are generated locally with the pack's own voice when the user sets their name (and again if it changes), then cached.
+
+**Safety boundaries:**
+- A pack can't declare tools, permissions, or config outside its own fields.
+- `style.md` is text from the internet and could carry a prompt injection, so it is length-limited and inserted as a delimited *style* section. The core rules (permissions, confirmations, never styling dictation, code, or outgoing messages) come after it and always win.
+- The style applies to spoken and chat replies only (§8).
+
+**Switching:** by voice ("switch to Ashford"), CLI, or web UI. *TBD: whether several personas can listen at once.*
+
+### Voice-creation workflow (voice kit, optional, phase 5)
+1. **Source:** a description (ElevenLabs voice design), Troupe / Resonance Lab, or the user's own recordings with consent.
+2. **Dataset:** generate 1–3 h of speech from a balanced script (about 1,500–3,000 sentences).
+3. **Train:** fine-tune the small model chosen by the bake-off (§22).
+4. **Evaluate:** blind A/B listening against the source, time to first audio, and real-time factor.
+5. **Package:** generate clips for lines without `{address}`, write `persona.toml`, and run `footman persona install ./dist/<id>`.
+
+## 28. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
-- [ ] Persona pack spec and voice-creation workflow.
 - [ ] Config schema.
 - [ ] TTS bake-off plan.
 
