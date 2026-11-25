@@ -428,6 +428,9 @@ func (p *Pipeline) stop(src StopSource) {
 	}
 	running := slices.Collect(maps.Values(p.jobs))
 	ids := slices.Sorted(maps.Keys(p.jobs))
+	// Forget the jobs now rather than when their watcher sees the final
+	// update, so a later stop never reports a job this one already cancelled.
+	clear(p.jobs)
 	p.busy = 0
 	p.armed = 0
 	if !p.muted {
