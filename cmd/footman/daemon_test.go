@@ -85,8 +85,9 @@ func shortTempDir(t *testing.T) string {
 var startTimeout = 5 * time.Second
 
 // startDaemon runs the daemon with --dev-fakes on a temporary socket and
-// returns once it is accepting connections.
-func startDaemon(t *testing.T) *testDaemon {
+// returns once it is accepting connections. tweak, if given, edits the
+// options first.
+func startDaemon(t *testing.T, tweak ...func(*daemonOptions)) *testDaemon {
 	t.Helper()
 	if len(tweak) == 0 {
 		return startDaemonWith(t, nil)
