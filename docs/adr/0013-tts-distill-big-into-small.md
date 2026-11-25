@@ -14,3 +14,5 @@ The cheapest high-quality path reuses Troupe: **design** a voice (ElevenLabs Voi
 
 ## Consequences
 Pending the bake-off and a license review of each source's terms on using outputs for training.
+
+See ADR-0019 for the license review: only VoxCPM2-generated data (with a clean reference clip) and permissive base checkpoints may be used for **shipped** voices.
