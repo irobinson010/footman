@@ -73,23 +73,30 @@ routing ─command──► acknowledgement clip ─► fast path │ AI + tools
 - **Acknowledgement clips.** The persona's pre-generated audio plays instantly while the AI works.
 - **AI cost control.** The system prompt and tool definitions are cached between calls, and only the tools relevant to a request are sent.
 
-## 6. Core interfaces (sketch)
+## 6. Core interfaces
+
+The Go definitions live in `internal/` (ADR-0021); this is the shape. Every method that may block or do I/O takes a `context.Context` first.
 
 ```go
+// audio/ — PCM shared by platform and speech: float32 samples, 16 kHz mono for speech
+type Frame struct { Format; Samples []float32; Offset time.Duration }
+type Clip  struct { Format; Samples []float32 }
+type Stream interface { Format() Format; Recv() (Frame, error); Close() error } // io.EOF at end
+
 // platform/ — one implementation per OS (build tags: _linux.go, _windows.go, _darwin.go)
 type Platform interface {
     Input() Input          // hotkeys, push-to-talk, type/paste at cursor
     Windows() Windows      // active app, list/focus windows
     Launcher() Launcher    // open URL / app / file
-    Notifier() Notifier    // notifications, tray
+    Notifier() Notifier    // notifications (with click actions), tray status
     Clipboard() Clipboard
-    Audio() Audio          // mic / speaker devices
+    Audio() Audio          // mic / speaker devices: Capture → <-chan Frame, Play(Stream)
     Service() Service      // autostart install/remove
     Secrets() Secrets      // OS keychain
     Paths() Paths          // config / data / cache / runtime dirs
 }
 
-// speech/ — registered by name, chosen in config
+// speech/ — registered by name, chosen in config (Frame, Audio, AudioStream alias audio/)
 type VAD interface      { Detect(ctx, <-chan Frame) <-chan Segment }
 type WakeWord interface { Listen(ctx, <-chan Frame) <-chan WakeEvent }
 type STT interface      { Transcribe(ctx, Audio) (Transcript, error) }
@@ -97,20 +104,28 @@ type TTS interface      { Speak(ctx, text string, v Voice) (AudioStream, error) 
 
 // llm/
 type Provider interface {
-    Chat(ctx, Request) (Stream, error)   // messages + tools, streamed
-    Capabilities() Caps                  // tools, vision, caching, …
+    Chat(ctx, Request) (Stream, error)   // messages + tools; Stream.Recv() yields text deltas, tool calls, Done
+    Capabilities() Caps                  // tools, vision, caching, local, context size
 }
 
-// tools/
+// plugins/
 type Tool interface {
-    Spec() ToolSpec        // name, description, JSON schema, Permission
-    Run(ctx, args json.RawMessage) (Result, error)
+    Spec() ToolSpec        // name, description, JSON schema, Permission, fast-path phrases
+    Run(ctx, args json.RawMessage) (Result, error)   // Result.Untrusted marks outside content (§29)
 }
-type Permission int        // Read | Act | Destructive | Outward
+type Permission int        // Read | Act | Destructive | Outward (zero value is invalid)
 
 // jobs/
 type Worker interface { Start(ctx, Task) (Job, error) }
+type Job interface    { ID() string; Status() Status; Updates() <-chan Update; Wait(ctx) (Result, error); Cancel() }
+
+// registry/ — one generic by-name registry, declared per area
+var STTs = registry.New[STT]("stt")          // speech.STTs, llm.Providers, platform.Platforms, plugins.Tools, jobs.Workers, …
+func init() { speech.STTs.Register("whisper-local", newWhisper) }
+stt, err := speech.STTs.New(name, opts)      // opts: registry.Config, decoded into the engine's options
 ```
+
+Replies (LLM chat, TTS) are **pull streams**: `Recv` until `io.EOF`, then `Close`, which also abandons them early. Continuous inputs (VAD, wake word, hotkeys, capture, job updates) are channels closed when the context ends.
 
 ## 7. Acting without stealing the cursor: targets
 
@@ -303,11 +318,13 @@ footman/
 │  ├─ config/                TOML schema, load/validate/watch, voice-settable keys
 │  ├─ store/                 SQLite + migrations
 │  ├─ api/                   Unix socket + HTTP/WebSocket; embeds web/
+│  ├─ audio/                 PCM primitives shared by platform and speech
+│  ├─ registry/              generic by-name registry used by every swappable area
 │  ├─ install/               setup wizard, install receipt, uninstall
 │  ├─ platform/              interfaces · linux/ · windows/ · darwin/ · fake/
 │  ├─ speech/                interfaces · sherpa/ · cloud/{openai,elevenlabs,…} · fake/
 │  ├─ llm/                   interface · claude/ · openai/ · gemini/ · ollama/ · fake/
-│  └─ plugins/               plugin host (footman + mcp adapters) · builtin/ tools
+│  └─ plugins/               Tool interface · plugin host (footman + mcp adapters) · builtin/ tools · fake/
 ├─ sdk/go/                   public: helpers for writing footman-protocol plugins
 ├─ web/                      web UI (embedded with go:embed)
 ├─ personas/ashford/         shipped original persona(s)
@@ -318,7 +335,7 @@ footman/
 └─ .github/workflows/
 ```
 
-- **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name, and config picks one.
+- **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name in the area's `registry.Registry`, and config picks one (ADR-0021).
 - **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
 - **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
 - **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. `footman setup` detects the hardware, benchmarks briefly, and picks the best option, which the user can override in config:
