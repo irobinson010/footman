@@ -8,8 +8,9 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 )
@@ -309,36 +310,156 @@ func TestSchemaIsData(t *testing.T) {
 	}
 }
 
-func TestWatchDebounce(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "config.toml")
+// watchHarness drives watch() with a fake clock, fake file stat and a manual
+// ticker, so no test depends on real time.
+type watchHarness struct {
+	t       *testing.T
+	tick    chan time.Time
+	handled chan struct{}
+	now     time.Time
+	mu      sync.Mutex
+	st      fileStamp
+	reloads chan string
+	cancel  context.CancelFunc
+	done    chan struct{}
+	started chan struct{} // closed once the watcher has taken its initial stat
+	once    sync.Once
+}
+
+func newWatchHarness(t *testing.T, debounce time.Duration) *watchHarness {
+	h := &watchHarness{
+		t:       t,
+		tick:    make(chan time.Time),
+		handled: make(chan struct{}),
+		now:     time.Unix(1_000_000, 0),
+		reloads: make(chan string, 16),
+		done:    make(chan struct{}),
+		started: make(chan struct{}),
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var calls atomic.Int32
-	got := make(chan *Config, 4)
-	go Watch(ctx, p, WatchOptions{Poll: 10 * time.Millisecond, Debounce: 80 * time.Millisecond}, func(c *Config, err error) {
-		calls.Add(1)
-		if err == nil {
-			got <- c
-		}
+	h.cancel = cancel
+	env := watchEnv{
+		tick: h.tick,
+		now: func() time.Time {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.now
+		},
+		stamp: func(string) fileStamp {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			st := h.st
+			h.once.Do(func() { close(h.started) })
+			return st
+		},
+		load: func(string) (*Config, error) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return Parse([]byte("version = 1\n[user]\nname = \"" + strconv.FormatInt(h.st.size, 10) + "\"\n"))
+		},
+		afterTick: func() { h.handled <- struct{}{} },
+	}
+	go func() {
+		defer close(h.done)
+		watch(ctx, "config.toml", debounce, func(c *Config, err error) {
+			if err != nil {
+				h.reloads <- "error: " + err.Error()
+				return
+			}
+			h.reloads <- c.String("user.name")
+		}, env)
+	}()
+	<-h.started // the initial stat must see the file as it is before the test changes it
+	t.Cleanup(func() {
+		cancel()
+		<-h.done
 	})
-	time.Sleep(30 * time.Millisecond)
-	for i, name := range []string{"A", "B", "Cc"} { // a burst of writes
-		_ = os.WriteFile(p, []byte("[user]\nname = \""+name+"\"\n"), 0o600)
-		_ = i
-		time.Sleep(15 * time.Millisecond)
-	}
+	return h
+}
+
+// write changes the fake file; version v shows up as size v.
+func (h *watchHarness) write(v int64) {
+	h.mu.Lock()
+	h.st = fileStamp{exists: true, mod: h.now, size: v}
+	h.mu.Unlock()
+}
+
+// step advances the clock by d and delivers one poll tick, returning once the
+// watcher has finished handling it.
+func (h *watchHarness) step(d time.Duration) {
+	h.mu.Lock()
+	h.now = h.now.Add(d)
+	now := h.now
+	h.mu.Unlock()
+	h.tick <- now
+	<-h.handled
+}
+
+func (h *watchHarness) noReload() {
+	h.t.Helper()
 	select {
-	case c := <-got:
-		if c.String("user.name") != "Cc" {
-			t.Errorf("name = %q", c.String("user.name"))
+	case got := <-h.reloads:
+		h.t.Fatalf("unexpected reload %q", got)
+	default:
+	}
+}
+
+func (h *watchHarness) wantReload(want string) {
+	h.t.Helper()
+	select {
+	case got := <-h.reloads:
+		if got != want {
+			h.t.Fatalf("reload = %q, want %q", got, want)
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("no reload")
+	default:
+		h.t.Fatalf("no reload, want %q", want)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if n := calls.Load(); n != 1 {
-		t.Errorf("reload called %d times, want 1", n)
+}
+
+func TestWatchDebounce(t *testing.T) {
+	const poll, debounce = 500 * time.Millisecond, 250 * time.Millisecond
+	h := newWatchHarness(t, debounce)
+	// A burst of writes, each seen by its own poll: the debounce restarts every time.
+	for _, v := range []int64{1, 2, 3} {
+		h.write(v)
+		h.step(poll)
+		h.noReload()
 	}
+	// Quiet but not yet long enough.
+	h.step(debounce - 1)
+	h.noReload()
+	// Quiet for the full debounce: exactly one reload, with the last write.
+	h.step(1)
+	h.wantReload("3")
+	// Nothing further happens without another change.
+	h.step(poll)
+	h.step(poll)
+	h.noReload()
+}
+
+func TestWatchSeparateChangesReloadSeparately(t *testing.T) {
+	h := newWatchHarness(t, 250*time.Millisecond)
+	h.write(1)
+	h.step(500 * time.Millisecond)
+	h.step(500 * time.Millisecond)
+	h.wantReload("1")
+	h.write(2)
+	h.step(500 * time.Millisecond)
+	h.step(500 * time.Millisecond)
+	h.wantReload("2")
+	h.noReload()
+}
+
+func TestWatchDefaults(t *testing.T) {
+	// Watch with zero options must still start and stop cleanly.
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		Watch(ctx, filepath.Join(t.TempDir(), "config.toml"), WatchOptions{}, func(*Config, error) {})
+		close(done)
+	}()
+	cancel()
+	<-done
 }
 
 func TestVADMinSilence(t *testing.T) {
