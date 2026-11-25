@@ -5,7 +5,9 @@
 //
 // It is pure Go (no cgo): D-Bus through github.com/godbus/dbus/v5, plus the
 // standard desktop tools xdg-open, gio, wl-copy and wl-paste for launching and
-// the clipboard, and pactl, parec and pacat for audio. Input and Service return
+// the clipboard, and pactl, parec and pacat for audio. Input speaks to the
+// desktop portals over D-Bus and to the compositor over its own small Wayland
+// client. Service returns
 // platform.ErrUnsupported until their own implementations land.
 package linux
 
@@ -32,7 +34,7 @@ func init() {
 type Platform struct {
 	bus *bus
 
-	input     unsupportedInput
+	input     *Input
 	audio     *Audio
 	service   unsupportedService
 	windows   *Windows
@@ -59,19 +61,22 @@ func New(cfg registry.Config) (*Platform, error) {
 
 func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc) *Platform {
 	b := &bus{dial: dial}
+	windows := &Windows{bus: b, runtimeDir: runtimeDir}
+	paths := &Paths{}
 	return &Platform{
 		bus:       b,
-		windows:   &Windows{bus: b, runtimeDir: runtimeDir},
+		input:     newInput(b, dial, windows, paths),
+		windows:   windows,
 		launcher:  &Launcher{run: run, dataDirs: dataDirs},
 		notifier:  &Notifier{bus: b, waiters: map[uint32]*waiter{}},
 		clipboard: &Clipboard{run: run},
 		secrets:   &Secrets{bus: b},
-		paths:     &Paths{},
+		paths:     paths,
 		audio:     newAudio(run),
 	}
 }
 
-// Input returns a stub that reports platform.ErrUnsupported.
+// Input returns the portal and Wayland input (hotkeys, typing, paste).
 func (p *Platform) Input() platform.Input { return p.input }
 
 // Windows returns the KWin-backed window lookup.
@@ -103,8 +108,8 @@ func (p *Platform) Secrets() platform.Secrets { return p.secrets }
 // Paths returns the XDG directories.
 func (p *Platform) Paths() platform.Paths { return p.paths }
 
-// Close closes the D-Bus connection, if one was opened.
-func (p *Platform) Close() error { return p.bus.close() }
+// Close ends the input sessions and closes the D-Bus connections.
+func (p *Platform) Close() error { return errors.Join(p.input.Close(), p.bus.close()) }
 
 // bus lazily opens one shared session-bus connection.
 type bus struct {
@@ -151,18 +156,6 @@ func serviceMissing(err error) bool {
 		}
 	}
 	return false
-}
-
-type unsupportedInput struct{}
-
-func (unsupportedInput) Hotkeys(context.Context, []string) (<-chan platform.HotkeyEvent, error) {
-	return nil, fmt.Errorf("linux input: %w", platform.ErrUnsupported)
-}
-func (unsupportedInput) Type(context.Context, string) error {
-	return fmt.Errorf("linux input: %w", platform.ErrUnsupported)
-}
-func (unsupportedInput) Paste(context.Context, string) error {
-	return fmt.Errorf("linux input: %w", platform.ErrUnsupported)
 }
 
 type unsupportedService struct{}

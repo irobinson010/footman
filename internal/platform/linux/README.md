@@ -1,12 +1,16 @@
 # Linux platform
 
 `internal/platform/linux` implements the Footman `Platform` interface on Linux:
-launcher, notifications, paths, secrets, windows (KDE), clipboard and audio. `Input`
-and `Service` return `platform.ErrUnsupported` until their own tasks
-land.
+input (hotkeys, typing, paste), launcher, notifications, paths, secrets,
+windows (KDE), clipboard and audio. `Service` returns `platform.ErrUnsupported`
+until its own task lands.
 
 | Part | How |
 |---|---|
+| Input: hotkeys | XDG GlobalShortcuts portal (press and release); KDE's KGlobalAccel when the portal lacks it. `BindHotkeys` (setup) puts each shortcut on exactly the asked-for key (ADR-0022, ADR-0029) |
+| Input: typing | RemoteDesktop portal keysyms, at most 1,000 characters/s, one session while Footman runs; the restore token is kept in `<data>/remote-desktop.token` |
+| Input: paste | Text offered on the clipboard through Wayland data-control (pure-Go client, `input_wayland.go`, `input_datacontrol.go`), marked so Klipper skips it; Ctrl+V, or Ctrl+Shift+V in terminals, pressed through the portal; the previous clipboard put back once the app has read it |
+| Input: layout | `Typeable` (a `dictation.Layout`) reads the xkb keymap the compositor sends; `input_keysyms_table.go` is generated from `xkbcommon-keysyms.h` (`go generate`) |
 | Launcher | `xdg-open` for URLs and files; `gio launch` (or `gtk-launch`) for apps, found by `.desktop` ID or name |
 | Notifier | `org.freedesktop.Notifications` over D-Bus, with action buttons. `SetTray` is a stub |
 | Paths | XDG folders: `~/.config/footman`, `~/.local/share/footman`, `~/.cache/footman`, `$XDG_RUNTIME_DIR` |
@@ -26,6 +30,43 @@ go test ./internal/platform/linux/
 They start a private `dbus-daemon --session` with fake notification, keyring and
 KWin services, so they need no desktop. If `dbus-daemon` is not installed the
 D-Bus tests skip with a message (`apt install dbus` / `dbus-daemon`).
+
+The input code needs a `.desktop` file for its app id (`io.github.irobinson010.Footman`), which `footman setup` installs. Its `Exec` must name a program that exists, or the portal will not accept the app id.
+
+## Nested input tests (headless KWin, safe on a live desktop)
+
+`input_nested_test.go` (build tag `integration`) runs Input against a private,
+headless KWin started by `testdata/nested-kwin.sh`:
+
+- `kwin_wayland --virtual` has no real input devices, so nothing typed in it reaches your desktop, and nothing you type reaches it.
+- It has its own D-Bus session bus, so the portals, kglobalaccel and the permission store are private copies.
+- It has its own `XDG_RUNTIME_DIR` and XDG config, data, cache and state folders, so your shortcuts, portal permissions and clipboard are never touched.
+
+The tests connect only to that session's addresses, never to
+`$WAYLAND_DISPLAY` or your session bus.
+
+```sh
+go test -tags integration -v -count=1 ./internal/platform/linux/ -run TestNested
+```
+
+They need KDE Plasma's `kwin_wayland`, `dbus-run-session` and `wl-clipboard`,
+and skip a test when its app is missing:
+
+| Test | Checks | Needs |
+|---|---|---|
+| `TestNestedKeymap` | the keymap arrives and `Typeable` follows it (US: `é`, `—`, emoji are not typeable) | |
+| `TestNestedTypeQt` | typed text arrives exactly, under 1,000 characters/s | `python3-pyqt6` |
+| `TestNestedPasteQt`, `...RestoresEmptyClipboard` | Unicode paste with Ctrl+V, previous clipboard (or none) restored | `python3-pyqt6` |
+| `TestNestedPasteKonsole` | Ctrl+Shift+V in Konsole, arriving as a bracketed paste | `konsole` |
+| `TestNestedChromium` | portal-sent Ctrl+V pastes into Chromium; typing too | Brave, Chromium or Chrome, or `FOOTMAN_TEST_CHROMIUM=/path` |
+| `TestNestedHotkeysPortal` | GlobalShortcuts press and release; binding after a dismissed dialog; a key moved in settings; rebinding | |
+| `TestNestedHotkeysKGlobalAccel` | the KGlobalAccel fallback, and that a taken key (Alt+F4) is refused | |
+
+The tests answer the RemoteDesktop dialog in advance through the nested
+permission store, and press Return in the GlobalShortcuts dialog. To debug,
+start a session by hand with `testdata/nested-kwin.sh /tmp/fmdbg` and run the
+tests with `FOOTMAN_NESTED_ROOT=/tmp/fmdbg`; they then reuse it and leave it
+running. `FOOTMAN_NESTED_KEEP=1` keeps a session's folder after the run.
 
 ## Integration tests (the owner's KDE desktop)
 
@@ -52,6 +93,33 @@ What to expect:
 
 Run one at a time with `-run TestRealSecrets` and so on. If something fails,
 paste the output into issue #41.
+
+### Real-app check for Input (issue #47)
+
+`TestRealInsert` types and pastes into the focused window of your real
+desktop, so it runs only with `FOOTMAN_REAL_INPUT=1`:
+
+```sh
+FOOTMAN_REAL_INPUT=1 go test -tags integration -v -count=1 -timeout 30m ./internal/platform/linux/ -run TestRealInsert
+```
+
+1. A "Footman … remote control" dialog appears the first time: approve it.
+2. For each of Konsole, Brave, Firefox and VS Code in turn (or the apps in
+   `FOOTMAN_REAL_APPS=Kate,Brave`), click into a text field within the 8-second
+   countdown: a shell prompt in Konsole, a text box in the browsers, an editor
+   tab in VS Code. Footman types an ASCII line and pastes a Unicode line after
+   it. Neither has a newline, so nothing is sent or run. Clear the Konsole
+   prompt with Ctrl+U afterwards.
+3. Check that each field ends with exactly the line the test prints, and that
+   the test reports the previous clipboard restored. Konsole should show the
+   pasted part as a highlighted (bracketed) paste.
+4. Open the clipboard history (Klipper) from the tray: the pasted line should
+   not be there.
+
+The test names itself Footman with a temporary `.desktop` file, removed at the
+end. KDE keeps the approval under Footman's app id. To revoke it, run
+`flatpak permission-reset io.github.irobinson010.Footman` if `flatpak` is
+installed.
 
 ## Audio integration tests (virtual devices only)
 

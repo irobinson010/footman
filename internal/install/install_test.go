@@ -221,6 +221,49 @@ func TestSetupRecordsEverything(t *testing.T) {
 	}
 }
 
+func TestSetupDesktopIntegration(t *testing.T) {
+	e := newEnv(t)
+	in := e.p.Input().(*fake.Input)
+	desktop := filepath.Join(e.home, ".local", "share", "applications", "footman.desktop")
+	token := filepath.Join(e.paths().Data(), "remote-desktop.token")
+	in.Files = platform.InputFiles{Program: []string{desktop}, State: []string{token}}
+	res := e.setup(install.SetupOptions{Hotkey: "F9", NoService: true})
+
+	if got := in.SetupBinary(); got != e.binary {
+		t.Errorf("SetupInput got binary %q, want %q", got, e.binary)
+	}
+	// Setup binds the chosen key itself rather than trusting the desktop's
+	// suggestion (ADR-0022).
+	if got := in.Bound(); len(got) != 1 || got[0] != "F9" {
+		t.Errorf("bound %v, want [F9]", got)
+	}
+	rec, err := install.LoadReceipt(res.ReceiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []install.Entry{
+		{Kind: install.KindFile, Group: install.GroupProgram, Path: desktop},
+		{Kind: install.KindFile, Group: install.GroupData, Path: token},
+	} {
+		if !slices.Contains(rec.Entries, w) {
+			t.Errorf("receipt missing %+v", w)
+		}
+	}
+	if !slices.ContainsFunc(res.Lines, func(l string) bool { return strings.Contains(l, "F9 bound") }) {
+		t.Errorf("setup lines do not report the binding: %q", res.Lines)
+	}
+
+	// A failed binding does not fail setup.
+	in.Files = platform.InputFiles{}
+	e2 := newEnv(t)
+	in2 := e2.p.Input().(*fake.Input)
+	in2.Err = errors.New("no session")
+	_, err = install.Setup(ctx, install.SetupOptions{Platform: e2.p, Hotkey: "F8", NoService: true})
+	if err != nil {
+		t.Errorf("Setup with a failing binding: %v", err)
+	}
+}
+
 func TestSetupDefaultsAndNoService(t *testing.T) {
 	e := newEnv(t)
 	res := e.setup(install.SetupOptions{NoService: true})

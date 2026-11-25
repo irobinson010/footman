@@ -18,9 +18,16 @@ type Input struct {
 	typed  []string
 	pasted []string
 	subs   []*hotkeySub
-	// Err, if set, is returned by Type and Paste.
+	bound  []string
+
+	setupBinary string
+	// Err, if set, is returned by Type, Paste, SetupInput and BindHotkeys.
 	Err error
+	// Files is what SetupInput reports.
+	Files platform.InputFiles
 }
+
+var _ platform.InputSetup = (*Input)(nil)
 
 type hotkeySub struct {
 	mu     sync.Mutex // held while sending, and to close ch
@@ -101,6 +108,51 @@ func (in *Input) record(ctx context.Context, into *[]string, text string) error 
 	}
 	*into = append(*into, text)
 	return nil
+}
+
+// SetupInput implements platform.InputSetup: it records binary and returns
+// Files.
+func (in *Input) SetupInput(ctx context.Context, binary string) (platform.InputFiles, error) {
+	if err := ctx.Err(); err != nil {
+		return platform.InputFiles{}, err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.setupBinary = binary
+	return in.Files, in.Err
+}
+
+// BindHotkeys implements platform.InputSetup: every combination is bound to
+// itself, and recorded.
+func (in *Input) BindHotkeys(ctx context.Context, combos []string) ([]platform.HotkeyBinding, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.Err != nil {
+		return nil, in.Err
+	}
+	out := make([]platform.HotkeyBinding, 0, len(combos))
+	for _, c := range combos {
+		in.bound = append(in.bound, c)
+		out = append(out, platform.HotkeyBinding{Hotkey: c, Trigger: c})
+	}
+	return out, nil
+}
+
+// Bound returns every combination passed to BindHotkeys, in order.
+func (in *Input) Bound() []string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return slices.Clone(in.bound)
+}
+
+// SetupBinary returns the binary last passed to SetupInput.
+func (in *Input) SetupBinary() string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.setupBinary
 }
 
 // Typed returns every string passed to Type, in order.

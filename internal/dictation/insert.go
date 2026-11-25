@@ -31,14 +31,15 @@ const DefaultTypeMax = 200
 
 // Layout reports whether text can be typed on the current keyboard layout.
 // Typed keysyms that are not on the layout are dropped by some apps
-// (ADR-0022), so auto mode pastes such text instead. The platform layer will
-// provide a real implementation; ASCIILayout stands in until then.
+// (ADR-0022), so auto mode pastes such text instead. A platform Input that
+// knows the layout implements it (on Linux, from the compositor's keymap);
+// core uses ASCIILayout otherwise.
 type Layout interface {
 	Typeable(text string) bool
 }
 
 // ASCIILayout treats printable ASCII and spaces as typeable, a safe
-// approximation of a US layout.
+// approximation of a US layout, for platforms that cannot read the layout.
 type ASCIILayout struct{}
 
 // Typeable implements Layout.

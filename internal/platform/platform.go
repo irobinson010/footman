@@ -73,6 +73,38 @@ type Input interface {
 	Paste(ctx context.Context, text string) error
 }
 
+// InputSetup is an optional extension of Input for desktops that need a
+// one-time setup step. Setup checks for it with a type assertion.
+type InputSetup interface {
+	// SetupInput installs what the desktop needs to identify Footman, such
+	// as a .desktop file naming binary on Linux, and returns the files Input
+	// creates now or later, for the install receipt.
+	SetupInput(ctx context.Context, binary string) (InputFiles, error)
+	// BindHotkeys binds each combination to exactly that key, replacing any
+	// earlier binding, and reports what the desktop says each is bound to.
+	// Setup calls it after asking the user for their key, and to rebind.
+	BindHotkeys(ctx context.Context, combos []string) ([]HotkeyBinding, error)
+}
+
+// InputFiles lists files an Input installs or writes.
+type InputFiles struct {
+	// Program files identify Footman to the desktop, such as a .desktop
+	// file. They go when the program is uninstalled.
+	Program []string
+	// State files are written while Footman runs, such as a saved
+	// permission token. They go with the data.
+	State []string
+}
+
+// HotkeyBinding is what the desktop bound a hotkey to.
+type HotkeyBinding struct {
+	// Hotkey is the combination as asked for, such as "F8".
+	Hotkey string
+	// Trigger is the desktop's description of the key it bound, such as
+	// "F8", or "" if the hotkey has no key.
+	Trigger string
+}
+
 // Window is one top-level window.
 type Window struct {
 	// ID identifies the window to Focus. Its format is platform-specific.

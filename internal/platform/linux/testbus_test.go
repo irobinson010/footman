@@ -66,6 +66,11 @@ func newTestPlatform(t *testing.T, addr string, run runFunc) *Platform {
 	t.Helper()
 	p := newPlatform(func(...dbus.ConnOption) (*dbus.Conn, error) { return dbus.Connect(addr) }, run)
 	p.windows.runtimeDir = func() string { return t.TempDir() }
+	// Never the desktop's compositor or data folder.
+	p.input.socket = func() string { return "" }
+	p.input.dataHome = func() string { return t.TempDir() }
+	p.input.tokenFile = filepath.Join(t.TempDir(), "remote-desktop.token")
+	p.input.remote.tokenFile = p.input.tokenFile
 	t.Cleanup(func() { _ = p.Close() })
 	return p
 }
