@@ -20,6 +20,9 @@ import (
 	"github.com/irobinson010/footman/internal/core"
 	"github.com/irobinson010/footman/internal/platform"
 	platformfake "github.com/irobinson010/footman/internal/platform/fake"
+	"github.com/irobinson010/footman/internal/registry"
+	"github.com/irobinson010/footman/internal/speech"
+	speechfake "github.com/irobinson010/footman/internal/speech/fake"
 )
 
 // syncBuffer is a bytes.Buffer safe for concurrent use that can wait for
@@ -468,5 +471,90 @@ func TestModelsLine(t *testing.T) {
 	}
 	if got := modelsLine(api.ModelsStatus{}, now); got != "none" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// TestDaemonPushToTalk drives the daemon's pipeline with the dictation key,
+// with fakes: without a wake word the microphone is closed until F8 is
+// held, the utterance ends when it comes up, and status shows each step.
+func TestDaemonPushToTalk(t *testing.T) {
+	var stt *speechfake.STT
+	d := startDaemonWith(t, func(o *daemonOptions) {
+		if err := os.MkdirAll(filepath.Dir(o.configPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		cfg := "version = 1\n[input]\nwake_word = false\n[input.dictate]\nkey = \"F8\"\n"
+		if err := os.WriteFile(o.configPath, []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		prev := o.deps
+		o.deps = func(deps *core.Deps) {
+			prev(deps)
+			stt, _ = speechfake.NewSTT(registry.Map(nil))
+			deps.STT = stt
+		}
+	})
+	status := func() api.StatusResult {
+		t.Helper()
+		_, out, _ := d.cli(t, "status", "--json")
+		var s api.StatusResult
+		if err := json.Unmarshal([]byte(out), &s); err != nil {
+			t.Fatalf("status: %v: %s", err, out)
+		}
+		return s
+	}
+	waitMic := func(want core.MicState) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for status().Microphone.State != want {
+			if time.Now().After(deadline) {
+				t.Fatalf("microphone never %q: %+v", want, status().Microphone)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitMic(core.MicPushToTalk)
+	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "hotkeys:     dictate F8 (hold to talk), command Super+Shift+Space (hold to talk)") ||
+		!strings.Contains(out, "microphone:  closed; opens while a push-to-talk key records") {
+		t.Errorf("status:\n%s", out)
+	}
+
+	au := d.platform.Audio().(*platformfake.Audio)
+	au.KeepOpen()
+	var frames []audio.Frame
+	for i := range 5 {
+		s := make([]float32, 320)
+		for j := range s {
+			if i < 4 {
+				s[j] = 0.5
+			}
+		}
+		frames = append(frames, audio.Frame{Format: audio.Speech, Samples: s, Offset: audio.Speech.Duration(i * 320)})
+	}
+	au.QueueCapture(frames...)
+	stt.Queue(speech.Transcript{Text: "hello from the key"})
+	in := d.platform.Input().(*platformfake.Input)
+	in.Press("F8", true)
+	waitMic(core.MicRecording)
+	in.Press("F8", false)
+	deadline := time.Now().Add(5 * time.Second)
+	for status().LastDictation == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("nothing dictated:\n%s", d.log.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := in.Typed(); !slices.Equal(got, []string{"hello from the key"}) {
+		t.Errorf("typed %v", got)
+	}
+	s := status()
+	if s.LastDictation.Chars != len("hello from the key") || s.LastDictation.Method != "type" || s.LastDictation.LatencyMS <= 0 {
+		t.Errorf("last dictation %+v", s.LastDictation)
+	}
+	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "dictated:    18 characters by type") {
+		t.Errorf("status:\n%s", out)
+	}
+	if n := in.Prepared(); n != 1 {
+		t.Errorf("PrepareInsert called %d times at start, want 1", n)
 	}
 }

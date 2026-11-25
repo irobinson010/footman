@@ -2,12 +2,11 @@
 
 `internal/platform/linux` implements the Footman `Platform` interface on Linux:
 input (hotkeys, typing, paste), launcher, notifications, paths, secrets,
-windows (KDE), clipboard and audio. `Service` returns `platform.ErrUnsupported`
-until its own task lands.
+windows (KDE), clipboard, audio and the systemd user service.
 
 | Part | How |
 |---|---|
-| Input: hotkeys | XDG GlobalShortcuts portal (press and release); KDE's KGlobalAccel when the portal lacks it. `BindHotkeys` (setup) puts each shortcut on exactly the asked-for key (ADR-0022, ADR-0029) |
+| Input: hotkeys | `BindHotkeys` (setup) binds through the XDG GlobalShortcuts portal and puts each shortcut on exactly the asked-for key (ADR-0022, ADR-0029). `Hotkeys` (the daemon) registers with KDE's KGlobalAccel directly, keeping the stored key, because KDE's portal shows its dialog for every new session; the portal elsewhere (ADR-0030). Both report press and release |
 | Input: typing | RemoteDesktop portal keysyms, at most 1,000 characters/s, one session while Footman runs; the restore token is kept in `<data>/remote-desktop.token` |
 | Input: paste | Text offered on the clipboard through Wayland data-control (pure-Go client, `input_wayland.go`, `input_datacontrol.go`), marked so Klipper skips it; Ctrl+V, or Ctrl+Shift+V in terminals, pressed through the portal; the previous clipboard put back once the app has read it |
 | Input: layout | `Typeable` (a `dictation.Layout`) reads the xkb keymap the compositor sends; `input_keysyms_table.go` is generated from `xkbcommon-keysyms.h` (`go generate`) |
@@ -18,6 +17,7 @@ until its own task lands.
 | Windows | KWin scripting over D-Bus (KDE Plasma only; `ErrUnsupported` elsewhere) |
 | Clipboard | `wl-copy` / `wl-paste` (package `wl-clipboard`) |
 | Audio | `pactl` (list, watch), `parec` (capture) and `pacat` (playback) from `pulseaudio-utils`; also works on PipeWire via pipewire-pulse (ADR-0026) |
+| Service | systemd user unit `$XDG_CONFIG_HOME/systemd/user/footman.service`, started with the graphical session; `systemctl --user` enables, (re)starts, stops and disables it (ADR-0030) |
 
 Pure Go, no cgo.
 
@@ -61,12 +61,23 @@ and skip a test when its app is missing:
 | `TestNestedChromium` | portal-sent Ctrl+V pastes into Chromium; typing too | Brave, Chromium or Chrome, or `FOOTMAN_TEST_CHROMIUM=/path` |
 | `TestNestedHotkeysPortal` | GlobalShortcuts press and release; binding after a dismissed dialog; a key moved in settings; rebinding | |
 | `TestNestedHotkeysKGlobalAccel` | the KGlobalAccel fallback, and that a taken key (Alt+F4) is refused | |
+| `TestNestedHotkeysNoDialogAfterSetup` | after setup's binding, the daemon's registration shows no dialog and keeps a key the user moved | |
 
 The tests answer the RemoteDesktop dialog in advance through the nested
 permission store, and press Return in the GlobalShortcuts dialog. To debug,
 start a session by hand with `testdata/nested-kwin.sh /tmp/fmdbg` and run the
 tests with `FOOTMAN_NESTED_ROOT=/tmp/fmdbg`; they then reuse it and leave it
 running. `FOOTMAN_NESTED_KEEP=1` keeps a session's folder after the run.
+
+## End-to-end push-to-talk test (nested KWin, virtual audio)
+
+`cmd/footman/e2e_test.go` (`TestE2EPushToTalk`, build tags `integration native`)
+uses the same nested session (`nested.go`) to run the real `footman` binary.
+It runs `setup --no-service` in a temporary HOME, then `daemon`. It holds F8
+through the session's RemoteDesktop portal while a LibriSpeech clip plays into
+a `footman_test_*` null sink, the configured microphone, and checks the text
+in a Qt field. Then it measures idle memory and runs `uninstall --purge`. It
+never opens a real microphone or speaker. See ADR-0030 and CONTRIBUTING.md.
 
 ## Integration tests (the owner's KDE desktop)
 

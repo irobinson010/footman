@@ -84,6 +84,11 @@ type InputSetup interface {
 	// earlier binding, and reports what the desktop says each is bound to.
 	// Setup calls it after asking the user for their key, and to rebind.
 	BindHotkeys(ctx context.Context, combos []string) ([]HotkeyBinding, error)
+	// PrepareInsert gets the desktop's permission to insert text, and opens
+	// what inserting needs, so the first dictation neither asks nor waits.
+	// Setup calls it so that a permission dialog appears then (on Linux,
+	// the RemoteDesktop portal's); the daemon calls it when it starts.
+	PrepareInsert(ctx context.Context) error
 }
 
 // InputFiles lists files an Input installs or writes.

@@ -65,6 +65,8 @@ type Input struct {
 
 	// forceKGlobalAccel skips the portal for hotkeys (tests).
 	forceKGlobalAccel bool
+	// forcePortal makes Hotkeys use the portal even on KDE (tests).
+	forcePortal bool
 	// pasteKeys, if set, picks the paste keys instead of the terminal table
 	// (tests).
 	pasteKeys func(app string) []uint32
@@ -396,6 +398,18 @@ func desktopExecQuote(s string) string {
 	}
 	r := strings.NewReplacer(`\`, `\\\\`, `"`, `\\"`, "`", "\\\\`", "$", `\\$`)
 	return `"` + r.Replace(s) + `"`
+}
+
+// PrepareInsert starts the RemoteDesktop session that typing and pasting go
+// through, so its permission dialog (the first time) appears now, and
+// connects to the compositor for the clipboard and the keymap. A later Type
+// or Paste reuses both.
+func (in *Input) PrepareInsert(ctx context.Context) error {
+	if _, _, err := in.remote.ensure(ctx); err != nil {
+		return err
+	}
+	_, _, err := in.wayland(ctx)
+	return err
 }
 
 // SetupInput installs the .desktop file for AppID, pointing at binary, and

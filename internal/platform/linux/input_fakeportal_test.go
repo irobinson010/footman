@@ -21,7 +21,9 @@ type fakePortal struct {
 
 	mu         sync.Mutex
 	registered []string
-	gsVersion  uint32
+	// refuseRegister is how many Register calls to refuse (-1: all).
+	refuseRegister int
+	gsVersion      uint32
 	// RemoteDesktop.
 	starts     int
 	selectOpts []map[string]dbus.Variant
@@ -66,8 +68,13 @@ func newFakePortal(t *testing.T, addr string, withKGA bool) *fakePortal {
 	must(f.conn.ExportMethodTable(map[string]any{
 		"Register": func(appID string, _ map[string]dbus.Variant) *dbus.Error {
 			f.mu.Lock()
+			defer f.mu.Unlock()
+			if f.refuseRegister != 0 {
+				// As xdg-desktop-portal before it has seen a new .desktop file.
+				f.refuseRegister--
+				return dbus.NewError("org.freedesktop.portal.Error.Failed", []any{"Could not register app ID: App info not found for '" + appID + "'"})
+			}
 			f.registered = append(f.registered, appID)
-			f.mu.Unlock()
 			return nil
 		},
 	}, fakePortalPath, portalRegistry))
@@ -284,6 +291,22 @@ func (f *fakePortal) exportKGA(t *testing.T, addr string) {
 			}
 			f.kgaKeys[id[1]] = keys[0].Keys[0]
 			return keys, nil
+		},
+		// The stored key: one set directly, or (as KDE stores what the
+		// portal bound) the portal's trigger.
+		"shortcutKeys": func(id []string) ([]kgaKeys, *dbus.Error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if k, ok := f.foreign[id[1]]; ok {
+				return []kgaKeys{{k}}, nil
+			}
+			if k, ok := f.kgaKeys[id[1]]; ok {
+				return []kgaKeys{{[]int32{k, 0, 0, 0}}}, nil
+			}
+			if h, err := parseHotkey(f.gsTriggers[id[1]]); err == nil {
+				return []kgaKeys{{[]int32{h.qtKey(), 0, 0, 0}}}, nil
+			}
+			return []kgaKeys{}, nil
 		},
 		"setForeignShortcutKeys": func(id []string, keys []kgaKeys) *dbus.Error {
 			f.mu.Lock()

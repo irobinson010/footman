@@ -22,6 +22,24 @@ func (s STT) Transcribe(ctx context.Context, a speech.Audio) (speech.Transcript,
 	return v.Transcribe(ctx, a)
 }
 
+// Hold keeps the engine loaded until release is called, loading it in the
+// background if it was unloaded; it never blocks. The pipeline holds it from
+// the moment a push-to-talk key goes down until the utterance has been
+// transcribed, so a reload overlaps the speech rather than following it, and
+// the engine cannot be unloaded while the user is still speaking.
+func (s STT) Hold() (release func()) {
+	got := make(chan func(), 1)
+	go func() {
+		_, rel, err := s.H.Acquire()
+		if err != nil {
+			rel = func() {}
+		}
+		got <- rel
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { go func() { (<-got)() }() }) }
+}
+
 // Close closes the engine for good.
 func (s STT) Close() error { return s.H.Close() }
 

@@ -38,7 +38,9 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | Web UI | Plain HTML, CSS, and JS, embedded in the binary. No framework or build step. |
 | Built-in tools | Launcher, settings, system info, and timers are compiled in; everything else is a plugin. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
-| Linux input | GlobalShortcuts portal hotkeys (KGlobalAccel fallback); typing as RemoteDesktop portal keysyms; paste through a data-control clipboard plus portal-sent Ctrl+V, or Ctrl+Shift+V in terminals, with the clipboard restored afterwards (ADR-0022, ADR-0029). See §9. |
+| Linux input | Setup binds hotkeys through the GlobalShortcuts portal; on KDE the daemon registers them with KGlobalAccel, because KDE's portal asks again for every new session (ADR-0030). Typing as RemoteDesktop portal keysyms; paste through a data-control clipboard plus portal-sent Ctrl+V, or Ctrl+Shift+V in terminals, with the clipboard restored afterwards (ADR-0022, ADR-0029). See §9. |
+| Push-to-talk | Hold the key to talk (release ends the utterance) or tap to talk (end of speech ends it). The microphone is open only while a key records, unless the wake word is on (ADR-0030). |
+| Service | A systemd user unit tied to the graphical session, installed and started by setup (ADR-0030). |
 
 ## 4. Process model
 
@@ -76,7 +78,8 @@ routing ─command──► acknowledgement clip ─► fast path │ AI + tools
 
 How the walking skeleton (S0-05, `internal/bus`, `internal/core`, `internal/dictation`) fills in the details:
 - **Bus semantics.** Topics are typed and named (`pipeline.state`, `jobs.update`, …). Publishing never blocks. Each subscriber has a bounded buffer, and events that don't fit are dropped for that subscriber and counted. A bus-wide sequence number shows any gaps. The local API can subscribe to every topic at once.
-- **Only addressed speech is transcribed.** The wake word or a hotkey arms the pipeline, and the next end of speech is transcribed. Speech that ends while nothing is armed is never sent to speech-to-text.
+- **Only addressed speech is transcribed.** The wake word arms the pipeline, and the next end of speech is transcribed. Speech that ends while nothing is armed is never sent to speech-to-text.
+- **Push-to-talk (ADR-0030).** The dictation and command keys open the microphone for one utterance. In hold mode, releasing the key ends the utterance, after a 100 ms tail. In tap mode, the VAD's end of speech or a second tap ends it. The recording is trimmed to the speech the VAD found (silence is never transcribed). Speech-to-text is held loaded from the press to the transcript. Without a wake word, the microphone is closed the rest of the time.
 - **Break-glass first.** The stop phrase is checked right after transcription and before routing, even while another utterance is being handled. Every other utterance is refused as busy until the pipeline is idle again.
 - **Long tasks.** The AI hands a long task to the worker by calling a built-in `start_task` tool. Footman replies at once, the pipeline goes back to idle, and the job reports progress on the bus.
 - **Interim permission gate.** Until confirmations exist, read and act tools run, and destructive and outward tools are refused, with the refusal shown to the AI.
@@ -174,7 +177,7 @@ personas/ashford/
 
 - Filler and false-start removal runs locally as a fast cleanup pass, with an optional AI polish.
 - **Inserting text** (`dictation.insert`, ADR-0022): `auto` types short single-line text whose characters are all on the current keyboard layout and pastes everything else. On Linux the layout check reads the compositor's keymap, and typing sends the layout's own keysyms at most 1,000 characters/s through one RemoteDesktop portal session. A restore token in the data folder means the permission dialog appears only once. Paste offers the text on the clipboard, marked so clipboard history skips it, and presses the focused app's paste keys through the same session. It puts the previous clipboard back once the app has read it (ADR-0029).
-- **Hotkeys** are bound with the desktop. Setup binds the key the user chose, and running setup again rebinds it. If the user later moves the shortcut in the desktop's settings, events still report the configured combination (ADR-0029).
+- **Hotkeys** are bound with the desktop. Setup binds the key the user chose, and running setup again rebinds it. If the user later moves the shortcut in the desktop's settings, events still report the configured combination (ADR-0029). On KDE the daemon registers through KGlobalAccel with the stored key, so no dialog appears at login. A key another app holds is reported in `footman status` without stopping the other keys (ADR-0030).
 - Opt-in **speech coaching**, off by default: fillers per minute, speaking pace, and hedge words, tracked over time in SQLite, plus suggested exercises.
 
 ## 10. State and files
@@ -197,7 +200,9 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 **Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service. Models are fetched with `footman models fetch` into `<data>/models`, checked against pinned SHA-256s and recorded in the receipt; setup calls it for the engine it picked, then warms up the GPU and benchmarks the GPU against the CPU, and picks the CPU (writing `speech.stt.accelerator = "cpu"` with a comment) if the GPU is slower. It works offline when the models are already there (ADR-0028).
 
-**Desktop integration.** Where the platform's Input implements `InputSetup`, setup also installs the files that name Footman to the desktop and binds the push-to-talk key. On Linux that file is `io.github.irobinson010.Footman.desktop`, and the receipt also lists the RemoteDesktop restore token (ADR-0029).
+**Desktop integration.** Where the platform's Input implements `InputSetup`, setup also installs the files that name Footman to the desktop, binds the push-to-talk keys (dictation, then commands, each on its own), and asks for permission to type and paste, so that dialog appears during setup rather than at the first dictation. On Linux the file is `io.github.irobinson010.Footman.desktop`, and the receipt also lists the RemoteDesktop restore token (ADR-0029, ADR-0030).
+
+**Service.** On Linux this is the systemd user unit `~/.config/systemd/user/footman.service`. It runs `footman daemon` with the graphical session and restarts it if it fails. Setup installs, enables and (re)starts it as its last step. Uninstall stops, disables and removes it (ADR-0030).
 
 **Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 
