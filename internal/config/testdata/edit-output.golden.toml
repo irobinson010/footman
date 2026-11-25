@@ -1,0 +1,35 @@
+# My footman config. Keep this comment!
+[user]
+name = "Ian"      # single-quoted on purpose
+language = "en"
+
+# How replies are spoken
+[replies]
+speak = "never"   # always | when-voice | never
+
+[input]
+# hotkeys
+dictate = { key = "Ctrl+Alt+D", mode = "toggle" }   # inline
+command = { key = "Super+Shift+Space" }
+
+[personas]
+listening = ["a", "b"]   # spaced array
+
+[history]
+transcripts = true
+retention_days = 7
+
+[jobs]
+max_concurrent = 3
+
+[jobs.code_edits]
+show_diff = false
+
+[coaching]
+enabled = true
+
+[plugins.troupe]
+enabled = false
+
+[ai.providers.claude]
+api_key = "keychain:claude"
