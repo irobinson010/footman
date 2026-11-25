@@ -515,7 +515,19 @@ quips   = ["I shall add it to my list of grievances."]
 - `style.md` is text from the internet and could carry a prompt injection, so it is length-limited and inserted as a delimited *style* section. The core rules (permissions, confirmations, never styling dictation, code, or outgoing messages) come after it and always win.
 - The style applies to spoken and chat replies only (§8).
 
-**Switching:** by voice ("switch to Ashford"), CLI, or web UI. *TBD: whether several personas can listen at once.*
+**Switching:** by voice ("switch to Ashford"), CLI, or web UI.
+
+**Several personas at once (optional, default 1):** several personas can listen at the same time, each with its own wake word and voice. Whichever wake word you use answers.
+
+**Languages:** a pack can include lines and a voice per language (`lines.es.toml`, `voice/es/…`). It falls back to English when a language is missing.
+
+**Shipped personas** (all original characters):
+| Persona | Character |
+|---|---|
+| **Ashford** | A dignified British butler with a dry wit. |
+| **Klaus** | A German butler: precise, formal, efficient. |
+| **Pettigrew** | An eager, slightly hapless valet (the comic one). |
+| **Lucy** | A calm, precise AI assistant. |
 
 ### Voice-creation workflow (voice kit, optional, phase 5)
 1. **Source:** a description (ElevenLabs voice design), Troupe / Resonance Lab, or the user's own recordings with consent.
@@ -524,7 +536,100 @@ quips   = ["I shall add it to my list of grievances."]
 4. **Evaluate:** blind A/B listening against the source, time to first audio, and real-time factor.
 5. **Package:** generate clips for lines without `{address}`, write `persona.toml`, and run `footman persona install ./dist/<id>`.
 
-## 28. Open areas (next)
+## 28. Config (draft)
+
+**Principles**
+- **Every key has a default**, so an empty or missing `config.toml` is valid.
+- **One schema, defined once in Go code.** It drives validation, the web UI settings form, the generated docs, and the list of settings that can be changed by voice. Each key carries a description, its default, whether it can be set by voice, and whether it applies live or needs a restart.
+- **Secrets are never stored in the file.** Keys and tokens are references to the OS keychain (`api_key = "keychain:claude"`).
+- **Comments survive.** When Footman edits the file (for example after a voice command), it uses a format-preserving TOML editor, so the user's comments and ordering are kept.
+- **Versioned:** `version = 1` at the top, with automatic migrations when the schema changes.
+- **Live reload** when the file changes, for keys that support it.
+
+```toml
+version = 1
+
+[user]
+name = "Ian"
+language = "en"
+
+[personas]
+default = "ashford"
+listening = ["ashford"]          # more than one = several personas at once
+[personas.overrides.ashford]
+title = "Master"
+quips = "often"
+
+[input]
+dictate = { key = "Super+Space", mode = "hold" }        # hold | toggle
+command = { key = "Super+Shift+Space", mode = "hold" }
+wake_word = true
+microphone = "default"
+
+[dictation]
+cleanup = "simple"               # off | simple | smart
+commands = "simple"              # off | simple | smart
+insert = "auto"                  # auto | type | paste
+
+[replies]
+speak = "when-voice"             # always | when-voice | never
+quiet_hours = "22:00-07:00"
+
+[speech]
+stt = { engine = "whisper-local", model = "auto", accelerator = "auto" }
+tts = { engine = "persona" }     # persona | elevenlabs | …
+unload_after = "10m"
+
+[ai]
+mode = "cloud"                   # cloud | local-first | offline
+provider = "claude"
+[ai.providers.claude]
+api_key = "keychain:claude"
+model = "claude-haiku-5-5"
+[ai.providers.ollama]
+url = "http://localhost:11434"
+model = "llama3.2"
+[ai.budget.claude]
+monthly_usd = 10
+warn_at = 0.8
+
+[context]                        # what the AI may see besides your words
+local = []                       # e.g. ["window_title", "clipboard", "selection"] or ["all"]
+cloud = []
+
+[memory]
+enabled = false
+
+[history]
+transcripts = true
+retention_days = 30
+
+[permissions]                    # auto | confirm | deny, per level
+read = "auto"
+act = "auto"
+destructive = "confirm"
+outward = "confirm"
+action_log = true
+action_log_retention_days = 90
+
+[jobs]
+max_concurrent = 2
+worker = "claude-code"           # builtin | claude-code | codex
+code_edits = { new_branch = true, show_diff = true }
+
+[coaching]
+enabled = false
+
+[web]
+listen = "127.0.0.1:7878"        # restart required
+
+[plugins.troupe]                 # one table per installed plugin, keys from its manifest schema
+enabled = true
+url = "https://troupe.example.com:8443"
+token = "keychain:plugin.troupe.token"
+```
+
+## 29. Open areas (next)
 
 - [ ] Local API: endpoints, event stream format, authentication.
 - [ ] Security model details.
