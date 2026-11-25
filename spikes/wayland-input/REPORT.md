@@ -160,3 +160,25 @@ Everything below runs on your real desktop and injects real keystrokes into what
 - `internal/wl`: minimal pure-Go Wayland wire client; `internal/portal`: portal request plumbing; `internal/keys`: rune → keysym and evdev codes
 
 Spike code is throwaway and must not be imported from `cmd/` or `internal/` at the repo root.
+
+## Real-desktop results (owner, 2026-11-24)
+
+Tested on the owner's KDE Plasma Wayland desktop. Brave was running natively on Wayland (`--ozone-platform=wayland`).
+
+| Test | Result |
+|---|---|
+| GlobalShortcuts portal, hold and release | ✅ `Activated` / `Deactivated` arrive with another app focused. |
+| Portal shortcut binding UX | ⚠️ `BindShortcuts` returned immediately and **saved the suggested trigger (`Pause`) without a dialog**. The owner's keyboard has no Pause key, so the binding was unusable until it was changed in System Settings → Shortcuts. Rebinding to F8 worked. |
+| Meta-based combos | ❌ Pressing and releasing Meta opens the KDE launcher/search, so Meta combos are poor push-to-talk keys. |
+| Typing via portal (`unicode`), Konsole | ✅ Exact match, all characters. |
+| Typing via portal (`unicode`), Brave | ⚠️ Characters not on the layout were dropped, as predicted: `Caf dj vu  nave quotes single  20 5 3   Strae`. |
+| Paste via KWin fake_input + Shift+Insert, Konsole | ❌ Only `2~` appeared (Shift+Insert pastes the *selection* in Konsole). |
+| Paste via KWin fake_input + Ctrl+Shift+V, Konsole | ✅ Exact match, shown as a bracketed (highlighted) paste that isn't executed. |
+| Paste via KWin fake_input + Shift+Insert / Ctrl+V, Brave | ❌ Nothing, even with `RESTORE_AFTER=3`. |
+| Manual Ctrl+V in Brave after `wl-copy` | ✅ Works, so the clipboard is fine. **Brave ignores key combos injected through KWin fake_input**, while it accepts portal-injected keys. |
+
+### Conclusions for the Linux `Input` implementation
+1. **Hotkeys:** GlobalShortcuts portal. Footman must **not rely on the suggested trigger**. Setup asks the user to press their key (default suggestion **F8**), and docs explain rebinding in System Settings. Avoid Meta-based defaults.
+2. **Typing:** RemoteDesktop portal keysyms, used only for text whose characters are all on the current layout.
+3. **Paste (everything else):** set the clipboard through data-control, then send the paste key **through the RemoteDesktop portal**, not KWin fake_input. Use the paste combo for the app class: **Ctrl+Shift+V for terminals**, **Ctrl+V otherwise**. Restore the previous clipboard only after the app has read it.
+4. KWin fake_input is a fallback only for apps where the portal is unavailable. Portal-sent paste combos in Chromium still need to be verified in Sprint 1.
