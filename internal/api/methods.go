@@ -84,6 +84,7 @@ type StatusResult struct {
 	UptimeSeconds   float64           `json:"uptime_seconds"`
 	State           string            `json:"state"`
 	Muted           bool              `json:"muted"`
+	Microphone      core.MicStatus    `json:"microphone"`
 	Jobs            []string          `json:"jobs"`
 	DevFakes        bool              `json:"dev_fakes"`
 	Implementations map[string]string `json:"implementations"`
@@ -112,6 +113,7 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 		UptimeSeconds:   m.d.Now().Sub(m.d.Info.Started).Seconds(),
 		State:           p.State().String(),
 		Muted:           p.Muted(),
+		Microphone:      p.Mic(),
 		Jobs:            jobs,
 		DevFakes:        m.d.Info.DevFakes,
 		Implementations: impl,
