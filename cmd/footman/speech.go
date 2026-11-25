@@ -23,7 +23,7 @@ type speechDirs struct {
 
 func modelsDir(data string) string { return filepath.Join(data, "models") }
 
-// defaultVAD is the VAD the daemon uses (it has no config key yet).
+// defaultVAD is the VAD the daemon uses.
 const defaultVAD = sherpa.SileroName
 
 // sttPlan is the speech-to-text engine the daemon will build.
@@ -57,23 +57,26 @@ func planSTT(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware) (stt
 	if err != nil {
 		return sttPlan{}, err
 	}
-	return sttPlan{
-		name: c.Engine,
-		opts: registry.Map{
-			"model":       c.Model,
-			"accelerator": c.Accelerator,
-			"language":    cfg.String("user.language"),
-			"models_dir":  dirs.models,
-			"cache_dir":   dirs.cache,
-		},
-		choice: &c,
-	}, nil
+	return sttPlan{name: c.Engine, opts: sttOptions(c, cfg.String("user.language"), dirs), choice: &c}, nil
 }
 
-// vadOptions are the options for the VAD named name.
-func vadOptions(name string, dirs speechDirs) registry.Config {
+// sttOptions are the options a native speech-to-text engine takes for a
+// choice.
+func sttOptions(c accel.Choice, language string, dirs speechDirs) registry.Map {
+	return registry.Map{
+		"model":       c.Model,
+		"accelerator": c.Accelerator,
+		"language":    language,
+		"models_dir":  dirs.models,
+		"cache_dir":   dirs.cache,
+	}
+}
+
+// vadOptions are the options for the VAD named name. minSilence is
+// speech.vad.min_silence in seconds.
+func vadOptions(name string, dirs speechDirs, minSilence float64) registry.Config {
 	if name == sherpa.SileroName {
-		return registry.Map{"models_dir": dirs.models}
+		return registry.Map{"models_dir": dirs.models, "min_silence": minSilence}
 	}
 	return nil
 }

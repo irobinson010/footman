@@ -70,7 +70,7 @@ jobs:
         run: |
           eval "$(scripts/native/whispercpp.sh env)"
           go vet -tags native ./...
-          go test -tags native -v -run 'Transcribe|Silero|Parakeet|Registered' ./internal/speech/... ./cmd/footman/
+          go test -tags native -v -run 'Transcribe|Silero|Parakeet|Registered|Unloads|SetupSpeech' ./internal/speech/... ./cmd/footman/
           go test -tags native ./...
 
   cross:

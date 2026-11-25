@@ -60,10 +60,10 @@ func TestPlanSTT(t *testing.T) {
 
 func TestVADOptions(t *testing.T) {
 	dirs := speechDirs{models: "/m"}
-	if o, ok := vadOptions(defaultVAD, dirs).(registry.Map); !ok || o["models_dir"] != "/m" {
+	if o, ok := vadOptions(defaultVAD, dirs, 0.35).(registry.Map); !ok || o["models_dir"] != "/m" || o["min_silence"] != 0.35 {
 		t.Errorf("silero options %v", o)
 	}
-	if vadOptions(fakeName, dirs) != nil {
+	if vadOptions(fakeName, dirs, 0.5) != nil {
 		t.Error("the fake VAD got options")
 	}
 }

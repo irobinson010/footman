@@ -99,6 +99,7 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		parts = append(parts, a+"="+name)
 	}
 	_, _ = fmt.Fprintf(stdout, "  engines:     %s\n", strings.Join(parts, " "))
+	_, _ = fmt.Fprintf(stdout, "  models:      %s\n", modelsLine(s.Models, time.Now()))
 	if s.DevFakes {
 		_, _ = fmt.Fprintf(stdout, "  WARNING:     started with --dev-fakes (development only)\n")
 	}
@@ -237,4 +238,28 @@ func cmdEvents(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			_, _ = fmt.Fprintf(stdout, "%s %-20s %s\n", ev.At.Local().Format("15:04:05.000"), ev.Topic, ev.Data)
 		}
 	}
+}
+
+// modelsLine summarizes which speech models are in memory, such as
+// "stt loaded, vad loaded, tts unloaded 4m ago (unload after 10m0s idle)".
+func modelsLine(m api.ModelsStatus, now time.Time) string {
+	if len(m.Models) == 0 {
+		return "none"
+	}
+	var parts []string
+	for _, x := range m.Models {
+		switch {
+		case x.Loaded && x.InUse > 0:
+			parts = append(parts, x.Name+" loaded (in use)")
+		case x.Loaded:
+			parts = append(parts, x.Name+" loaded")
+		default:
+			parts = append(parts, fmt.Sprintf("%s unloaded %s ago", x.Name, now.Sub(x.Since).Round(time.Second)))
+		}
+	}
+	when := "never unload"
+	if d, err := time.ParseDuration(m.UnloadAfter); err == nil && d > 0 {
+		when = "unload after " + d.String() + " idle"
+	}
+	return strings.Join(parts, ", ") + " (" + when + ")"
 }
