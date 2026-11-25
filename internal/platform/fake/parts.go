@@ -404,6 +404,17 @@ type Audio struct {
 	played   []audio.Clip
 	keepOpen bool
 	opened   int
+	// queued and delivered count frames queued and taken (or dropped) by
+	// a capture, so a test can wait until the microphone has been read.
+	queued, delivered int
+}
+
+// Undelivered returns how many queued frames no capture's reader has taken
+// yet.
+func (a *Audio) Undelivered() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.queued - a.delivered
 }
 
 // KeepOpen makes later Captures keep their channel open after the queued
@@ -430,6 +441,7 @@ var (
 func (a *Audio) QueueCapture(frames ...audio.Frame) {
 	a.mu.Lock()
 	a.frames = append(a.frames, frames...)
+	a.queued += len(frames)
 	a.mu.Unlock()
 }
 
@@ -458,20 +470,26 @@ func (a *Audio) Capture(ctx context.Context, device string, f audio.Format) (<-c
 	a.opened++
 	keep := a.keepOpen
 	a.mu.Unlock()
-	if !keep {
-		return audio.Feed(ctx, frames), nil
-	}
 	ch := make(chan audio.Frame)
 	go func() {
 		defer close(ch)
-		for _, f := range frames {
+		for i, f := range frames {
 			select {
 			case ch <- f:
+				a.mu.Lock()
+				a.delivered++
+				a.mu.Unlock()
 			case <-ctx.Done():
+				// Closed before they were read: they are gone, not pending.
+				a.mu.Lock()
+				a.delivered += len(frames) - i
+				a.mu.Unlock()
 				return
 			}
 		}
-		<-ctx.Done()
+		if keep {
+			<-ctx.Done()
+		}
 	}()
 	return ch, nil
 }

@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -47,11 +48,28 @@ func newPTT(t *testing.T, edit func(*core.Deps, *core.Config)) *pttRig {
 	go func() { pr.done <- r.p.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		<-pr.done
+		if err := <-pr.done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
 	})
 	// Hotkeys are registered before the microphone is reported off.
 	await(t, pr.mic, func(s platform.TrayStatus) bool { return s == platform.MicOff })
 	return pr
+}
+
+// end sends the key event that ends a recording (a hold key's release, a
+// tap key's second press), once the fake microphone has handed over every
+// queued frame, as a user releases the key after speaking.
+func (r *pttRig) end(key string, pressed bool) {
+	r.t.Helper()
+	deadline := time.Now().Add(guard)
+	for r.speaker().Undelivered() > 0 {
+		if time.Now().After(deadline) {
+			r.t.Fatalf("%d queued frames never read", r.speaker().Undelivered())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	r.input().Press(key, pressed)
 }
 
 func (r *pttRig) awaitMic(want platform.TrayStatus) {
@@ -86,7 +104,7 @@ func TestPushToTalkHold(t *testing.T) {
 		t.Fatalf("transcribed %d times before the key came up", n)
 	}
 	released := time.Now()
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	ins := await(t, r.inserts, func(core.Insertion) bool { return true })
 	if ins.Text != "hello world" || ins.Latency <= 0 || ins.Latency > time.Since(released) {
 		t.Errorf("insertion %+v", ins)
@@ -123,7 +141,7 @@ func TestPushToTalkNoSpeech(t *testing.T) {
 	r.plat.Audio().(*pfake.Audio).QueueCapture(silence(10, 0)...)
 	r.input().Press("F8", true)
 	r.awaitMic(platform.Recording)
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	if f := await(t, r.fails, func(core.Failure) bool { return true }); f.Err != core.ErrNoSpeech.Error() {
 		t.Errorf("failure %+v", f)
 	}
@@ -171,7 +189,7 @@ func TestTapToTalkSecondTap(t *testing.T) {
 	if n := len(r.stt.Inputs()); n != 0 {
 		t.Fatalf("transcribed before the second tap")
 	}
-	r.input().Press("F8", true)
+	r.end("F8", true)
 	if ins := await(t, r.inserts, func(core.Insertion) bool { return true }); ins.Text != "cut short" {
 		t.Errorf("inserted %q", ins.Text)
 	}
@@ -184,7 +202,7 @@ func TestPushToTalkCommand(t *testing.T) {
 	r.transcript("open youtube")
 	r.input().Press("Shift+F8", true)
 	r.awaitMic(platform.Recording)
-	r.input().Press("Shift+F8", false)
+	r.end("Shift+F8", false)
 	r.awaitMic(platform.MicOff)
 	deadline := time.Now().Add(guard)
 	for len(r.launcher().URLs()) == 0 && time.Now().Before(deadline) {
@@ -219,7 +237,7 @@ func TestStopDuringPushToTalk(t *testing.T) {
 	if r.p.Muted() {
 		t.Error("a push-to-talk press did not lift the mute")
 	}
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	if ins := await(t, r.inserts, func(core.Insertion) bool { return true }); ins.Text != "after the stop" {
 		t.Errorf("inserted %q", ins.Text)
 	}
@@ -234,14 +252,14 @@ func TestPushToTalkQueuesBehindBusyTurn(t *testing.T) {
 	r.transcript("first")
 	r.input().Press("F8", true)
 	r.awaitMic(platform.Recording)
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	await(t, r.states, func(c core.StateChange) bool { return c.To == core.Transcribing })
 
 	r.say(2)
 	r.transcript("second")
 	r.input().Press("F8", true)
 	r.awaitMic(platform.Recording)
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	r.awaitMic(platform.MicOff)
 	close(block)
 	await(t, r.inserts, func(i core.Insertion) bool { return i.Text == "first" })
@@ -289,7 +307,7 @@ func TestPushToTalkHoldsSTT(t *testing.T) {
 	r.transcript("held")
 	r.input().Press("F8", true)
 	r.awaitMic(platform.Recording)
-	r.input().Press("F8", false)
+	r.end("F8", false)
 	await(t, r.inserts, func(core.Insertion) bool { return true })
 	deadline := time.Now().Add(guard)
 	for {

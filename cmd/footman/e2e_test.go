@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -336,7 +337,7 @@ func (e *e2e) cli(args ...string) (code int, stdout, stderr string) {
 	var o, eb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &eb
 	err := cmd.Run()
-	if ee, ok := err.(*exec.ExitError); ok {
+	if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 		code = ee.ExitCode()
 	} else if err != nil {
 		code = -1
