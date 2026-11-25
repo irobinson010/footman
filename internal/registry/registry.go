@@ -7,7 +7,7 @@
 //
 //	var STTs = registry.New[STT]("stt")
 //
-//	func init() { speech.STTs.Register("whisper-local", newWhisper) }
+//	func init() { speech.STTs.Register("whispercpp", newWhisper) }
 //
 //	stt, err := speech.STTs.New(cfg.Speech.STT.Engine, cfg.Speech.STT.Options)
 package registry

@@ -102,7 +102,7 @@ type TTS interface {
 }
 
 // Registries of speech engines, keyed by the engine name used in config
-// (for example `[speech] stt = { engine = "whisper-local" }`).
+// (for example `[speech] stt = { engine = "whispercpp" }`).
 var (
 	// VADs holds voice activity detectors.
 	VADs = registry.New[VAD]("vad")

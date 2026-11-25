@@ -11,8 +11,10 @@ import (
 type userPaths struct {
 	// Config holds config.toml.
 	Config string
-	// Data holds footman.db.
+	// Data holds footman.db and the models folder.
 	Data string
+	// Cache holds data that can be rebuilt, such as the GPU shader cache.
+	Cache string
 	// Runtime holds footman.sock.
 	Runtime string
 }
@@ -46,11 +48,18 @@ func defaultPaths() userPaths {
 			dir = filepath.Join(home, ".footman")
 		}
 		dir = filepath.Join(dir, "footman")
-		return userPaths{Config: dir, Data: dir, Runtime: tmpRuntime}
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			cache = filepath.Join(dir, "cache")
+		} else {
+			cache = filepath.Join(cache, "footman")
+		}
+		return userPaths{Config: dir, Data: dir, Cache: cache, Runtime: tmpRuntime}
 	}
 	p := userPaths{
 		Config:  filepath.Join(env("XDG_CONFIG_HOME", filepath.Join(home, ".config")), "footman"),
 		Data:    filepath.Join(env("XDG_DATA_HOME", filepath.Join(home, ".local", "share")), "footman"),
+		Cache:   filepath.Join(env("XDG_CACHE_HOME", filepath.Join(home, ".cache")), "footman"),
 		Runtime: tmpRuntime,
 	}
 	if rt := env("XDG_RUNTIME_DIR", ""); rt != "" {
