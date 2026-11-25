@@ -50,6 +50,10 @@ type Options struct {
 	AfterFunc func(d time.Duration, f func()) Timer
 	// Now is the clock (default time.Now).
 	Now func() time.Time
+	// OnUnload, if set, runs (in its own goroutine) after an engine has been
+	// closed because it was idle, such as to give the freed memory back to
+	// the operating system.
+	OnUnload func()
 }
 
 // Holder keeps one engine and unloads it when idle. It is safe for
@@ -147,6 +151,9 @@ func (h *Holder[T]) unloadLocked() bool {
 	var zero T
 	h.v, h.loaded = zero, false
 	h.since = h.o.Now()
+	if h.o.OnUnload != nil {
+		go h.o.OnUnload()
+	}
 	return true
 }
 

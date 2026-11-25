@@ -34,6 +34,15 @@ func (f Format) Duration(n int) time.Duration {
 	return time.Duration(n) * time.Second / time.Duration(f.SampleRate*f.Channels)
 }
 
+// Samples returns how many interleaved samples last d in this format,
+// rounded down to whole frames. It returns 0 for an invalid format.
+func (f Format) Samples(d time.Duration) int {
+	if f.SampleRate <= 0 || f.Channels <= 0 {
+		return 0
+	}
+	return int(d*time.Duration(f.SampleRate)/time.Second) * f.Channels
+}
+
 // Valid reports whether the format has a positive rate and channel count.
 func (f Format) Valid() bool { return f.SampleRate > 0 && f.Channels > 0 }
 

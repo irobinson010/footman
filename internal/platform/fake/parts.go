@@ -21,7 +21,9 @@ type Input struct {
 	bound  []string
 
 	setupBinary string
-	// Err, if set, is returned by Type, Paste, SetupInput and BindHotkeys.
+	prepared    int
+	// Err, if set, is returned by Type, Paste, SetupInput, BindHotkeys and
+	// PrepareInsert.
 	Err error
 	// Files is what SetupInput reports.
 	Files platform.InputFiles
@@ -139,6 +141,27 @@ func (in *Input) BindHotkeys(ctx context.Context, combos []string) ([]platform.H
 		out = append(out, platform.HotkeyBinding{Hotkey: c, Trigger: c})
 	}
 	return out, nil
+}
+
+// PrepareInsert implements platform.InputSetup: it counts the calls.
+func (in *Input) PrepareInsert(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.Err != nil {
+		return in.Err
+	}
+	in.prepared++
+	return nil
+}
+
+// Prepared returns how many times PrepareInsert succeeded.
+func (in *Input) Prepared() int {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.prepared
 }
 
 // Bound returns every combination passed to BindHotkeys, in order.
@@ -372,12 +395,30 @@ func (c *Clipboard) WriteText(ctx context.Context, text string) error {
 }
 
 // Audio has one default input and output device. Capture sends the queued
-// frames and then closes its channel, as if the microphone was unplugged;
-// Play records what it played.
+// frames and then closes its channel, as if the microphone was unplugged
+// (or, after KeepOpen, keeps it open until its context ends); Play records
+// what it played.
 type Audio struct {
-	mu     sync.Mutex
-	frames []audio.Frame
-	played []audio.Clip
+	mu       sync.Mutex
+	frames   []audio.Frame
+	played   []audio.Clip
+	keepOpen bool
+	opened   int
+}
+
+// KeepOpen makes later Captures keep their channel open after the queued
+// frames, until their context ends, as a real microphone does.
+func (a *Audio) KeepOpen() {
+	a.mu.Lock()
+	a.keepOpen = true
+	a.mu.Unlock()
+}
+
+// Opened returns how many times Capture has opened the microphone.
+func (a *Audio) Opened() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.opened
 }
 
 var (
@@ -414,8 +455,25 @@ func (a *Audio) Capture(ctx context.Context, device string, f audio.Format) (<-c
 	a.mu.Lock()
 	frames := a.frames
 	a.frames = nil
+	a.opened++
+	keep := a.keepOpen
 	a.mu.Unlock()
-	return audio.Feed(ctx, frames), nil
+	if !keep {
+		return audio.Feed(ctx, frames), nil
+	}
+	ch := make(chan audio.Frame)
+	go func() {
+		defer close(ch)
+		for _, f := range frames {
+			select {
+			case ch <- f:
+			case <-ctx.Done():
+				return
+			}
+		}
+		<-ctx.Done()
+	}()
+	return ch, nil
 }
 
 // Play implements platform.Audio.

@@ -7,12 +7,10 @@
 // standard desktop tools xdg-open, gio, wl-copy and wl-paste for launching and
 // the clipboard, and pactl, parec and pacat for audio. Input speaks to the
 // desktop portals over D-Bus and to the compositor over its own small Wayland
-// client. Service returns
-// platform.ErrUnsupported until their own implementations land.
+// client. Service installs a systemd user unit with systemctl.
 package linux
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -36,7 +34,7 @@ type Platform struct {
 
 	input     *Input
 	audio     *Audio
-	service   unsupportedService
+	service   *Service
 	windows   *Windows
 	launcher  *Launcher
 	notifier  *Notifier
@@ -73,6 +71,7 @@ func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc)
 		secrets:   &Secrets{bus: b},
 		paths:     paths,
 		audio:     newAudio(run),
+		service:   newService(run),
 	}
 }
 
@@ -99,7 +98,7 @@ func (p *Platform) Audio() platform.Audio { return p.audio }
 // (Capturing and Watch).
 func (p *Platform) AudioDevices() *Audio { return p.audio }
 
-// Service returns a stub that reports platform.ErrUnsupported.
+// Service returns the systemd user service.
 func (p *Platform) Service() platform.Service { return p.service }
 
 // Secrets returns the Secret Service keychain.
@@ -157,11 +156,3 @@ func serviceMissing(err error) bool {
 	}
 	return false
 }
-
-type unsupportedService struct{}
-
-var errService = fmt.Errorf("linux service: %w", platform.ErrUnsupported)
-
-func (unsupportedService) Install(context.Context) error           { return errService }
-func (unsupportedService) Uninstall(context.Context) error         { return errService }
-func (unsupportedService) Installed(context.Context) (bool, error) { return false, errService }

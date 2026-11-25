@@ -233,9 +233,16 @@ func TestSetupDesktopIntegration(t *testing.T) {
 		t.Errorf("SetupInput got binary %q, want %q", got, e.binary)
 	}
 	// Setup binds the chosen key itself rather than trusting the desktop's
-	// suggestion (ADR-0022).
-	if got := in.Bound(); len(got) != 1 || got[0] != "F9" {
-		t.Errorf("bound %v, want [F9]", got)
+	// suggestion (ADR-0022), and the command key on its own (ADR-0030).
+	if got := in.Bound(); !slices.Equal(got, []string{"F9", "Super+Shift+Space"}) {
+		t.Errorf("bound %v, want [F9 Super+Shift+Space]", got)
+	}
+	// It asks for permission to insert text now, not at the first dictation.
+	if in.Prepared() != 1 {
+		t.Errorf("PrepareInsert called %d times, want 1", in.Prepared())
+	}
+	if !slices.ContainsFunc(res.Lines, func(l string) bool { return strings.Contains(l, "allowed to type and paste") }) {
+		t.Errorf("setup lines do not report the insert permission: %q", res.Lines)
 	}
 	rec, err := install.LoadReceipt(res.ReceiptPath)
 	if err != nil {
@@ -292,7 +299,13 @@ func TestSetupRerunKeepsUserEditsAndDoesNotDuplicate(t *testing.T) {
 	e.write(res.ConfigPath, edited)
 	before, _ := install.LoadReceipt(res.ReceiptPath)
 
+	in := e.p.Input().(*fake.Input)
+	boundBefore := len(in.Bound())
 	e.setup(install.SetupOptions{Name: "Ian R"})
+	// Running setup again rebinds the configured key (design §9).
+	if got := in.Bound()[boundBefore:]; len(got) == 0 || got[0] != "F9" {
+		t.Errorf("rerun bound %v, want F9 first", got)
+	}
 
 	after, _ := install.LoadReceipt(res.ReceiptPath)
 	if len(after.Entries) != len(before.Entries) {

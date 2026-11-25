@@ -4,25 +4,19 @@ package linux
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/godbus/dbus/v5"
 
 	"github.com/irobinson010/footman/internal/platform"
 )
@@ -42,17 +36,13 @@ var (
 	nestedErr  error
 )
 
-type nestedSession struct {
-	root     string
-	env      map[string]string
-	cmd      *exec.Cmd
-	attached bool
-}
+// nestedSession is the shared Nested session (nested.go) with test helpers.
+type nestedSession struct{ *Nested }
 
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if nestedSess != nil {
-		nestedSess.stop()
+		nestedSess.Stop()
 	}
 	os.Exit(code)
 }
@@ -61,153 +51,30 @@ func TestMain(m *testing.M) {
 // skips the test if KWin is not installed.
 func nested(t *testing.T) *nestedSession {
 	t.Helper()
-	for _, tool := range []string{"kwin_wayland", "dbus-run-session", "dbus-update-activation-environment"} {
+	for _, tool := range NestedTools {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s is not installed; the nested KWin tests need KDE Plasma's KWin", tool)
 		}
 	}
-	nestedOnce.Do(func() { nestedSess, nestedErr = startNested() })
+	nestedOnce.Do(func() {
+		var n *Nested
+		n, nestedErr = StartNested()
+		if nestedErr == nil {
+			nestedSess = &nestedSession{n}
+		}
+	})
 	if nestedErr != nil {
 		t.Fatal(nestedErr)
 	}
 	return nestedSess
 }
 
-func startNested() (*nestedSession, error) {
-	if root := os.Getenv("FOOTMAN_NESTED_ROOT"); root != "" {
-		// Reuse a session started by hand with testdata/nested-kwin.sh ROOT
-		// (handy when debugging); it is left running.
-		n := &nestedSession{root: root, attached: true}
-		return n, n.readEnv()
-	}
-	root, err := os.MkdirTemp("", "fmnest")
-	if err != nil {
-		return nil, err
-	}
-	script, err := filepath.Abs("testdata/nested-kwin.sh")
-	if err != nil {
-		return nil, err
-	}
-	cmd := exec.Command(script, root)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	logf, err := os.Create(filepath.Join(root, "session.log"))
-	if err != nil {
-		return nil, err
-	}
-	cmd.Stdout, cmd.Stderr = logf, logf
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	n := &nestedSession{root: root, cmd: cmd}
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		if n.readEnv() == nil {
-			// Give the portal backends a moment to come up.
-			time.Sleep(time.Second)
-			return n, nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	n.stop()
-	log, _ := os.ReadFile(filepath.Join(root, "session.log"))
-	return nil, fmt.Errorf("nested KWin did not start:\n%s", log)
-}
-
-func (n *nestedSession) readEnv() error {
-	b, err := os.ReadFile(filepath.Join(n.root, "env"))
-	if err != nil {
-		return err
-	}
-	n.env = map[string]string{}
-	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if k, v, ok := strings.Cut(l, "="); ok {
-			n.env[k] = v
-		}
-	}
-	return nil
-}
-
-func (n *nestedSession) stop() {
-	if n.attached {
-		return
-	}
-	// Stop the session's services before KWin: a portal backend that loses
-	// its compositor aborts, and the crash report would reach the desktop.
-	killNestedLeftovers(filepath.Join(n.root, "run"), "kwin_wayland", "dbus-daemon", "dbus-run-sessio")
-	time.Sleep(500 * time.Millisecond)
-	if n.cmd.Process != nil {
-		_ = syscall.Kill(-n.cmd.Process.Pid, syscall.SIGTERM)
-		done := make(chan struct{})
-		go func() { _ = n.cmd.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			_ = syscall.Kill(-n.cmd.Process.Pid, syscall.SIGKILL)
-		}
-	}
-	// Services the private bus started (portals, the document portal's
-	// FUSE mount) can outlive it: stop everything whose runtime folder is
-	// the nested one.
-	killNestedLeftovers(filepath.Join(n.root, "run"))
-	for _, fu := range []string{"fusermount3", "fusermount"} {
-		if exec.Command(fu, "-u", "-z", filepath.Join(n.root, "run", "doc")).Run() == nil {
-			break
-		}
-	}
-	if os.Getenv("FOOTMAN_NESTED_KEEP") == "" {
-		// KWin may still flush its config while exiting.
-		for range 3 {
-			time.Sleep(300 * time.Millisecond)
-			_ = os.RemoveAll(n.root)
-		}
-	}
-}
-
-// killNestedLeftovers stops this user's processes whose XDG_RUNTIME_DIR is
-// runDir, except those named in keep. No other process can match: runDir is
-// a fresh temporary folder.
-func killNestedLeftovers(runDir string, keep ...string) {
-	want := []byte("XDG_RUNTIME_DIR=" + runDir + "\x00")
-	ents, _ := os.ReadDir("/proc")
-	for _, e := range ents {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil || pid == os.Getpid() {
-			continue
-		}
-		env, err := os.ReadFile(filepath.Join("/proc", e.Name(), "environ"))
-		if err != nil || !bytes.Contains(env, want) {
-			continue
-		}
-		comm, _ := os.ReadFile(filepath.Join("/proc", e.Name(), "comm"))
-		if slices.Contains(keep, strings.TrimSpace(string(comm))) {
-			continue
-		}
-		_ = syscall.Kill(pid, syscall.SIGTERM)
-	}
-}
-
-func (n *nestedSession) environ() []string {
-	out := []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8"}
-	for k, v := range n.env {
-		out = append(out, k+"="+v)
-	}
-	return out
-}
-
-func (n *nestedSession) dial(...dbus.ConnOption) (*dbus.Conn, error) {
-	return dbus.Connect(n.env["DBUS_SESSION_BUS_ADDRESS"])
-}
+func (n *nestedSession) environ() []string { return n.Environ() }
 
 // platform returns a Platform wired only to the nested session.
 func (n *nestedSession) platform(t *testing.T) *Platform {
 	t.Helper()
-	p := newPlatform(n.dial, defaultRun)
-	p.windows.runtimeDir = func() string { return n.env["XDG_RUNTIME_DIR"] }
-	in := p.input
-	in.socket = func() string { return filepath.Join(n.env["XDG_RUNTIME_DIR"], n.env["WAYLAND_DISPLAY"]) }
-	in.dataHome = func() string { return n.env["XDG_DATA_HOME"] }
-	in.tokenFile = filepath.Join(n.root, "footman-data", "remote-desktop.token")
-	in.remote.tokenFile = in.tokenFile
+	p := n.NewPlatform(filepath.Join(n.Root, "footman-data", "remote-desktop.token"))
 	t.Cleanup(func() { _ = p.Close() })
 	// The portal only accepts the app id if the .desktop file's program
 	// exists, so point it at this test binary.
@@ -215,28 +82,13 @@ func (n *nestedSession) platform(t *testing.T) *Platform {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := in.SetupInput(context.Background(), exe); err != nil {
+	if _, err := p.input.SetupInput(context.Background(), exe); err != nil {
 		t.Fatal(err)
 	}
-	n.allowRemoteDesktop(t)
-	return p
-}
-
-// allowRemoteDesktop pre-approves the RemoteDesktop dialog for Footman in the
-// nested permission store (KDE's "kde-authorized" table), since no one is
-// there to click it.
-func (n *nestedSession) allowRemoteDesktop(t *testing.T) {
-	t.Helper()
-	c, err := n.dial()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = c.Close() }()
-	err = c.Object("org.freedesktop.impl.portal.PermissionStore", "/org/freedesktop/impl/portal/PermissionStore").
-		Call("org.freedesktop.impl.portal.PermissionStore.SetPermission", 0, "kde-authorized", true, "remote-desktop", AppID, []string{"yes"}).Err
-	if err != nil {
+	if err := n.AllowRemoteDesktop(); err != nil {
 		t.Fatalf("pre-approving remote desktop: %v", err)
 	}
+	return p
 }
 
 // start runs a program inside the nested session until the test ends.
@@ -651,7 +503,7 @@ func expectHotkey(t *testing.T, ch <-chan platform.HotkeyEvent, combo string, pr
 
 const (
 	keysymF6  = 0xffc3
-	keysymF8  = 0xffc5
+	keysymF8  = KeysymF8
 	keysymF12 = 0xffc9
 )
 
@@ -695,8 +547,12 @@ func TestNestedHotkeysPortal(t *testing.T) {
 	if len(got) != 1 || got[0].Trigger != "F8" {
 		t.Fatalf("BindHotkeys = %+v, want F8", got)
 	}
+	// Through the portal (as on other desktops), then through KGlobalAccel
+	// (as the daemon does on KDE) below.
 	hctx, stop := context.WithCancel(ctx)
+	in.forcePortal = true
 	ch, err := in.Hotkeys(hctx, []string{"F8", "F6"})
+	in.forcePortal = false
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,26 +600,10 @@ func TestNestedHotkeysPortal(t *testing.T) {
 
 // approveShortcutDialog answers KDE's "Global Shortcuts Requested" dialog by
 // pressing Return in it whenever it appears during the test.
-func approveShortcutDialog(t *testing.T, n *nestedSession, p *Platform) {
+func approveShortcutDialog(t *testing.T, _ *nestedSession, p *Platform) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for ctx.Err() == nil {
-			wctx, c := context.WithTimeout(ctx, time.Second)
-			w, err := p.Windows().Active(wctx)
-			c()
-			if err == nil && (strings.Contains(w.App, "portal.desktop.kde") || strings.Contains(w.Title, "Global Shortcuts")) {
-				time.Sleep(300 * time.Millisecond)
-				in := p.input
-				if pc, s, err := in.remote.ensure(ctx); err == nil {
-					_ = in.remote.tap(ctx, pc, s, keysymReturn)
-				}
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-	}()
+	done := p.ApproveShortcutDialogs(ctx)
 	t.Cleanup(func() { cancel(); <-done })
 }
 
@@ -797,4 +637,58 @@ func TestNestedHotkeysKGlobalAccel(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "already used") {
 		t.Errorf("binding KWin's Alt+F4: err = %v, want 'already used'", err)
 	}
+}
+
+// TestNestedHotkeysNoDialogAfterSetup is how the daemon starts at login on
+// KDE: setup has bound the key through the portal (answering its dialog),
+// and Hotkeys then registers without any dialog, since KDE's portal would
+// ask again for every new session (ADR-0030). A key the user moved in System
+// Settings stays where they put it.
+func TestNestedHotkeysNoDialogAfterSetup(t *testing.T) {
+	n := nested(t)
+	p := n.platform(t)
+	in := p.input
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	actx, stopApprover := context.WithCancel(ctx)
+	approved := p.ApproveShortcutDialogs(actx)
+	got, err := in.BindHotkeys(ctx, []string{"F7", "Super+Shift+F9"})
+	stopApprover()
+	<-approved
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Super and Meta are the same key: the binding reports what was asked.
+	if len(got) != 2 || got[0].Trigger != "F7" || got[1].Trigger != "Super+Shift+F9" {
+		t.Fatalf("BindHotkeys = %+v", got)
+	}
+
+	// No one answers dialogs from here on.
+	hctx, stop := context.WithTimeout(ctx, 10*time.Second)
+	ch, err := in.Hotkeys(hctx, []string{"F7", "Super+Shift+F9"})
+	if err != nil {
+		t.Fatalf("Hotkeys after setup (a dialog nobody answered?): %v", err)
+	}
+	tapHotkey(t, in, ch, 0xffc4 /* F7 */, "F7")
+	stop()
+	for range ch {
+	}
+
+	// The user moves F7 to F11; the next start keeps F11.
+	_, ka, err := in.kglobalaccel(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f7, _ := parseHotkey("F7")
+	f11, _ := parseHotkey("F11")
+	if err := ka.Call(kglobalaccelIface+".setForeignShortcutKeys", 0, in.kgaActionID(f7), []kgaKeys{{[]int32{f11.qtKey(), 0, 0, 0}}}).Err; err != nil {
+		t.Fatal(err)
+	}
+	hctx, stop = context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	ch, err = in.Hotkeys(hctx, []string{"F7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tapHotkey(t, in, ch, 0xffc8 /* F11 */, "F7")
 }

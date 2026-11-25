@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/bus"
@@ -62,6 +63,15 @@ type Config struct {
 	DictateHotkey, CommandHotkey, StopHotkey string
 	// Mic and Speaker are device IDs; empty means the default.
 	Mic, Speaker string
+	// DictateMode and CommandMode say how the dictation and command hotkeys
+	// work (default HoldToTalk).
+	DictateMode, CommandMode TalkMode
+	// ReleaseTail is how long a hold-to-talk recording goes on after the key
+	// is released (default DefaultReleaseTail).
+	ReleaseTail time.Duration
+	// MaxUtterance caps one push-to-talk recording (default
+	// DefaultMaxUtterance).
+	MaxUtterance time.Duration
 	// Insert is the dictation insert mode (default auto).
 	Insert dictation.InsertMode
 	// TypeMax is the longest text auto mode types (default
@@ -98,18 +108,22 @@ type Pipeline struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // job watchers
 
-	mu        sync.Mutex
-	state     State
-	turnSeq   uint64
-	busy      uint64 // the turn being handled, or 0
-	turns     map[uint64]context.CancelFunc
-	armed     Trigger
-	muted     bool
-	unmuted   chan struct{} // closed by Unmute
-	micCancel context.CancelFunc
-	mic       micLoop
-	jobSeq    int
-	jobs      map[string]jobs.Job
+	mu         sync.Mutex
+	state      State
+	turnSeq    uint64
+	busy       uint64 // the turn being handled, or 0
+	turns      map[uint64]context.CancelFunc
+	armed      Trigger
+	muted      bool
+	unmuted    chan struct{} // closed by Unmute
+	micCancel  context.CancelFunc
+	mic        micLoop
+	rec        *recording // the push-to-talk recording, if any
+	lastIns    Insertion
+	lastInsAt  time.Time
+	hotkeyErrs map[string]string // hotkeys that could not be registered
+	jobSeq     int
+	jobs       map[string]jobs.Job
 }
 
 // New builds a pipeline in the Idle state.
@@ -132,6 +146,18 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	}
 	if cfg.Insert == "" {
 		cfg.Insert = dictation.InsertAuto
+	}
+	if cfg.DictateMode == "" {
+		cfg.DictateMode = HoldToTalk
+	}
+	if cfg.CommandMode == "" {
+		cfg.CommandMode = HoldToTalk
+	}
+	if cfg.ReleaseTail <= 0 {
+		cfg.ReleaseTail = DefaultReleaseTail
+	}
+	if cfg.MaxUtterance <= 0 {
+		cfg.MaxUtterance = DefaultMaxUtterance
 	}
 	if cfg.TypeMax <= 0 {
 		cfg.TypeMax = dictation.DefaultTypeMax
@@ -169,6 +195,14 @@ func (p *Pipeline) State() State {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.state
+}
+
+// LastInsertion returns the most recent dictated insertion and when it
+// finished; ok is false if nothing has been dictated yet.
+func (p *Pipeline) LastInsertion() (ins Insertion, at time.Time, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastIns, p.lastInsAt, !p.lastInsAt.IsZero()
 }
 
 // Jobs returns the IDs of the background jobs that have not finished yet.
@@ -266,6 +300,9 @@ func (p *Pipeline) fail(turn uint64, err error) error {
 type Utterance struct {
 	Trigger Trigger
 	Text    string
+	// Ended is when the speech ended (the push-to-talk key came up), for
+	// the latency reported with an insertion; zero if unknown.
+	Ended time.Time
 }
 
 // Submit handles one utterance whose text is already known, such as text sent
@@ -299,18 +336,25 @@ func (p *Pipeline) handleSegment(ctx context.Context, trig Trigger, seg speech.S
 		return
 	}
 	defer p.endTurn(id)
+	p.transcribeAndHandle(tctx, id, trig, seg, time.Time{})
+}
+
+// transcribeAndHandle transcribes seg for turn id and handles the text.
+// ended is when the speech ended, if known.
+func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, trig Trigger, seg speech.Segment, ended time.Time) {
 	p.setState(id, Transcribing)
-	t, err := p.d.STT.Transcribe(tctx, seg.Audio)
+	start := time.Now()
+	t, err := p.d.STT.Transcribe(ctx, seg.Audio)
 	if err != nil {
 		_ = p.fail(id, fmt.Errorf("transcribe: %w", err))
 		return
 	}
-	bus.Publish(p.d.Bus, Transcribed, Transcript{Turn: id, Trigger: trig, Text: t.Text})
+	bus.Publish(p.d.Bus, Transcribed, Transcript{Turn: id, Trigger: trig, Text: t.Text, Audio: seg.Audio.Duration(), Took: time.Since(start)})
 	if p.cfg.Router.BreakGlass(trig, t.Text) {
 		p.stop(StopVoice)
 		return
 	}
-	_ = p.handle(tctx, id, Utterance{Trigger: trig, Text: t.Text})
+	_ = p.handle(ctx, id, Utterance{Trigger: trig, Text: t.Text, Ended: ended})
 }
 
 // handle routes a transcribed utterance and acts on it.
@@ -321,7 +365,7 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 	var err error
 	switch r.Kind {
 	case RouteDictation:
-		err = p.dictate(ctx, id, r.Text)
+		err = p.dictate(ctx, id, r.Text, u.Ended)
 	case RouteCommand:
 		err = p.command(ctx, id, r.Text)
 	}
@@ -331,18 +375,26 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 	return err
 }
 
-func (p *Pipeline) dictate(ctx context.Context, id uint64, text string) error {
+func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended time.Time) error {
 	p.setState(id, Cleaning)
 	text = p.cfg.Cleaner.Clean(text)
 	if text == "" {
 		return nil
 	}
 	p.setState(id, Inserting)
+	start := time.Now()
 	m := dictation.ChooseInsert(p.cfg.Insert, text, p.d.Layout, p.cfg.TypeMax)
 	if err := dictation.Insert(ctx, p.d.Platform.Input(), m, text); err != nil {
 		return fmt.Errorf("insert: %w", err)
 	}
-	bus.Publish(p.d.Bus, Inserted, Insertion{Turn: id, Text: text, Method: m})
+	ins := Insertion{Turn: id, Text: text, Method: m, Took: time.Since(start)}
+	if !ended.IsZero() {
+		ins.Latency = time.Since(ended)
+	}
+	p.mu.Lock()
+	p.lastIns, p.lastInsAt = ins, time.Now()
+	p.mu.Unlock()
+	bus.Publish(p.d.Bus, Inserted, ins)
 	return nil
 }
 
@@ -438,6 +490,10 @@ func (p *Pipeline) stop(src StopSource) {
 	clear(p.jobs)
 	p.busy = 0
 	p.armed = 0
+	if p.rec != nil {
+		p.rec.cancel() // the audio so far is discarded
+		p.rec = nil
+	}
 	if !p.muted {
 		p.muted = true
 		p.unmuted = make(chan struct{})
@@ -466,6 +522,10 @@ func (p *Pipeline) Muted() bool {
 func (p *Pipeline) Unmute() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.unmuteLocked()
+}
+
+func (p *Pipeline) unmuteLocked() {
 	if p.muted {
 		p.muted = false
 		close(p.unmuted)
