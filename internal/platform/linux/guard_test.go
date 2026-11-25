@@ -64,7 +64,7 @@ func TestNewPlatformIsGuarded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	if _, err := p.bus.get(); !errors.Is(err, errRealSession) {
 		t.Fatalf("bus.get() = %v, want errRealSession", err)
 	}
