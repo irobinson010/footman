@@ -181,7 +181,7 @@ personas/ashford/
 | Socket | `<runtime>/footman.sock` (`$FOOTMAN_SOCKET` overrides it) |
 | Install receipt | `<data>/install-receipt.json` |
 
-On Linux these follow the XDG folders: `~/.config/footman`, `~/.local/share/footman`, `~/.cache/footman`, and `$XDG_RUNTIME_DIR/footman`. Other OSes get their native locations through `Platform.Paths()`. The CLI and the daemon work out the socket path the same way without loading a platform, so `Platform.Paths().Runtime()` must agree with it (ADR-0023).
+On Linux these follow the XDG folders: `~/.config/footman`, `~/.local/share/footman`, `~/.cache/footman`, and `$XDG_RUNTIME_DIR` (or `/tmp/footman-<uid>`, created 0700, when it is unset). Other OSes get their native locations through `Platform.Paths()`. The CLI works out the socket path without loading a platform, the same way `Platform.Paths().Runtime()` does (ADR-0024).
 
 Privacy: transcript storage can be turned off, and retention is configurable (for example, delete after 30 days).
 
@@ -189,7 +189,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 **Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service.
 
-**Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else.
+**Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 
 **`footman uninstall`** (also offered by the install script):
 
@@ -205,13 +205,15 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
    Cache          pre-generated clips                              40 MB
    ```
 3. Asks what to keep:
-   - **Remove everything**: a full purge.
+   - **Remove everything**: keeps nothing (keychain secrets still need step 4).
    - **Keep config and data**: keeps config, history, and personas, and removes the program, models, and cache. Reinstalling picks up where you left off.
    - **Keep config only.**
-4. Removes keychain secrets only with an explicit confirmation.
+4. Removes keychain secrets only with an explicit, separate confirmation.
 5. Prints a summary of what was removed and the path of anything that was kept.
 
-Non-interactive flags: `--purge`, `--keep-config`, `--keep-data`, `--dry-run`.
+Non-interactive flags: `--purge` (everything, secrets included, no questions), `--keep-config`, `--keep-data`, `--remove-secrets` (the explicit confirmation for step 4), `--dry-run` (changes nothing, service included). With no terminal and none of `--purge`, `--keep-config` or `--keep-data`, uninstall refuses to guess. When data is kept, the receipt is kept too and rewritten to list only what remains (ADR-0023).
+
+**Setup flags:** `--name`, `--persona`, `--provider`, `--api-key-stdin` (the key is never a flag), `--hotkey` (default F8, ADR-0022), `--no-service`, `--non-interactive`. Run on a terminal, setup asks for whatever was not given.
 
 `footman plugin remove <name>` and `footman persona remove <name>` work the same way at a smaller scale, and each asks whether to keep that item's data.
 
@@ -689,7 +691,7 @@ A click is a desktop notification action or a web UI button (later, a paired pho
 Anything that enters the AI's context from outside (web pages, messages, emails, file contents, plugin output) is **untrusted data**. Once untrusted content is in the current task's context, **every outward or destructive action in that task needs confirmation**, whatever the config says. The confirmation shows exactly what will be sent or deleted. This blocks the common "the email told the AI to forward your files" attack without tracking content in detail.
 
 ### Local API
-- **Unix socket** with user-only file permissions (0600), in a directory only the user can enter (0700). A socket client is treated as the owner at the keyboard, with the same trust as editing `config.toml`: it may change security-sensitive settings, since voice and the AI never reach the socket directly (ADR-0023).
+- **Unix socket** with user-only file permissions (0600), in a directory only the user can enter (0700). A socket client is treated as the owner at the keyboard, with the same trust as editing `config.toml`: it may change security-sensitive settings, since voice and the AI never reach the socket directly (ADR-0024).
 - **HTTP** binds to 127.0.0.1 only and requires a token (set as a cookie by `footman open`). It checks Host and Origin headers to block web pages from calling it (CSRF / DNS rebinding).
 - **Remote and phone access (later):** pairing by QR code, one revocable token per device, and only over a tunnel or private network.
 
@@ -714,14 +716,14 @@ Once the owner clicks to allow a guest, the guest can do read-level and harmless
 ### Updates
 Releases are signed (checksums plus a signature). Footman *notifies* you about updates and installs one only when asked ("Alfred, update yourself"). It never updates silently.
 
-## 30. Local API (ADR-0018, ADR-0023)
+## 30. Local API (ADR-0018, ADR-0024)
 
 - **JSON-RPC 2.0** everywhere: the CLI over the Unix socket (named pipe on Windows); the web UI, phone, and third-party clients over a **WebSocket**.
 - **Events** (pipeline state, job progress, confirmations needed, transcripts) are pushed as JSON-RPC notifications on the same connection. Clients subscribe by topic.
 - **Client audio** is designed in now: a client can open an audio session and stream mic frames as binary WebSocket messages. This will be implemented in the phone phase.
 - **Public, versioned API (`v1`)**, documented for third-party clients and marked experimental until Footman 1.0.
 - Authentication is per §29 (socket file permissions; token plus Origin/Host checks for HTTP; per-device tokens for remote access).
-- **Wire details (ADR-0023):** on the socket, one JSON message per line (newline-delimited JSON, at most 1 MiB); requests on a connection run concurrently and are matched by `id`. Events arrive as `event` notifications `{subscription, topic, seq, at, data}` after `events.subscribe {topics}`, where a topic is a name, a prefix like `pipeline.*`, or `*`. Event payloads are API types with snake_case fields and string enums, separate from the core's Go types. Footman error codes: `-32000` failed, `-32001` busy, `-32002` not found, `-32003` unavailable. The reference for clients is [`docs/api/v1.md`](api/v1.md).
+- **Wire details (ADR-0024):** on the socket, one JSON message per line (newline-delimited JSON, at most 1 MiB); requests on a connection run concurrently and are matched by `id`. Events arrive as `event` notifications `{subscription, topic, seq, at, data}` after `events.subscribe {topics}`, where a topic is a name, a prefix like `pipeline.*`, or `*`. Event payloads are API types with snake_case fields and string enums, separate from the core's Go types. Footman error codes: `-32000` failed, `-32001` busy, `-32002` not found, `-32003` unavailable. The reference for clients is [`docs/api/v1.md`](api/v1.md).
 - **The daemon** (`footman daemon`) wires config → store → bus → pipeline → API. Each area uses the implementation the config names when it is registered; optional areas without one are left out, and the daemon refuses to start without a platform and speech-to-text. `--dev-fakes` (development and tests only) lets every area fall back to its fake instead. SIGTERM shuts down gracefully and removes the socket.
 
 Method groups (sketch):

@@ -50,6 +50,9 @@ type daemonOptions struct {
 	devFakes bool
 
 	// Test hooks.
+	// fakesOnly uses the fakes even where a real implementation is
+	// registered, so tests never touch the desktop.
+	fakesOnly bool
 	// deps, if set, edits the pipeline's dependencies after wiring, so a
 	// test can swap in scripted fakes.
 	deps func(*core.Deps)
@@ -114,7 +117,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	b := bus.New()
 	defer b.Close()
 
-	deps, impl, err := wire(cfg, o.devFakes)
+	deps, impl, err := wire(cfg, o.devFakes, o.fakesOnly)
 	if err != nil {
 		return err
 	}
@@ -213,36 +216,43 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 // the config names when it is registered, otherwise (with devFakes) the fake.
 // It returns the pipeline dependencies (without the bus) and, per area, the
 // name of what it chose ("" for none).
-func wire(cfg *config.Config, devFakes bool) (core.Deps, map[string]string, error) {
+func wire(cfg *config.Config, devFakes, fakesOnly bool) (core.Deps, map[string]string, error) {
 	impl := map[string]string{}
+	devFakes = devFakes || fakesOnly
+	name := func(want string) string {
+		if fakesOnly {
+			return fakeName
+		}
+		return want
+	}
 	var d core.Deps
 	var err error
 
 	// Real implementations get their options from config once they exist;
 	// until then every factory gets none.
-	if d.Platform, impl["platform"], err = pick(platform.Platforms, runtime.GOOS, devFakes); err != nil {
+	if d.Platform, impl["platform"], err = pick(platform.Platforms, name(runtime.GOOS), devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.STT, impl["stt"], err = pick(speech.STTs, cfg.String("speech.stt.engine"), devFakes); err != nil {
+	if d.STT, impl["stt"], err = pick(speech.STTs, name(cfg.String("speech.stt.engine")), devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.VAD, impl["vad"], err = pick(speech.VADs, defaultVAD, devFakes); err != nil {
+	if d.VAD, impl["vad"], err = pick(speech.VADs, name(defaultVAD), devFakes); err != nil {
 		return d, nil, err
 	}
 	if cfg.Bool("input.wake_word") {
-		if d.Wake, impl["wake"], err = pick(speech.WakeWords, defaultWake, devFakes); err != nil {
+		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), devFakes); err != nil {
 			return d, nil, err
 		}
 	} else {
 		impl["wake"] = ""
 	}
-	if d.TTS, impl["tts"], err = pick(speech.TTSs, cfg.String("speech.tts.engine"), devFakes); err != nil {
+	if d.TTS, impl["tts"], err = pick(speech.TTSs, name(cfg.String("speech.tts.engine")), devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.LLM, impl["llm"], err = pick(llm.Providers, cfg.String("ai.provider"), devFakes); err != nil {
+	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), devFakes); err != nil {
 		return d, nil, err
 	}
-	if d.Worker, impl["worker"], err = pick(jobs.Workers, cfg.String("jobs.worker"), devFakes); err != nil {
+	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), devFakes); err != nil {
 		return d, nil, err
 	}
 

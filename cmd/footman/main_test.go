@@ -39,7 +39,7 @@ func TestRun(t *testing.T) {
 func TestHelpListsCommands(t *testing.T) {
 	var out bytes.Buffer
 	run(context.Background(), []string{"help"}, &out, io.Discard)
-	for _, name := range []string{"daemon", "events", "help", "say", "status", "stop", "version"} {
+	for _, name := range []string{"daemon", "events", "help", "say", "setup", "status", "stop", "uninstall", "version"} {
 		if !strings.Contains(out.String(), "\n  "+name+" ") {
 			t.Errorf("help does not list %s:\n%s", name, out.String())
 		}

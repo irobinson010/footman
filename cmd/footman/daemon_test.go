@@ -95,7 +95,7 @@ func startDaemon(t *testing.T) *testDaemon {
 	d.cancel = cancel
 	ready := make(chan struct{})
 	opts := daemonOptions{
-		socket: d.socket, configPath: d.config, dataDir: d.data, devFakes: true,
+		socket: d.socket, configPath: d.config, dataDir: d.data, devFakes: true, fakesOnly: true,
 		deps:  func(deps *core.Deps) { d.platform = deps.Platform.(*platformfake.Platform) },
 		ready: func() { close(ready) },
 	}
@@ -279,7 +279,7 @@ func TestSayErrorsReachTheCLI(t *testing.T) {
 
 func TestDaemonRefusesSecondInstance(t *testing.T) {
 	d := startDaemon(t)
-	err := runDaemon(context.Background(), daemonOptions{socket: d.socket, configPath: d.config, dataDir: d.data, devFakes: true}, newSyncBuffer())
+	err := runDaemon(context.Background(), daemonOptions{socket: d.socket, configPath: d.config, dataDir: d.data, devFakes: true, fakesOnly: true}, newSyncBuffer())
 	if !errors.Is(err, api.ErrRunning) {
 		t.Errorf("second daemon = %v, want ErrRunning", err)
 	}

@@ -1,4 +1,4 @@
-// Package api is the daemon's local API (design §30, ADR-0018, ADR-0023):
+// Package api is the daemon's local API (design §30, ADR-0018, ADR-0024):
 // JSON-RPC 2.0 over a Unix socket, one JSON value per line. The HTTP and
 // WebSocket transport for the web UI comes later and will reuse the same
 // Server and methods.

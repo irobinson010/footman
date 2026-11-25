@@ -22,13 +22,14 @@ const socketEnv = "FOOTMAN_SOCKET"
 
 // defaultPaths returns the default locations. On Linux and the BSDs they
 // follow the XDG base directories (~/.config/footman, ~/.local/share/footman
-// and $XDG_RUNTIME_DIR/footman). Elsewhere config and data go in the OS
+// and $XDG_RUNTIME_DIR, or /tmp/footman-<uid> when it is unset), matching
+// the Linux platform's Paths. Elsewhere config and data go in the OS
 // config directory and the socket in a per-user directory under the temp
 // directory, until those platforms get native paths (named pipes on
 // Windows).
 //
 // The client commands and the daemon both use this, so they agree on the
-// socket without the client having to load a platform (ADR-0023).
+// socket without the client having to load a platform (ADR-0024).
 func defaultPaths() userPaths {
 	home, _ := os.UserHomeDir()
 	env := func(name, fallback string) string {
@@ -53,7 +54,7 @@ func defaultPaths() userPaths {
 		Runtime: tmpRuntime,
 	}
 	if rt := env("XDG_RUNTIME_DIR", ""); rt != "" {
-		p.Runtime = filepath.Join(rt, "footman")
+		p.Runtime = rt
 	}
 	return p
 }

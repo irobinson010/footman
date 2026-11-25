@@ -56,11 +56,6 @@ func dial(ctx context.Context, socket string, stderr io.Writer) *api.Client {
 	return c
 }
 
-func fail(stderr io.Writer, err error) int {
-	_, _ = fmt.Fprintln(stderr, "footman:", err)
-	return 1
-}
-
 func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs, socket := clientFlags("status", "[--json]", stderr)
 	asJSON := fs.Bool("json", false, "print the raw status.get result")
