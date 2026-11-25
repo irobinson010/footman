@@ -25,3 +25,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0019](0019-voice-source-licensing.md) | Voice source licensing | Accepted |
 | [0020](0020-voice-sourcing-quality-first.md) | Voice sourcing: quality first during development | Accepted |
 | [0021](0021-core-interface-shapes.md) | Core interface shapes: shared audio types, pull streams, one generic registry | Accepted |
+| [0022](0022-linux-input.md) | Linux input: portal hotkeys, portal typing, per-app paste | Accepted |
