@@ -1,7 +1,7 @@
 ---
 name: Feature
 about: A change or addition to footman
-labels: enhancement
+labels: type:feature
 ---
 
 **Goal**

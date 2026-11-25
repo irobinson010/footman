@@ -1,7 +1,7 @@
 ---
 name: Spike
 about: A time-boxed experiment to answer a risky question
-labels: spike
+labels: type:spike
 ---
 
 **Question to answer**
