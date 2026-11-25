@@ -38,6 +38,7 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | Web UI | Plain HTML, CSS, and JS, embedded in the binary. No framework or build step. |
 | Built-in tools | Launcher, settings, system info, and timers are compiled in; everything else is a plugin. |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
+| Linux input | GlobalShortcuts portal hotkeys (KGlobalAccel fallback); typing as RemoteDesktop portal keysyms; paste through a data-control clipboard plus portal-sent Ctrl+V, or Ctrl+Shift+V in terminals, with the clipboard restored afterwards (ADR-0022, ADR-0029). See §9. |
 
 ## 4. Process model
 
@@ -102,6 +103,11 @@ type Platform interface {
     Secrets() Secrets      // OS keychain
     Paths() Paths          // config / data / cache / runtime dirs
 }
+// Optional extensions, found by type assertion:
+//   Input as InputSetup: SetupInput(ctx, binary) installs what names Footman to the desktop
+//     (a .desktop file on Linux) and lists files for the receipt; BindHotkeys(ctx, combos)
+//     binds exactly those keys (setup, and rebinding).
+//   Input as dictation.Layout: Typeable(text) says whether the keyboard layout can type it.
 
 // speech/ — registered by name, chosen in config (Frame, Audio, AudioStream alias audio/)
 type VAD interface      { Detect(ctx, <-chan Frame) <-chan Segment }
@@ -167,6 +173,8 @@ personas/ashford/
 ## 9. Dictation and coaching
 
 - Filler and false-start removal runs locally as a fast cleanup pass, with an optional AI polish.
+- **Inserting text** (`dictation.insert`, ADR-0022): `auto` types short single-line text whose characters are all on the current keyboard layout and pastes everything else. On Linux the layout check reads the compositor's keymap, and typing sends the layout's own keysyms at most 1,000 characters/s through one RemoteDesktop portal session. A restore token in the data folder means the permission dialog appears only once. Paste offers the text on the clipboard, marked so clipboard history skips it, and presses the focused app's paste keys through the same session. It puts the previous clipboard back once the app has read it (ADR-0029).
+- **Hotkeys** are bound with the desktop. Setup binds the key the user chose, and running setup again rebinds it. If the user later moves the shortcut in the desktop's settings, events still report the configured combination (ADR-0029).
 - Opt-in **speech coaching**, off by default: fillers per minute, speaking pace, and hedge words, tracked over time in SQLite, plus suggested exercises.
 
 ## 10. State and files
@@ -188,6 +196,8 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 ## 11. Install and uninstall
 
 **Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service. Models are fetched with `footman models fetch` into `<data>/models`, checked against pinned SHA-256s and recorded in the receipt; setup calls it for the engine it picked, then warms up the GPU and benchmarks the GPU against the CPU, and picks the CPU (writing `speech.stt.accelerator = "cpu"` with a comment) if the GPU is slower. It works offline when the models are already there (ADR-0028).
+
+**Desktop integration.** Where the platform's Input implements `InputSetup`, setup also installs the files that name Footman to the desktop and binds the push-to-talk key. On Linux that file is `io.github.irobinson010.Footman.desktop`, and the receipt also lists the RemoteDesktop restore token (ADR-0029).
 
 **Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 

@@ -21,9 +21,9 @@ func TestRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
-	if err := p.Input().Type(ctx, "x"); !errors.Is(err, platform.ErrUnsupported) {
-		t.Errorf("Input.Type = %v, want ErrUnsupported", err)
+	// Never call Input here: on a desktop it would reach the real session.
+	if _, ok := p.Input().(platform.InputSetup); !ok {
+		t.Error("Input does not implement platform.InputSetup")
 	}
 }
 
