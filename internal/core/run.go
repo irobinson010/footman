@@ -27,6 +27,67 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	if p.d.VAD == nil {
 		return errors.New("core: Run needs a VAD")
 	}
+	p.mu.Lock()
+	p.mic = micLoop{started: true}
+	p.mu.Unlock()
+	err := p.microphone(ctx)
+	p.mu.Lock()
+	p.mic.ended = true
+	p.mic.err = err
+	p.mu.Unlock()
+	return err
+}
+
+// MicState is what the microphone loop is doing (see Pipeline.Mic).
+type MicState string
+
+// Microphone loop states.
+const (
+	// MicOff means Run has not been started, so the microphone is not used.
+	MicOff MicState = "off"
+	// MicOn means the microphone loop is running.
+	MicOn MicState = "on"
+	// MicMuted means the loop is running but muted by a stop.
+	MicMuted MicState = "muted"
+	// MicStopped means the loop has returned and will not listen again.
+	MicStopped MicState = "stopped"
+)
+
+// MicStatus is the microphone loop's state. Error says why it stopped.
+type MicStatus struct {
+	State MicState `json:"state"`
+	Error string   `json:"error,omitempty"`
+}
+
+// micLoop records how Run went, for Mic.
+type micLoop struct {
+	started, ended bool
+	err            error
+}
+
+// Mic reports what the microphone loop is doing: whether it is on, muted by a
+// stop, not started, or stopped, with the error that stopped it. A loop that
+// ended without an error (the device went away) is stopped too.
+func (p *Pipeline) Mic() MicStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case p.mic.ended:
+		msg := "the microphone stream ended"
+		if p.mic.err != nil {
+			msg = p.mic.err.Error()
+		}
+		return MicStatus{State: MicStopped, Error: msg}
+	case !p.mic.started:
+		return MicStatus{State: MicOff}
+	case p.muted:
+		return MicStatus{State: MicMuted}
+	}
+	return MicStatus{State: MicOn}
+}
+
+// microphone is the body of Run, after the VAD check.
+func (p *Pipeline) microphone(ctx context.Context) error {
 	hctx, stopHotkeys := context.WithCancel(ctx)
 	var hotkeys sync.WaitGroup
 	defer func() {
