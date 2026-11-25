@@ -22,6 +22,7 @@ type Input struct {
 
 	setupBinary string
 	prepared    int
+	resets      []string
 	// Err, if set, is returned by Type, Paste, SetupInput, BindHotkeys and
 	// PrepareInsert.
 	Err error
@@ -30,6 +31,7 @@ type Input struct {
 }
 
 var _ platform.InputSetup = (*Input)(nil)
+var _ platform.InputReset = (*Input)(nil)
 
 type hotkeySub struct {
 	mu     sync.Mutex // held while sending, and to close ch
@@ -155,6 +157,27 @@ func (in *Input) PrepareInsert(ctx context.Context) error {
 	}
 	in.prepared++
 	return nil
+}
+
+// ResetInput implements platform.InputReset: it records what was reset.
+func (in *Input) ResetInput(ctx context.Context, what string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.Err != nil {
+		return in.Err
+	}
+	in.resets = append(in.resets, what)
+	return nil
+}
+
+// Resets returns what ResetInput was asked to undo, in order.
+func (in *Input) Resets() []string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return slices.Clone(in.resets)
 }
 
 // Prepared returns how many times PrepareInsert succeeded.

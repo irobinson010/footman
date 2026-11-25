@@ -227,6 +227,12 @@ func Setup(ctx context.Context, o SetupOptions) (res *SetupResult, err error) {
 				step("desktop      %s", f)
 			}
 		}
+		// Recorded before anything is asked of the desktop: a dialog
+		// answered later still leaves a grant to undo.
+		if _, ok := is.(platform.InputReset); ok {
+			rec.Add(Entry{Kind: KindDesktop, Group: GroupProgram, Name: platform.ResetShortcuts})
+			rec.Add(Entry{Kind: KindDesktop, Group: GroupProgram, Name: platform.ResetPermissions})
+		}
 		for _, k := range keys {
 			if k.key != "" {
 				step("%s", bindLine(ctx, is, k.key, k.what))

@@ -514,7 +514,7 @@ func TestDaemonPushToTalk(t *testing.T) {
 		}
 	}
 	waitMic(core.MicPushToTalk)
-	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "hotkeys:     dictate F8 (hold to talk), command Super+Shift+Space (hold to talk)") ||
+	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "hotkeys:     dictate F8 (hold to talk), command Shift+F8 (hold to talk)") ||
 		!strings.Contains(out, "microphone:  closed; opens while a push-to-talk key records") {
 		t.Errorf("status:\n%s", out)
 	}
