@@ -28,7 +28,7 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | OS | **Linux first** (Wayland/KDE; X11 where needed). Windows and macOS later, through the platform interface. |
 | AI providers | **Claude** (primary), **OpenAI**, **Gemini**, **Ollama**. All four have official Go SDKs. |
 | Worker agents | Built-in tool loop, **Claude Code** (`claude -p`), **Codex** (`codex exec`). |
-| Speech | `sherpa-onnx` (cgo) for speech detection, wake word, speech-to-text, and text-to-speech, plus cloud engines. Chosen per engine in config. |
+| Speech | `sherpa-onnx` (cgo) for speech detection, wake word, speech-to-text (Parakeet), and text-to-speech; `whisper.cpp` (cgo) for speech-to-text on GPUs and in other languages; plus cloud engines. Chosen per engine in config, or by hardware (ADR-0024, ADR-0027). |
 | Speech placement | **Inside the service** for now, behind interfaces, so engines can move into their own process later. |
 | Plugins | Separate processes. The manifest declares `protocol = "mcp"` or `"footman"`, and both adapt to one `Tool` interface. |
 | State | `config.toml` for settings, OS keychain for secrets, folders for plugins, personas, and models, **SQLite** for history, jobs, stats, and the action log. |
@@ -97,7 +97,7 @@ type Platform interface {
     Launcher() Launcher    // open URL / app / file
     Notifier() Notifier    // notifications (with click actions), tray status
     Clipboard() Clipboard
-    Audio() Audio          // mic / speaker devices: Capture → <-chan Frame, Play(Stream)
+    Audio() Audio          // mic / speaker devices: Capture → <-chan Frame, Play(Stream)  (Linux: pactl/parec/pacat, ADR-0026)
     Service() Service      // autostart install/remove
     Secrets() Secrets      // OS keychain
     Paths() Paths          // config / data / cache / runtime dirs
@@ -128,7 +128,7 @@ type Job interface    { ID() string; Status() Status; Updates() <-chan Update; W
 
 // registry/ — one generic by-name registry, declared per area
 var STTs = registry.New[STT]("stt")          // speech.STTs, llm.Providers, platform.Platforms, plugins.Tools, jobs.Workers, …
-func init() { speech.STTs.Register("whisper-local", newWhisper) }
+func init() { speech.STTs.Register("whispercpp", newWhisper) }
 stt, err := speech.STTs.New(name, opts)      // opts: registry.Config, decoded into the engine's options
 ```
 
@@ -187,7 +187,7 @@ Privacy: transcript storage can be turned off, and retention is configurable (fo
 
 ## 11. Install and uninstall
 
-**Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service.
+**Install:** download the binary or run the install script, then `footman setup`. Setup detects the hardware, downloads models (with checksums), asks for a provider and persona, stores keys in the keychain, and registers the autostart service. Models are fetched with `footman models fetch` into `<data>/models`, checked against pinned SHA-256s and recorded in the receipt; setup will call it (ADR-0027).
 
 **Install receipt.** Every file, folder, service unit, keychain entry, and model Footman creates is recorded in `install-receipt.json`. Plugin installs add to it. Uninstall works from this receipt, so it removes exactly what was installed and nothing else. Each entry has a kind (file, folder, tree, model, service, secret) and a group (the headings below); secret values are never recorded. Folders are removed only when empty, so files Footman did not install are left and reported (ADR-0023).
 
@@ -331,7 +331,7 @@ footman/
 │  ├─ registry/              generic by-name registry used by every swappable area
 │  ├─ install/               setup wizard, install receipt, uninstall
 │  ├─ platform/              interfaces · linux/ · windows/ · darwin/ · fake/
-│  ├─ speech/                interfaces · sherpa/ · cloud/{openai,elevenlabs,…} · fake/
+│  ├─ speech/                interfaces · sherpa/ · whispercpp/ · accel/ · models/ · cloud/{openai,elevenlabs,…} · fake/
 │  ├─ llm/                   interface · claude/ · openai/ · gemini/ · ollama/ · fake/
 │  └─ plugins/               Tool interface · plugin host (footman + mcp adapters) · builtin/ tools · fake/
 ├─ sdk/go/                   public: helpers for writing footman-protocol plugins
@@ -347,7 +347,7 @@ footman/
 - **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name in the area's `registry.Registry`, and config picks one (ADR-0021).
 - **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
 - **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
-- **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. `footman setup` detects the hardware, benchmarks briefly, and picks the best option, which the user can override in config:
+- **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. The daemon detects the hardware at start and picks the best option by the ADR-0024 table (`speech.stt.engine = "auto"`); the user can override engine, model and accelerator in config. Setup will add a short benchmark. whisper.cpp is built with its GPU backends as plugins, so one binary loads CPU, Vulkan or CUDA at run time (ADR-0027):
 
   | Hardware | Accelerator path |
   |---|---|
@@ -361,7 +361,7 @@ footman/
 
   The speech-to-text interface allows more than one engine (sherpa-onnx and whisper.cpp). whisper.cpp's **Vulkan** backend is the universal GPU path for AMD, Intel, and NVIDIA.
 - **Release targets:** linux/amd64, linux/arm64, darwin/arm64, windows/amd64, windows/arm64. Public repos get free GitHub runners for Linux (x86 and ARM), Windows, and macOS, so every target is built and tested natively in CI.
-- **`nocgo` build:** cloud speech only and fully pure Go. It's tiny, builds for any OS, and is a fallback for unusual platforms.
+- **Native and pure-Go builds:** the local speech engines need cgo and are compiled with `-tags native` (`make native`), which links whisper.cpp (built by `scripts/native/whispercpp.sh`) and sherpa-onnx's prebuilt libraries; releases ship them in `lib/footman/` beside the binary (ADR-0027). Without the tag the build is pure Go: cloud speech only, tiny, builds for any OS, and is what `go test ./...` uses.
 - **Releases** via GoReleaser, which builds binaries for each OS and architecture, checksums, and later the `.deb`, AUR, and Homebrew packages.
 
 ## 25. Phases (draft)
@@ -604,7 +604,7 @@ speak = "when-voice"             # always | when-voice | never
 quiet_hours = "22:00-07:00"
 
 [speech]
-stt = { engine = "whisper-local", model = "auto", accelerator = "auto" }
+stt = { engine = "auto", model = "auto", accelerator = "auto" }   # or whispercpp | sherpa-parakeet; cpu | gpu | vulkan | cuda
 tts = { engine = "persona" }     # persona | elevenlabs | …
 unload_after = "10m"
 

@@ -1,0 +1,15 @@
+librispeech-1580-141084-0011.wav
+
+Utterance 1580-141084-0011 from LibriSpeech test-clean, converted from FLAC to
+16 kHz mono 16-bit WAV with ffmpeg (no other change; 5.0 s).
+
+Reference transcript (unchanged from the corpus):
+WHEN WE WERE OUT IN THE DARKNESS OF THE QUADRANGLE WE AGAIN LOOKED UP AT THE WINDOWS
+
+  LibriSpeech ASR corpus, V. Panayotov, G. Chen, D. Povey, S. Khudanpur,
+  "Librispeech: an ASR corpus based on public domain audio books", ICASSP 2015.
+  https://www.openslr.org/12
+  LibriSpeech (c) 2014 by Vassil Panayotov.
+  Licence: Creative Commons Attribution 4.0 International (CC-BY-4.0),
+  https://creativecommons.org/licenses/by/4.0/
+  Source recordings: LibriVox volunteers, public domain.

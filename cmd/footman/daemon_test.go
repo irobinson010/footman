@@ -80,10 +80,20 @@ func shortTempDir(t *testing.T) string {
 	return dir
 }
 
+// startTimeout bounds how long startDaemon waits for the socket. The native
+// tests raise it for model loading and GPU warm-up.
+var startTimeout = 5 * time.Second
+
 // startDaemon runs the daemon with --dev-fakes on a temporary socket and
-// returns once it is accepting connections. tweak, if given, edits the
-// options first.
-func startDaemon(t *testing.T, tweak ...func(*daemonOptions)) *testDaemon {
+// returns once it is accepting connections.
+func startDaemon(t *testing.T) *testDaemon {
+	t.Helper()
+	return startDaemonWith(t, nil)
+}
+
+// startDaemonWith is startDaemon with the options edited by edit (if not
+// nil) before the daemon starts; the config file may be written by then.
+func startDaemonWith(t *testing.T, edit func(*daemonOptions)) *testDaemon {
 	t.Helper()
 	dir := shortTempDir(t)
 	d := &testDaemon{
@@ -101,16 +111,16 @@ func startDaemon(t *testing.T, tweak ...func(*daemonOptions)) *testDaemon {
 		deps:  func(deps *core.Deps) { d.platform = deps.Platform.(*platformfake.Platform) },
 		ready: func() { close(ready) },
 	}
-	for _, f := range tweak {
-		f(&opts)
+	if edit != nil {
+		edit(&opts)
 	}
 	go func() { d.done <- runDaemon(ctx, opts, d.log) }()
 	select {
 	case <-ready:
 	case err := <-d.done:
 		t.Fatalf("daemon exited early: %v\n%s", err, d.log.String())
-	case <-time.After(5 * time.Second):
-		t.Fatalf("daemon not ready after 5s:\n%s", d.log.String())
+	case <-time.After(startTimeout):
+		t.Fatalf("daemon not ready after %s:\n%s", startTimeout, d.log.String())
 	}
 	t.Cleanup(func() { d.stop(t) })
 	return d
@@ -320,7 +330,7 @@ func (noHotkeysInput) Hotkeys(context.Context, []string) (<-chan platform.Hotkey
 // TestDaemonReportsStoppedMicrophone checks that status says the microphone
 // is stopped, and why, rather than on, once its loop has failed.
 func TestDaemonReportsStoppedMicrophone(t *testing.T) {
-	d := startDaemon(t, func(o *daemonOptions) {
+	d := startDaemonWith(t, func(o *daemonOptions) {
 		prev := o.deps
 		o.deps = func(deps *core.Deps) {
 			prev(deps)

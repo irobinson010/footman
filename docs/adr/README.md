@@ -29,3 +29,5 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0023](0023-install-receipt-and-uninstall.md) | Install receipt and uninstall semantics | Accepted |
 | [0024](0024-stt-engines-and-defaults.md) | Speech-to-text engines and defaults per hardware tier | Accepted |
 | [0025](0025-local-api-v1-wire-and-daemon-wiring.md) | Local API v1 wire details and daemon wiring | Accepted |
+| [0026](0026-linux-audio-pulse-tools.md) | Linux audio: pactl, parec and pacat subprocesses | Accepted |
+| [0027](0027-native-speech-build-and-runtime-backends.md) | Native speech build: one binary, whisper.cpp backends loaded at run time | Accepted |

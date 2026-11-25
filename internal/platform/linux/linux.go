@@ -5,8 +5,8 @@
 //
 // It is pure Go (no cgo): D-Bus through github.com/godbus/dbus/v5, plus the
 // standard desktop tools xdg-open, gio, wl-copy and wl-paste for launching and
-// the clipboard. Input and Audio return platform.ErrUnsupported until their own
-// implementations land; so does Service.
+// the clipboard, and pactl, parec and pacat for audio. Input and Service return
+// platform.ErrUnsupported until their own implementations land.
 package linux
 
 import (
@@ -17,7 +17,6 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 )
@@ -34,7 +33,7 @@ type Platform struct {
 	bus *bus
 
 	input     unsupportedInput
-	audio     unsupportedAudio
+	audio     *Audio
 	service   unsupportedService
 	windows   *Windows
 	launcher  *Launcher
@@ -68,6 +67,7 @@ func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc)
 		clipboard: &Clipboard{run: run},
 		secrets:   &Secrets{bus: b},
 		paths:     &Paths{},
+		audio:     newAudio(run),
 	}
 }
 
@@ -86,8 +86,13 @@ func (p *Platform) Notifier() platform.Notifier { return p.notifier }
 // Clipboard returns the wl-copy and wl-paste clipboard.
 func (p *Platform) Clipboard() platform.Clipboard { return p.clipboard }
 
-// Audio returns a stub that reports platform.ErrUnsupported.
+// Audio returns the PulseAudio and PipeWire audio backend (pactl, parec and
+// pacat).
 func (p *Platform) Audio() platform.Audio { return p.audio }
+
+// AudioDevices returns the audio backend with its Linux-only extras
+// (Capturing and Watch).
+func (p *Platform) AudioDevices() *Audio { return p.audio }
 
 // Service returns a stub that reports platform.ErrUnsupported.
 func (p *Platform) Service() platform.Service { return p.service }
@@ -158,20 +163,6 @@ func (unsupportedInput) Type(context.Context, string) error {
 }
 func (unsupportedInput) Paste(context.Context, string) error {
 	return fmt.Errorf("linux input: %w", platform.ErrUnsupported)
-}
-
-type unsupportedAudio struct{}
-
-var errAudio = fmt.Errorf("linux audio: %w", platform.ErrUnsupported)
-
-func (unsupportedAudio) Inputs(context.Context) ([]platform.Device, error)  { return nil, errAudio }
-func (unsupportedAudio) Outputs(context.Context) ([]platform.Device, error) { return nil, errAudio }
-func (unsupportedAudio) Capture(context.Context, string, audio.Format) (<-chan audio.Frame, error) {
-	return nil, errAudio
-}
-func (unsupportedAudio) Play(_ context.Context, _ string, s audio.Stream) error {
-	_ = s.Close()
-	return errAudio
 }
 
 type unsupportedService struct{}

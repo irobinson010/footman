@@ -33,6 +33,46 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
 
+  # The real speech engines (ADR-0027): whisper.cpp built for the CPU
+  # (cached), sherpa-onnx from its Go module, and a short real transcription
+  # through the daemon.
+  native:
+    runs-on: ubuntu-latest
+    env:
+      ACCELS: cpu
+      CPU_VARIANTS: generic
+      FOOTMAN_TEST_MODELS: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build
+      - name: Cache whisper.cpp
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/footman-native
+          key: whispercpp-${{ runner.os }}-${{ runner.arch }}-cpu-generic-${{ hashFiles('scripts/native/whispercpp.sh') }}
+      - name: Build whisper.cpp (CPU)
+        # Only the installed libraries are cached, not the sources or objects.
+        run: |
+          scripts/native/whispercpp.sh
+          rm -rf ~/.cache/footman-native/build ~/.cache/footman-native/src
+      - name: Cache models
+        uses: actions/cache@v6.1.0
+        with:
+          path: .models
+          key: models-tiny-silero-${{ hashFiles('internal/speech/models/models.go') }}
+      - name: Fetch models (checks SHA-256)
+        run: go run ./cmd/footman models --dir "$FOOTMAN_TEST_MODELS" fetch whisper-tiny.en silero-vad
+      - name: Vet and test with -tags native
+        run: |
+          eval "$(scripts/native/whispercpp.sh env)"
+          go vet -tags native ./...
+          go test -tags native -v -run 'Transcribe|Silero|Parakeet|Registered' ./internal/speech/... ./cmd/footman/
+          go test -tags native ./...
+
   cross:
     strategy:
       matrix:
