@@ -27,7 +27,7 @@ speak = "when-voice"             # always | when-voice | never
 quiet_hours = "22:00-07:00"
 
 [speech]
-stt = { engine = "whisper-local", model = "auto", accelerator = "auto" }
+stt = { engine = "whispercpp", model = "auto", accelerator = "auto" }
 tts = { engine = "persona" }     # persona | elevenlabs | …
 unload_after = "10m"
 

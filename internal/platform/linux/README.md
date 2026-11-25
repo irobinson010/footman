@@ -1,8 +1,8 @@
 # Linux platform
 
 `internal/platform/linux` implements the Footman `Platform` interface on Linux:
-launcher, notifications, paths, secrets, windows (KDE) and clipboard. `Input`,
-`Audio` and `Service` return `platform.ErrUnsupported` until their own tasks
+launcher, notifications, paths, secrets, windows (KDE), clipboard and audio. `Input`
+and `Service` return `platform.ErrUnsupported` until their own tasks
 land.
 
 | Part | How |
@@ -13,6 +13,7 @@ land.
 | Secrets | Secret Service (`org.freedesktop.secrets`): KWallet or gnome-keyring. A clear `ErrNoKeyring` if none is running |
 | Windows | KWin scripting over D-Bus (KDE Plasma only; `ErrUnsupported` elsewhere) |
 | Clipboard | `wl-copy` / `wl-paste` (package `wl-clipboard`) |
+| Audio | `pactl` (list, watch), `parec` (capture) and `pacat` (playback) from `pulseaudio-utils`; also works on PipeWire via pipewire-pulse (ADR-0026) |
 
 Pure Go, no cgo.
 
@@ -51,3 +52,14 @@ What to expect:
 
 Run one at a time with `-run TestRealSecrets` and so on. If something fails,
 paste the output into issue #41.
+
+## Audio integration tests (virtual devices only)
+
+```sh
+go test -tags integration -v -count=1 ./internal/platform/linux/ -run TestRealAudio
+```
+
+They need a PulseAudio or PipeWire (pipewire-pulse) server and skip without one.
+Each test creates its own null sink (`footman_test_*`), plays into it, records
+its `.monitor` and unloads it afterwards. They never open a real microphone or
+play on a real speaker. `TestRealAudioLatency` logs the producer-to-frame time.
