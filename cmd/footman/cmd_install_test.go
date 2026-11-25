@@ -39,7 +39,7 @@ func installEnv(t *testing.T, input string) (home string, p *fake.Platform) {
 
 func runCmd(args ...string) (code int, out, errs string) {
 	var o, e bytes.Buffer
-	code = run(args, &o, &e)
+	code = run(context.Background(), args, &o, &e)
 	return code, o.String(), e.String()
 }
 

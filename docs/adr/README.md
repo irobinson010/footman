@@ -28,3 +28,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0022](0022-linux-input.md) | Linux input: portal hotkeys, portal typing, per-app paste | Accepted |
 | [0023](0023-install-receipt-and-uninstall.md) | Install receipt and uninstall semantics | Accepted |
 | [0024](0024-stt-engines-and-defaults.md) | Speech-to-text engines and defaults per hardware tier | Accepted |
+| [0025](0025-local-api-v1-wire-and-daemon-wiring.md) | Local API v1 wire details and daemon wiring | Accepted |
