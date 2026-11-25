@@ -1,0 +1,9 @@
+testdata/invalid-values.toml:4: dictation.cleanup: must be one of off, simple, smart, got "loud"
+testdata/invalid-values.toml:7: jobs.max_concurrent: must be at least 1, got 0
+testdata/invalid-values.toml:8: jobs.worker: must be a string, got an integer
+testdata/invalid-values.toml:11: replies.quiet_hours: must look like "22:00-07:00" (24-hour HH:MM-HH:MM), got "late"
+testdata/invalid-values.toml:14: ai.providers.claude.api_key: must be a keychain reference like "keychain:<name>"; secrets are never stored in the file
+testdata/invalid-values.toml:17: ai.budget.claude.warn_at: must be at most 1, got 1.5
+testdata/invalid-values.toml:20: web.listn: unknown key
+testdata/invalid-syntax.toml:4: toml: basic strings cannot have new lines
+testdata/invalid-newer.toml:1: version: config version 99 is newer than this build supports (1); upgrade footman
