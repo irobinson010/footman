@@ -18,6 +18,7 @@ import (
 	"github.com/irobinson010/footman/internal/api"
 	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/core"
+	"github.com/irobinson010/footman/internal/platform"
 	platformfake "github.com/irobinson010/footman/internal/platform/fake"
 )
 
@@ -85,10 +86,18 @@ func shortTempDir(t *testing.T) string {
 var startTimeout = 5 * time.Second
 
 // startDaemon runs the daemon with --dev-fakes on a temporary socket and
-// returns once it is accepting connections.
-func startDaemon(t *testing.T) *testDaemon {
+// returns once it is accepting connections. tweak, if given, edits the
+// options first.
+func startDaemon(t *testing.T, tweak ...func(*daemonOptions)) *testDaemon {
 	t.Helper()
-	return startDaemonWith(t, nil)
+	if len(tweak) == 0 {
+		return startDaemonWith(t, nil)
+	}
+	return startDaemonWith(t, func(o *daemonOptions) {
+		for _, f := range tweak {
+			f(o)
+		}
+	})
 }
 
 // startDaemonWith is startDaemon with the options edited by edit (if not
@@ -240,7 +249,9 @@ func TestDaemonIntegration(t *testing.T) {
 	if topic, data := next(); topic != "pipeline.stop" || data != `{"source":"call","jobs":[],"turns":0}` {
 		t.Errorf("after stop got %s %s", topic, data)
 	}
-	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, "microphone:  muted") {
+	// The fake microphone's stream ends at once (nothing is queued), so the
+	// loop has stopped and status says so; the stop itself sets the muted flag.
+	if _, out, _ := d.cli(t, "status", "--json"); !strings.Contains(out, `"muted":true`) {
 		t.Errorf("status after stop:\n%s", out)
 	}
 
@@ -310,6 +321,57 @@ func TestDaemonNeedsRealImplementationsWithoutDevFakes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "s.sock")); !os.IsNotExist(err) {
 		t.Error("socket created although the daemon could not start")
+	}
+}
+
+// noHotkeys is a platform whose input cannot register hotkeys, as on a
+// session without input access. The microphone loop stops with that error.
+type noHotkeys struct{ platform.Platform }
+
+func (p noHotkeys) Input() platform.Input { return noHotkeysInput{p.Platform.Input()} }
+
+type noHotkeysInput struct{ platform.Input }
+
+func (noHotkeysInput) Hotkeys(context.Context, []string) (<-chan platform.HotkeyEvent, error) {
+	return nil, errors.New("linux input: platform: not supported here")
+}
+
+// TestDaemonReportsStoppedMicrophone checks that status says the microphone
+// is stopped, and why, rather than on, once its loop has failed.
+func TestDaemonReportsStoppedMicrophone(t *testing.T) {
+	d := startDaemon(t, func(o *daemonOptions) {
+		prev := o.deps
+		o.deps = func(deps *core.Deps) {
+			prev(deps)
+			deps.Platform = noHotkeys{deps.Platform}
+		}
+	})
+	d.log.waitFor(t, "pipeline stopped: linux input: platform: not supported here")
+
+	const want = "  microphone:  stopped: linux input: platform: not supported here\n"
+	if _, out, _ := d.cli(t, "status"); !strings.Contains(out, want) {
+		t.Errorf("status:\n%s, want the line %q", out, want)
+	}
+	_, out, _ := d.cli(t, "status", "--json")
+	if !strings.Contains(out, `"microphone":{"state":"stopped","error":"linux input: platform: not supported here"}`) {
+		t.Errorf("status --json = %s", out)
+	}
+}
+
+// TestDaemonRejectsLongSocketPath checks that a socket path the OS cannot
+// bind is refused up front, before the daemon opens the microphone or creates
+// its data directory.
+func TestDaemonRejectsLongSocketPath(t *testing.T) {
+	dir := shortTempDir(t)
+	socket := filepath.Join(dir, strings.Repeat("s", 200)+".sock")
+	var log bytes.Buffer
+	code := run(context.Background(), []string{"daemon", "--dev-fakes", "--socket", socket,
+		"--config", filepath.Join(dir, "config.toml"), "--data", filepath.Join(dir, "data")}, &log, &log)
+	if code != 1 || !strings.Contains(log.String(), "socket path too long") || !strings.Contains(log.String(), "XDG_RUNTIME_DIR") {
+		t.Errorf("daemon with a long socket path = %d:\n%s", code, log.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data")); !os.IsNotExist(err) {
+		t.Error("data directory created although the socket path was refused")
 	}
 }
 
