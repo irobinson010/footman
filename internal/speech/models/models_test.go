@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,45 @@ func serve(t *testing.T, files map[string][]byte) *httptest.Server {
 func sum(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+func TestFetchRequires(t *testing.T) {
+	lex, voice := []byte("hello h e l o"), []byte("voice weights")
+	srv := serve(t, map[string][]byte{"/lex.txt": lex, "/voice.onnx": voice})
+	dep := Model{ID: "test-lexicon", Kind: "lexicon", File: "lex.txt", URL: srv.URL + "/lex.txt", SHA256: sum(lex), Size: int64(len(lex))}
+	saved := Catalog
+	Catalog = append(Catalog[:len(Catalog):len(Catalog)], dep)
+	t.Cleanup(func() { Catalog = saved })
+
+	dir := t.TempDir()
+	m := Model{ID: "test-voice", Kind: "tts", File: "voice.onnx", URL: srv.URL + "/voice.onnx", SHA256: sum(voice), Size: int64(len(voice)), Requires: []string{dep.ID}}
+	var recorded []string
+	if _, err := Fetch(context.Background(), m, dir, FetchOptions{Record: func(p string, _ bool) error { recorded = append(recorded, p); return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if !dep.Installed(dir) || !m.Installed(dir) {
+		t.Error("the voice or its lexicon is missing")
+	}
+	if !slices.Contains(recorded, dep.Path(dir)) {
+		t.Errorf("lexicon not recorded: %v", recorded)
+	}
+	m.Requires = []string{"no-such-model"}
+	if _, err := Fetch(context.Background(), m, t.TempDir(), FetchOptions{}); err == nil {
+		t.Error("unknown requirement accepted")
+	}
+}
+
+func TestCatalogRequires(t *testing.T) {
+	for _, m := range Catalog {
+		for _, id := range m.Requires {
+			if r, ok := Lookup(id); !ok || len(r.Requires) > 0 {
+				t.Errorf("%s requires %s, which is unknown or has requirements of its own", m.ID, id)
+			}
+		}
+		if m.Kind == "tts" && len(m.Requires) == 0 {
+			t.Errorf("TTS voice %s does not require the lexicon", m.ID)
+		}
+	}
 }
 
 func TestFetchFile(t *testing.T) {
