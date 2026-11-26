@@ -557,8 +557,7 @@ func (s *speaker) Finish() error {
 		_, _ = s.p.d.Platform.Notifier().Notify(s.p.ctx, platform.Notification{Title: "Footman", Body: strings.TrimSpace(s.text.String())})
 	}
 	s.closeIn.Do(func() { close(s.sentences) })
-	synthErr := <-s.synthDone
-	playErr := <-s.playDone
+	synthErr, playErr := s.wait()
 	s.cancel()
 	switch {
 	case playErr != nil && !errors.Is(playErr, context.Canceled):
@@ -575,8 +574,12 @@ func (s *speaker) Finish() error {
 func (s *speaker) Abort() {
 	s.cancel()
 	s.closeIn.Do(func() { close(s.sentences) })
-	_ = <-s.synthDone
-	_ = <-s.playDone
+	_, _ = s.wait()
+}
+
+// wait returns the synthesis and playback results once both have ended.
+func (s *speaker) wait() (synth, play error) {
+	return <-s.synthDone, <-s.playDone
 }
 
 type speechError struct {
