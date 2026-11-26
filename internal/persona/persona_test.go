@@ -25,7 +25,7 @@ title = "Master"
 fallback = "sir"
 [voice]
 engine = "kokoro"
-model = "kokoro-multi-lang-v1_0"
+model = "kokoro-en"
 speaker = "bm_george"
 [style]
 prompt = "style.md"
@@ -84,10 +84,10 @@ func TestLoadRejects(t *testing.T) {
 			m["persona.toml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodManifest, `"style.md"`, `"../../etc/passwd"`, 1))}
 		}, "inside the pack"},
 		{"absolute voice path", func(m fstest.MapFS) {
-			m["persona.toml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodManifest, `"kokoro-multi-lang-v1_0"`, `"/etc/voice.onnx"`, 1))}
+			m["persona.toml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodManifest, `"kokoro-en"`, `"/etc/voice.onnx"`, 1))}
 		}, "inside the pack"},
 		{"missing voice file", func(m fstest.MapFS) {
-			m["persona.toml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodManifest, `"kokoro-multi-lang-v1_0"`, `"voice/x.onnx"`, 1))}
+			m["persona.toml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodManifest, `"kokoro-en"`, `"voice/x.onnx"`, 1))}
 		}, "does not exist"},
 		{"huge style", func(m fstest.MapFS) {
 			m["style.md"] = &fstest.MapFile{Data: []byte(strings.Repeat("a", persona.MaxStyleBytes+1))}

@@ -19,7 +19,7 @@ fallback = "sir"
 # live in the pack until trained voices exist (ADR-0020).
 [voice]
 engine = "kokoro"
-model = "kokoro-multi-lang-v1_0"
+model = "kokoro-en"
 speaker = "bm_fable"
 speed = 1.0
 
