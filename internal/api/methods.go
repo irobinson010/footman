@@ -16,6 +16,7 @@ import (
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/config"
 	"github.com/irobinson010/footman/internal/core"
+	"github.com/irobinson010/footman/internal/permissions"
 	"github.com/irobinson010/footman/internal/speech"
 )
 
@@ -73,6 +74,9 @@ type Deps struct {
 	// Models, if set, reports which speech models are loaded, for
 	// status.get.
 	Models func() ModelsStatus
+	// Actions is the action log, for actions.list. Nil means it is not
+	// available.
+	Actions ActionLog
 	// Now is the clock for uptime (default time.Now).
 	Now func() time.Time
 }
@@ -95,6 +99,7 @@ func Register(s *Server, d Deps) {
 	s.Handle("system.stop_everything", m.stopEverything)
 	s.Handle("system.set_listening", m.setListening)
 	s.Handle("speech.transcribe", m.speechTranscribe)
+	s.Handle("actions.list", m.actionsList)
 }
 
 type methods struct {
@@ -505,6 +510,7 @@ func (m *methods) configSet(ctx context.Context, c *Conn, params json.RawMessage
 	if err != nil {
 		return nil, Errorf(CodeInvalidParams, "value: %v", err)
 	}
+	old := m.d.Config.Current()
 	cfg, err := m.d.Config.Set(p.Key, v)
 	if err != nil {
 		var ce *config.Error
@@ -513,6 +519,9 @@ func (m *methods) configSet(ctx context.Context, c *Conn, params json.RawMessage
 		}
 		return nil, err
 	}
+	// A socket client is the owner at the keyboard (design §29), but is
+	// recorded as "api" in the action log.
+	permissions.PublishConfigChanges(m.d.Bus, old, cfg, core.ActorAPI, permissions.HowAuto, "config.set")
 	res := ConfigSetResult{Key: p.Key}
 	if id, rest, ok := pluginKey(p.Key); ok {
 		res.Value = cfg.Plugin(id)[rest]
