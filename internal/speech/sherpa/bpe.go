@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"strings"
 )
@@ -30,19 +29,6 @@ const (
 
 // maxPieceRunes bounds the length of a piece the search tries.
 const maxPieceRunes = 16
-
-// loadBPE reads a SentencePiece model file.
-func loadBPE(path string) (*bpe, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	b, err := parseBPE(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return b, nil
-}
 
 var errNotSPM = errors.New("not a SentencePiece model")
 
@@ -121,7 +107,7 @@ func parsePiece(raw []byte) (piece string, score float32, typ uint64, err error)
 				return "", 0, 0, errNotSPM
 			}
 			score, raw = math.Float32frombits(binary.LittleEndian.Uint32(raw)), raw[4:]
-		case 3<<3 | 0: // type
+		case 3 << 3: // type
 			if typ, n = binary.Uvarint(raw); n <= 0 {
 				return "", 0, 0, errNotSPM
 			}

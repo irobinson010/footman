@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -103,6 +104,19 @@ func OpenKWS(o KWSOptions) (*KWS, error) {
 	k.info = fmt.Sprintf("%s, %s on %s, wake words %s, boost %g, threshold %g",
 		Version(), filepath.Base(dir), o.Provider, strings.Join(o.Keywords, ", "), o.Boost, o.Threshold)
 	return k, nil
+}
+
+// loadBPE reads a SentencePiece model file.
+func loadBPE(path string) (*bpe, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	b, err := parseBPE(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return b, nil
 }
 
 // keywordName is how a phrase is named in a keyword list: "hey footman" is
