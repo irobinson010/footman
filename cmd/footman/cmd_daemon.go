@@ -247,6 +247,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			}
 			old := cfgFile.Current()
 			cfgFile.Replace(c)
+			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
 			// Changes made through config.set or by voice are already in
 			// old, so only hand edits show up here.
 			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
@@ -473,6 +474,8 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		WakeWords:  append(wakePhrases(cfg), "footman"),
 		MinCommand: core.DefaultMinCommand,
 		Quiet:      cfg.Bool("replies.quiet"),
+		Speak:      cfg.String("replies.speak"),
+		QuietHours: cfg.String("replies.quiet_hours"),
 	}
 }
 
