@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -204,7 +205,9 @@ func TestVerifiedWakeBreakGlass(t *testing.T) {
 	go func() { done <- r.p.Run(ctx) }()
 	got := await(t, stops, func(core.Stopped) bool { return true })
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Run: %v", err)
+	}
 	if got.Source != core.StopVoice {
 		t.Errorf("stop source %v", got.Source)
 	}
