@@ -285,7 +285,7 @@ func TestEventsCommand(t *testing.T) {
 	if code, _, errOut := d.cli(t, "say", "open github"); code != 0 {
 		t.Fatalf("say: %s", errOut)
 	}
-	stdout.waitFor(t, `pipeline.fast_path   {"turn":1,"rule":"open"}`)
+	stdout.waitFor(t, `pipeline.fast_path   {"turn":1,"rule":"open","reply":"Opening github.","confirmation":"auto"}`)
 	if !strings.Contains(stdout.String(), `pipeline.route       {"turn":1,"route":"command","text":"open github"}`) {
 		t.Errorf("events output:\n%s", stdout.String())
 	}

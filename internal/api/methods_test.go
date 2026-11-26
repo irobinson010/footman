@@ -177,7 +177,7 @@ func TestSayTextStreamsPipelineStates(t *testing.T) {
 		`pipeline.state {"from":"idle","to":"routing","turn":1}`,
 		`pipeline.state {"from":"routing","to":"acknowledging","turn":1}`,
 		`pipeline.state {"from":"acknowledging","to":"fast_path","turn":1}`,
-		`pipeline.fast_path {"turn":1,"rule":"open"}`,
+		`pipeline.fast_path {"turn":1,"rule":"open","reply":"Opening youtube.","confirmation":"auto"}`,
 		`pipeline.state {"from":"fast_path","to":"replying","turn":1}`,
 		`pipeline.state {"from":"replying","to":"idle","turn":0}`,
 	}

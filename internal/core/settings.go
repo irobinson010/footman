@@ -109,6 +109,11 @@ func (s *Settings) Set(path, text string) (string, Status) {
 	if fmt.Sprint(old) == fmt.Sprint(v) {
 		return fmt.Sprintf("%s was already %s.", capital(spoken(path)), show(v)), Changed
 	}
+	if s.Bus != nil {
+		bus.Publish(s.Bus, SettingChanged, SettingChange{
+			Key: path, Old: ValueText(old), New: ValueText(v), Actor: ActorOwner, How: "voice", Reason: "changed by voice",
+		})
+	}
 	return fmt.Sprintf("%s changed from %s to %s.%s", capital(spoken(path)), show(old), show(v), note), Changed
 }
 
@@ -137,6 +142,20 @@ func (s *Settings) List() []string {
 		}
 	}
 	return out
+}
+
+// ValueText renders a config value in file form for SettingChange: secret
+// references as "keychain:<name>", lists comma-separated, nil as "".
+func ValueText(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case config.SecretRef:
+		return t.String()
+	case []string:
+		return strings.Join(t, ", ")
+	}
+	return fmt.Sprint(v)
 }
 
 func show(v any) string {
