@@ -114,7 +114,10 @@ func TestStreamCloseStopsGenerator(t *testing.T) {
 		t.Fatal("Close did not return")
 	}
 	select {
-	case <-ended:
+	case err := <-ended:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("generator ended with %v", err)
+		}
 	default:
 		t.Error("Close returned before the generator stopped")
 	}

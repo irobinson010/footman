@@ -73,16 +73,8 @@ func parseLexicon(r io.Reader) (lexicon, error) {
 	return l, nil
 }
 
-// loadTokens reads a model's tokens.txt ("symbol id" per line) and returns
+// parseTokens reads a model's tokens.txt ("symbol id" per line) and returns
 // the single-codepoint symbols it knows.
-func loadTokens(path string) (map[rune]bool, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return parseTokens(string(raw)), nil
-}
-
 func parseTokens(s string) map[rune]bool {
 	known := map[rune]bool{}
 	for _, line := range strings.Split(s, "\n") {

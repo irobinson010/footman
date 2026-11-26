@@ -2,7 +2,6 @@ package sherpa
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,11 +91,6 @@ func (o TTSOptions) withDefaults(engine string) TTSOptions {
 	o.Common = o.Common.withDefaults(max(1, min(8, runtime.NumCPU()/2)))
 	return o
 }
-
-// maxWords is the longest sentence synthesized at once, in words; longer
-// ones are cut at their pauses (S3-02: Kokoro's memory grows with the
-// longest piece it has seen).
-const maxWords = 25
 
 // modelFiles are the files of one TTS model, found in its folder.
 type modelFiles struct {
@@ -261,6 +255,3 @@ func chooseAccent(language, speaker, modelVoice string) accent {
 	}
 	return american
 }
-
-// errNoLexicon reports a model with no pronunciation lexicon to use.
-var errNoLexicon = errors.New("no pronunciation lexicon")
