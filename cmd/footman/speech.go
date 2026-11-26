@@ -82,6 +82,13 @@ func vadOptions(name string, dirs speechDirs, minSilence float64) registry.Confi
 	return nil
 }
 
+// wakePhrases are the wake words the spotter listens for: the listening
+// personas' and "hey footman". The router strips the same ones from
+// transcripts, plus plain "footman".
+func wakePhrases(cfg *config.Config) []string {
+	return append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
+}
+
 // wakeOptions are the options for the wake-word engine named name: the
 // listening personas' wake words and "hey footman", with the sensitivity from
 // speech.wake.*.
@@ -89,7 +96,7 @@ func wakeOptions(name string, dirs speechDirs, cfg *config.Config) registry.Conf
 	if name != sherpa.KWSName {
 		return nil
 	}
-	keywords := append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
+	keywords := wakePhrases(cfg)
 	return registry.Map{
 		"models_dir": dirs.models,
 		"keywords":   keywords,

@@ -31,6 +31,7 @@
   "personas.listening": [
     "ashford"
   ],
+  "replies.quiet": false,
   "replies.quiet_hours": "",
   "replies.speak": "when-voice",
   "speech.stt.accelerator": "auto",
