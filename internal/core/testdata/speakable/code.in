@@ -1,0 +1,9 @@
+Try this:
+
+```go
+func main() {
+	fmt.Println("hi")
+}
+```
+
+Then run it. That is all.

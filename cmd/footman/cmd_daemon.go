@@ -219,6 +219,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 				return
 			}
 			cfgFile.Replace(c)
+			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
 		})
 	})
 
@@ -442,6 +443,8 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		WakeWords:  append(wakePhrases(cfg), "footman"),
 		MinCommand: core.DefaultMinCommand,
 		Quiet:      cfg.Bool("replies.quiet"),
+		Speak:      cfg.String("replies.speak"),
+		QuietHours: cfg.String("replies.quiet_hours"),
 	}
 }
 

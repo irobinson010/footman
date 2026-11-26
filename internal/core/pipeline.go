@@ -105,6 +105,15 @@ type Config struct {
 	Ack audio.Clip
 	// Voice is the TTS voice for replies.
 	Voice speech.Voice
+	// Speak is the reply policy (config replies.speak): "always",
+	// "when-voice" (the default: only for requests that came by voice) or
+	// "never". Change it while running with SetReplyPolicy.
+	Speak string
+	// QuietHours is a range like "22:00-07:00" with no spoken replies (config
+	// replies.quiet_hours). Empty means none.
+	QuietHours string
+	// Now is the clock for quiet hours (default time.Now).
+	Now func() time.Time
 	// System is the LLM system prompt.
 	System string
 	// Model overrides the provider's default model.
@@ -394,6 +403,9 @@ func (p *Pipeline) fail(turn uint64, err error) error {
 type Utterance struct {
 	Trigger Trigger
 	Text    string
+	// Typed is true when the text did not come by voice (the local API's
+	// say.text); the reply policy "when-voice" does not speak the reply.
+	Typed bool
 	// Ended is when the speech ended (the push-to-talk key came up), for
 	// the latency reported with an insertion; zero if unknown.
 	Ended time.Time
@@ -456,6 +468,9 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 	p.setState(id, Routing)
 	r := p.cfg.Router.Route(u.Trigger, u.Text)
 	bus.Publish(p.d.Bus, RouteChosen, Routed{Turn: id, Route: r})
+	if u.Typed {
+		ctx = context.WithValue(ctx, typedKey{}, true)
+	}
 	var err error
 	switch r.Kind {
 	case RouteDictation:
@@ -531,13 +546,19 @@ func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended ti
 func (p *Pipeline) command(ctx context.Context, id uint64, text string) error {
 	p.setState(id, Acknowledging)
 	ack := p.playAck(ctx)
+	typed, _ := ctx.Value(typedKey{}).(bool)
+	var sp *speaker
+	if p.shouldSpeak(typed) {
+		sp = p.newSpeaker(ctx, id)
+		ctx = withSpeaker(ctx, sp)
+	}
 	reply, err := p.act(ctx, id, text)
 	<-ack // don't talk over the acknowledgement
-	if err != nil {
+	if err != nil || reply == "" {
+		if sp != nil {
+			sp.Abort()
+		}
 		return err
-	}
-	if reply == "" {
-		return nil
 	}
 	return p.reply(ctx, id, reply)
 }
@@ -582,23 +603,23 @@ func (p *Pipeline) playAck(ctx context.Context) <-chan struct{} {
 	return done
 }
 
-// reply speaks text, or shows it as a notification when there is no TTS.
+// reply speaks text, or shows it as a notification when the reply policy or
+// quiet mode says not to speak. A reply the AI streamed has mostly been spoken
+// already; this waits for the rest.
 func (p *Pipeline) reply(ctx context.Context, id uint64, text string) error {
 	p.setState(id, Replying)
 	bus.Publish(p.d.Bus, Replied, Reply{Turn: id, Text: text})
-	if p.d.TTS == nil || p.Quiet() {
+	sp := speakerFrom(ctx)
+	if sp == nil {
 		// The notification outlives the turn.
 		_, err := p.d.Platform.Notifier().Notify(p.ctx, platform.Notification{Title: "Footman", Body: text})
 		return err
 	}
-	s, err := p.d.TTS.Speak(ctx, text, p.cfg.Voice)
-	if err != nil {
-		return fmt.Errorf("speak: %w", err)
+	if !sp.streamedFinal {
+		sp.Break()
+		sp.Feed(text)
 	}
-	if err := p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, s); err != nil {
-		return fmt.Errorf("play: %w", err)
-	}
-	return nil
+	return sp.Finish()
 }
 
 // Stop is the break-glass stop for the hotkey, the tray and the API

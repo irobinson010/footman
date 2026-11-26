@@ -443,7 +443,7 @@ func TestLongTaskBecomesJob(t *testing.T) {
 	if j.Status() != jobs.Running || j.Task().Prompt != "refactor the parser" {
 		t.Fatalf("job = %v %+v", j.Status(), j.Task())
 	}
-	equal(t, "spoken", spoken(r.tts), []string{"On it. I'll let you know when it's done."})
+	equal(t, "spoken", spoken(r.tts), []string{"On it.", "I'll let you know when it's done."})
 	if n := len(r.ai.Requests()); n != 1 {
 		t.Errorf("AI called %d times, want 1", n)
 	}

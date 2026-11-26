@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/jobs"
@@ -74,13 +76,21 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
-		r, err := llm.Collect(s)
+		sp := speakerFrom(ctx)
+		msg, err := collectStreaming(s, sp)
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
+		r := llm.Reply{Message: msg}
 		msgs = append(msgs, r.Message)
 		if len(r.Message.ToolCalls) == 0 {
+			if sp != nil {
+				sp.streamedFinal = true
+			}
 			return r.Message.Text, nil
+		}
+		if sp != nil {
+			sp.Break() // what came before a tool call is its own sentence
 		}
 		for _, call := range r.Message.ToolCalls {
 			if call.Name == StartTaskTool && p.d.Worker != nil {
@@ -97,6 +107,33 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 		}
 	}
 	return "Sorry, I couldn't finish that.", nil
+}
+
+// collectStreaming reads s to the end like llm.Collect, handing each text
+// delta to sp (if any) as it arrives so speech starts before the reply ends.
+func collectStreaming(s llm.Stream, sp *speaker) (llm.Message, error) {
+	defer func() { _ = s.Close() }()
+	m := llm.Message{Role: llm.Assistant}
+	var text strings.Builder
+	for {
+		e, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			m.Text = text.String()
+			return m, nil
+		}
+		if err != nil {
+			return m, err
+		}
+		switch e.Kind {
+		case llm.TextDelta:
+			text.WriteString(e.Text)
+			if sp != nil {
+				sp.Feed(e.Text)
+			}
+		case llm.ToolCallEvent:
+			m.ToolCalls = append(m.ToolCalls, e.ToolCall)
+		}
+	}
 }
 
 // runTool runs one tool call through the gate. Failures become error results
