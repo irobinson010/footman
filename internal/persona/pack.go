@@ -88,7 +88,7 @@ type Voice struct {
 	// here; the speech layer rejects ones it lacks.
 	Engine string
 	// Model is a pack-relative file ("voice/ashford.onnx") or, when it has no
-	// slash and no extension, a models-catalog ID ("kokoro-multi-lang-v1_0")
+	// slash and no extension, a models-catalog ID ("kokoro-en")
 	// so a stock interim voice needs no file in the pack. See ModelIsPath.
 	Model string
 	// Speaker picks a voice inside a multi-speaker model, by name or index.

@@ -19,8 +19,8 @@ fallback = "friend"
 # live in the pack until trained voices exist (ADR-0020).
 [voice]
 engine = "kokoro"
-model = "kokoro-multi-lang-v1_0"
-speaker = "af_nicole"
+model = "kokoro-en"
+speaker = "bf_emma"
 speed = 1.0
 
 [style]
