@@ -91,6 +91,29 @@ type InputSetup interface {
 	PrepareInsert(ctx context.Context) error
 }
 
+// Things setup grants or registers with the desktop, which uninstall must
+// undo. They are the names recorded in the install receipt and passed to
+// InputReset.ResetInput.
+const (
+	// ResetPermissions is the desktop's saved permission for Footman to
+	// type, paste and bind global shortcuts (on Linux the portal permission
+	// store).
+	ResetPermissions = "input-permissions"
+	// ResetShortcuts is the desktop's own list of Footman's shortcuts (on
+	// KDE, KGlobalAccel's component).
+	ResetShortcuts = "input-shortcuts"
+)
+
+// InputReset is an optional extension of Input that undoes what InputSetup
+// did on the desktop. Uninstall checks for it with a type assertion.
+type InputReset interface {
+	// ResetInput undoes one of ResetPermissions or ResetShortcuts. It
+	// returns nil when the desktop has no such thing or does not offer a way
+	// to remove it, so uninstall never fails over a desktop that has nothing
+	// to undo.
+	ResetInput(ctx context.Context, what string) error
+}
+
 // InputFiles lists files an Input installs or writes.
 type InputFiles struct {
 	// Program files identify Footman to the desktop, such as a .desktop

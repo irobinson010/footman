@@ -40,6 +40,10 @@ const (
 	// KindService is the background service (the systemd user unit on
 	// Linux), removed through platform.Service. Name is the unit name.
 	KindService Kind = "service"
+	// KindDesktop is a grant or registration made with the desktop, removed
+	// through platform.InputReset. Name is platform.ResetPermissions or
+	// platform.ResetShortcuts.
+	KindDesktop Kind = "desktop"
 	// KindSecret is a keychain entry, removed through platform.Secrets. Name
 	// is the key. The value is never recorded.
 	KindSecret Kind = "secret"
@@ -79,14 +83,14 @@ type Entry struct {
 }
 
 func (e Entry) usesPath() bool {
-	return e.Kind != KindService && e.Kind != KindSecret
+	return e.Kind != KindService && e.Kind != KindSecret && e.Kind != KindDesktop
 }
 
 // validate checks an entry read from a receipt, which is a file the user could
 // have edited, before anything is removed on its word.
 func (e Entry) validate() error {
 	switch e.Kind {
-	case KindFile, KindDir, KindTree, KindModel, KindService, KindSecret:
+	case KindFile, KindDir, KindTree, KindModel, KindService, KindSecret, KindDesktop:
 	default:
 		return fmt.Errorf("unknown kind %q", e.Kind)
 	}
