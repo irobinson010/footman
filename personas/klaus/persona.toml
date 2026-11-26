@@ -24,6 +24,17 @@ model = "kokoro-en"
 speaker = "bm_lewis"
 speed = 1.0
 
+# How the voice says Klaus's German words. The stock voice phonemizes in
+# English, and a word missing from its lexicon is spelled out letter by letter
+# (ADR-0037), so each is respelled with common English words (ADR-0036).
+[pronounce]
+jawohl = "yah vole"
+"selbstverständlich" = "zell best fair stend lick"
+gut = "gooed"
+bitte = "bit a"
+erledigt = "air lay dicked"
+"es tut mir leid" = "ess toot meer lite"
+
 [style]
 prompt = "style.md"
 formality = 0.9

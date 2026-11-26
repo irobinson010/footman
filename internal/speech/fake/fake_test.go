@@ -3,6 +3,7 @@ package fake_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -110,7 +111,7 @@ func TestTTS(t *testing.T) {
 	if c.Duration() != 100*time.Millisecond {
 		t.Fatalf("audio lasts %v, want 100ms", c.Duration())
 	}
-	if sp := tts.(*fake.TTS).Spoken(); len(sp) != 1 || sp[0].Text != "Very good." || sp[0].Voice != v {
+	if sp := tts.(*fake.TTS).Spoken(); len(sp) != 1 || sp[0].Text != "Very good." || !reflect.DeepEqual(sp[0].Voice, v) {
 		t.Fatalf("Spoken = %+v", sp)
 	}
 
