@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync/atomic"
 
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/config"
@@ -22,38 +21,49 @@ type SettingsStore interface {
 	Set(key string, value any) (*config.Config, error)
 }
 
-// ConfirmRequest asks the user to confirm, with a physical click in the web
-// UI, tray or CLI, a change that must never be made by voice (design §17,
-// §29). Nothing has been changed when it is published.
+// ConfirmRequest asks the owner to confirm, with a physical click, a setting
+// change that voice alone may not make (design §17, §29, ADR-0039). Nothing
+// has been changed when it is asked.
 type ConfirmRequest struct {
-	// ID identifies the request.
-	ID string
-	// Key is the setting and Value the value that was asked for.
-	Key   string
-	Value string `json:",omitempty"`
+	// Key is the setting.
+	Key string
+	// Old and New are the current and requested values, in file form.
+	Old, New string
 	// Reason says why voice was not enough.
 	Reason string
 }
 
-// SettingsConfirm is published when a setting change needs a click.
-var SettingsConfirm = bus.NewTopic[ConfirmRequest]("settings.confirm")
+// SettingConfirmer asks for click confirmations of setting changes.
+// permissions.Broker implements it.
+type SettingConfirmer interface {
+	// AskSetting registers r and returns at once with the request's ID,
+	// which the owner quotes to `footman confirm`. done is called once, from
+	// another goroutine, with the answer: allowed only after a click, and
+	// how it was reached ("click", "timeout" or "cancelled"). A request
+	// asked this way can never be answered by voice.
+	AskSetting(r ConfirmRequest, done func(allowed bool, how string)) (id string, err error)
+}
 
 // QuietKey is the setting behind "quiet mode": replies are never spoken.
 const (
-	QuietKey   = "replies.speak"
-	quietOn    = "never"
-	quietOff   = "when-voice"
-	settingsID = "settings-"
+	QuietKey = "replies.speak"
+	quietOn  = "never"
+	quietOff = "when-voice"
 )
 
 // Settings reads and changes settings by voice. The fast-path rule and the AI
 // tools share it, so both follow the same policy.
 type Settings struct {
 	Store SettingsStore
-	// Bus receives SettingsConfirm requests. May be nil.
+	// Bus receives SettingChanged events. May be nil.
 	Bus *bus.Bus
-
-	seq atomic.Uint64
+	// Confirm asks for a click when a change loosens security. Nil means
+	// such changes are refused with nothing to click.
+	Confirm SettingConfirmer
+	// Told, if set, is given a sentence saying what came of a confirmation
+	// once it is answered (the change applied, refused or expired), so the
+	// owner learns the outcome. It is called from another goroutine.
+	Told func(text string)
 }
 
 // Status is what happened to a settings request.
@@ -65,7 +75,8 @@ const (
 	Changed Status = iota + 1
 	// Invalid: unknown setting or bad value; nothing changed.
 	Invalid
-	// Refused: not allowed by voice; a click confirmation was requested.
+	// Refused: not allowed by voice; nothing changed. A click
+	// confirmation may have been requested.
 	Refused
 )
 
@@ -85,19 +96,32 @@ func (s *Settings) Get(path string) (string, Status) {
 	return fmt.Sprintf("%s is %s.", capital(spoken(path)), show(v)), Changed
 }
 
-// Set applies "set <path> to <text>" under the voice policy.
+// Set applies "set <path> to <text>" under the voice policy: a change that
+// tightens security (or any change to an ordinary setting) is applied at
+// once; one that loosens it becomes a click confirmation and is applied, as
+// asked, only on Allow (ADR-0039). Secrets are never set by voice.
 func (s *Settings) Set(path, text string) (string, Status) {
 	k, verdict, why := config.VoicePolicy(path)
 	switch verdict {
 	case config.VoiceUnknown:
 		return s.unknown(path), Invalid
-	case config.VoiceNeedsClick:
-		return s.refuse(k, text, why), Refused
+	case config.VoiceNever:
+		return fmt.Sprintf("I won't set %s by voice because %s. Use footman config set or edit the config file.", spoken(k.Path), why), Refused
 	}
 	v, err := config.ParseValue(path, text)
 	if err != nil {
 		return fmt.Sprintf("I can't set that: %v.", err), Invalid
 	}
+	old := s.Store.Current().Get(path)
+	if _, verdict, why = config.VoiceChange(path, old, v); verdict != config.VoiceAllowed {
+		return s.ask(k, old, v, why), Refused
+	}
+	return s.apply(path, v, "voice", "changed by voice")
+}
+
+// apply sets path to v and publishes the change with how and reason.
+func (s *Settings) apply(path string, v any, how, reason string) (string, Status) {
+	k, _ := config.Lookup(path)
 	old := s.Store.Current().Get(path)
 	if _, err := s.Store.Set(path, v); err != nil {
 		return fmt.Sprintf("I couldn't change %s: %v.", spoken(path), err), Invalid
@@ -111,18 +135,39 @@ func (s *Settings) Set(path, text string) (string, Status) {
 	}
 	if s.Bus != nil {
 		bus.Publish(s.Bus, SettingChanged, SettingChange{
-			Key: path, Old: ValueText(old), New: ValueText(v), Actor: ActorOwner, How: "voice", Reason: "changed by voice",
+			Key: path, Old: ValueText(old), New: ValueText(v), Actor: ActorOwner, How: how, Reason: reason,
 		})
 	}
 	return fmt.Sprintf("%s changed from %s to %s.%s", capital(spoken(path)), show(old), show(v), note), Changed
 }
 
-// refuse explains why voice can't make the change and asks for a click.
-func (s *Settings) refuse(k config.Key, text, why string) string {
-	id := fmt.Sprintf("%s%d", settingsID, s.seq.Add(1))
-	bus.Publish(s.Bus, SettingsConfirm, ConfirmRequest{ID: id, Key: k.Path, Value: text, Reason: why})
-	return fmt.Sprintf("I won't change %s by voice because %s. I've asked for a confirmation: click it in the web UI or tray to go ahead.",
-		spoken(k.Path), why)
+// ask explains why voice can't make the change and asks for a click. On
+// Allow the change is applied exactly as asked.
+func (s *Settings) ask(k config.Key, old, v any, why string) string {
+	if s.Confirm == nil {
+		return fmt.Sprintf("I won't change %s by voice because %s, and I can't ask for a confirmation right now. Use footman config set instead.",
+			spoken(k.Path), why)
+	}
+	id, err := s.Confirm.AskSetting(ConfirmRequest{Key: k.Path, Old: ValueText(old), New: ValueText(v), Reason: why},
+		func(allowed bool, how string) {
+			var text string
+			switch {
+			case allowed:
+				text, _ = s.apply(k.Path, v, how, "changed by voice, confirmed by click")
+			case how == "timeout":
+				text = fmt.Sprintf("Nobody confirmed the change to %s in time, so I left it as it was.", spoken(k.Path))
+			default:
+				text = fmt.Sprintf("The change to %s was not allowed, so I left it as it was.", spoken(k.Path))
+			}
+			if s.Told != nil {
+				s.Told(text)
+			}
+		})
+	if err != nil {
+		return fmt.Sprintf("I won't change %s by voice because %s, and asking for a confirmation failed: %v.", spoken(k.Path), why, err)
+	}
+	return fmt.Sprintf("I won't change %s to %s by voice because %s. Click Allow on the notification, or run footman confirm allow %s, to go ahead.",
+		spoken(k.Path), show(v), why, id)
 }
 
 func (s *Settings) unknown(path string) string {
@@ -205,6 +250,11 @@ var aliases = map[string]string{
 	"quiet hours":         "replies.quiet_hours",
 	"my name":             "user.name",
 	"name":                "user.name",
+	"action log":          "permissions.action_log",
+	"read actions":        "permissions.read",
+	"destructive actions": "permissions.destructive",
+	"outward actions":     "permissions.outward",
+	"memory":              "memory.enabled",
 	"language":            "user.language",
 	"default persona":     "personas.default",
 	"transcript history":  "history.transcripts",
@@ -350,8 +400,8 @@ func SettingsRule(s *Settings) FastRule {
 
 // SettingsTools returns the get_setting, set_setting and list_settings tools
 // for the AI. They share the Settings code path with the fast-path rule, so
-// the same policy applies: anything security-related is refused and turned
-// into a click confirmation.
+// the same policy applies: a change that loosens security becomes a click
+// confirmation, which the AI cannot answer.
 func SettingsTools(s *Settings) []plugins.Tool {
 	return []plugins.Tool{getSettingTool{s}, setSettingTool{s}, listSettingsTool{s}}
 }
@@ -385,8 +435,8 @@ func (setSettingTool) Spec() plugins.ToolSpec {
 	return plugins.ToolSpec{
 		Name: "set_setting",
 		Description: "Change one Footman setting by voice, for example replies.speak = never for quiet mode. " +
-			"Security and permission settings are refused and the user is asked to confirm with a click instead; " +
-			"tell them so.",
+			"Changes that tighten security apply at once; ones that loosen it, or touch access, are not made: " +
+			"the user is asked to confirm with a click instead (you cannot confirm it); tell them so.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"key":{"type":"string","description":"Dotted setting path."},` +
 			`"value":{"type":"string","description":"New value as text: on/off, a number, or a word."}},"required":["key","value"]}`),

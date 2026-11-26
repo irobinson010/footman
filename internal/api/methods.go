@@ -77,6 +77,9 @@ type Deps struct {
 	// Actions is the action log, for actions.list. Nil means it is not
 	// available.
 	Actions ActionLog
+	// Confirm holds the pending click confirmations, for confirm.list and
+	// confirm.answer. Nil means they are not available.
+	Confirm Confirmations
 	// Now is the clock for uptime (default time.Now).
 	Now func() time.Time
 }
@@ -100,6 +103,8 @@ func Register(s *Server, d Deps) {
 	s.Handle("system.set_listening", m.setListening)
 	s.Handle("speech.transcribe", m.speechTranscribe)
 	s.Handle("actions.list", m.actionsList)
+	s.Handle("confirm.list", m.confirmList)
+	s.Handle("confirm.answer", m.confirmAnswer)
 }
 
 type methods struct {
