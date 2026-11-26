@@ -94,6 +94,21 @@ type Insertion struct {
 	Took time.Duration
 }
 
+// Acknowledgement is published when the acknowledgement clip's first sample
+// is handed to the audio player.
+type Acknowledgement struct {
+	Turn uint64
+	// Latency is the time from the end of speech (the VAD handing over the
+	// segment, or the push-to-talk key coming up) to the first sample, or 0
+	// when unknown (text submitted through the API).
+	Latency time.Duration
+	// Lead is the time from the command starting to the first sample: how
+	// long picking and starting the clip took.
+	Lead time.Duration
+	// Clip is the clip's length.
+	Clip time.Duration
+}
+
 // FastPathRan is published when a command was handled by a fast-path rule.
 type FastPathRan struct {
 	Turn uint64
@@ -189,6 +204,7 @@ var (
 	Transcribed  = bus.NewTopic[Transcript]("pipeline.transcript")
 	RouteChosen  = bus.NewTopic[Routed]("pipeline.route")
 	Inserted     = bus.NewTopic[Insertion]("pipeline.inserted")
+	Acknowledged = bus.NewTopic[Acknowledgement]("pipeline.acknowledged")
 	FastPathDone = bus.NewTopic[FastPathRan]("pipeline.fast_path")
 	ToolCalled   = bus.NewTopic[ToolRan]("pipeline.tool")
 	Replied      = bus.NewTopic[Reply]("pipeline.reply")
