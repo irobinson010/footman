@@ -377,6 +377,12 @@ func TestFastPath(t *testing.T) {
 		{"footman open example.com/docs", pfake.Opened{Kind: "url", Target: "https://example.com/docs"}},
 		{"Footman, open https://go.dev", pfake.Opened{Kind: "url", Target: "https://go.dev"}},
 		{"Footman, launch Firefox", pfake.Opened{Kind: "app", Target: "Firefox"}},
+		{"Footman, open YouTube and search for lo-fi beats.", pfake.Opened{Kind: "url", Target: "https://www.youtube.com/results?search_query=lo-fi+beats"}},
+		{"footman search YouTube for cat videos", pfake.Opened{Kind: "url", Target: "https://www.youtube.com/results?search_query=cat+videos"}},
+		{"Footman, play Bohemian Rhapsody on YouTube", pfake.Opened{Kind: "url", Target: "https://www.youtube.com/results?search_query=bohemian+rhapsody"}},
+		{"footman open YouTube search how to fix a sink", pfake.Opened{Kind: "url", Target: "https://www.youtube.com/results?search_query=how+to+fix+a+sink"}},
+		{"Footman, search Google for weather in Leeds", pfake.Opened{Kind: "url", Target: "https://www.google.com/search?q=weather+in+leeds"}},
+		{"footman look up footman on GitHub", pfake.Opened{Kind: "url", Target: "https://github.com/search?q=footman"}},
 	}
 	for _, c := range cases {
 		t.Run(c.say, func(t *testing.T) {

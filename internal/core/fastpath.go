@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -42,6 +44,14 @@ var DefaultSites = map[string]string{
 func OpenRule(sites map[string]string) FastRule {
 	verbs := [][]string{{"open"}, {"launch"}}
 	return FastRule{Name: "open", Permission: plugins.Act, Match: func(text string) (FastAction, bool) {
+		if u, what, ok := searchURL(text); ok {
+			return func(ctx context.Context, p *Pipeline) (string, error) {
+				if err := p.d.Platform.Launcher().OpenURL(ctx, u); err != nil {
+					return "", err
+				}
+				return "Searching " + what + ".", nil
+			}, true
+		}
 		tokens, ok := stripPrefix(strings.Fields(text), verbs)
 		if !ok || len(tokens) == 0 {
 			return nil, false
@@ -258,4 +268,47 @@ func PersonaRule(s PersonaSwitcher) FastRule {
 		}
 		return func(ctx context.Context, _ *Pipeline) (string, error) { return s.Switch(ctx, id) }, true
 	}}
+}
+
+// SearchSites maps a spoken site name to its search URL; the query is
+// appended, escaped.
+var SearchSites = map[string]string{
+	"youtube": "https://www.youtube.com/results?search_query=",
+	"google":  "https://www.google.com/search?q=",
+	"github":  "https://github.com/search?q=",
+}
+
+// searchPatterns recognize "open YouTube and search for cats", "search
+// YouTube for cats", "play cats on YouTube", "YouTube search cats" and close
+// variants. Each captures the site and the query.
+var searchPatterns = func() []*regexp.Regexp {
+	const site = `(?P<site>youtube|you tube|google|github|git hub)`
+	const verb = `(?:search|look up|find|play|watch)`
+	return []*regexp.Regexp{
+		regexp.MustCompile(`^(?:open|go to|launch|pull up)\s+` + site + `\s+(?:and\s+|to\s+|then\s+)?` + verb + `(?:\s+for)?\s+(?P<q>.+)$`),
+		regexp.MustCompile(`^` + verb + `\s+(?:on\s+)?` + site + `\s+for\s+(?P<q>.+)$`),
+		regexp.MustCompile(`^` + verb + `(?:\s+for)?\s+(?P<q>.+?)\s+on\s+` + site + `$`),
+		regexp.MustCompile(`^` + site + `\s+search(?:\s+for)?\s+(?P<q>.+)$`),
+	}
+}()
+
+// searchURL returns the search URL for a spoken site search, and the site's
+// name for the reply.
+func searchURL(text string) (u, site string, ok bool) {
+	t := strings.ToLower(strings.Join(strings.Fields(strings.TrimRight(text, ".!?, ")), " "))
+	for _, re := range searchPatterns {
+		m := re.FindStringSubmatch(t)
+		if m == nil {
+			continue
+		}
+		name := strings.ReplaceAll(m[re.SubexpIndex("site")], " ", "")
+		q := strings.TrimSpace(strings.TrimRight(m[re.SubexpIndex("q")], ".!?, "))
+		if q == "" {
+			return "", "", false
+		}
+		base := SearchSites[name]
+		display := map[string]string{"youtube": "YouTube", "google": "Google", "github": "GitHub"}[name]
+		return base + url.QueryEscape(q), display + " for " + q, true
+	}
+	return "", "", false
 }
