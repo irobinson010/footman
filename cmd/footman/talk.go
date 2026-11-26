@@ -364,7 +364,9 @@ type switcher struct {
 func (s switcher) Find(name string) (string, bool) { return s.w.Find(name) }
 
 func (s switcher) Switch(_ context.Context, id string) (string, error) {
-	if cur := s.settings.Store.Current().String("personas.default"); cur == id {
+	before := s.settings.Store.Current()
+	cur := before.String("personas.default")
+	if cur == id {
 		lp, err := findPersona(s.w.cat, s.w.userDir, id)
 		if err != nil {
 			return "", err
@@ -374,6 +376,13 @@ func (s switcher) Switch(_ context.Context, id string) (string, error) {
 	reply, st := s.settings.Set("personas.default", id)
 	if st != core.Changed {
 		return reply, nil
+	}
+	// With one persona listening (the one being replaced), the new one takes
+	// over its wake words too: "switch to Klaus" means "Klaus, ..." now wakes
+	// and "Ashford, ..." no longer does. "hey footman" and speech.wake.extra
+	// ("alfred") keep working. Several listening personas are left alone.
+	if l := before.Strings("personas.listening"); len(l) == 0 || (len(l) == 1 && l[0] == cur) {
+		s.settings.Set("personas.listening", id)
 	}
 	cfg := s.settings.Store.Current()
 	s.w.apply(cfg)
