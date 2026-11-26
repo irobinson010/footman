@@ -25,11 +25,12 @@ type keysymChar struct {
 
 // Keysyms with no character of their own.
 const (
-	keysymReturn   = 0xff0d
-	keysymTab      = 0xff09
-	keysymShiftL   = 0xffe1
-	keysymControlL = 0xffe3
-	keysymInsert   = 0xff63
+	keysymReturn    = 0xff0d
+	keysymTab       = 0xff09
+	keysymBackSpace = 0xff08
+	keysymShiftL    = 0xffe1
+	keysymControlL  = 0xffe3
+	keysymInsert    = 0xff63
 )
 
 // unicodeKeysym returns the keysym for r that needs no keymap: Latin-1 maps

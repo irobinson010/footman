@@ -281,6 +281,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 | Dictation vs. command | Wake word followed by "dictate" or "write" is dictation; anything else is a command. Separate hotkeys for each. | A small, fast AI classifies the intent. |
 | Mid-dictation commands ("new paragraph", "scratch that", "all caps") | Fixed phrase list. | Understood from context. |
 
+- **Dictation formatting (simple tier, [ADR-0032](adr/0032-dictation-commands-and-code-mode.md)):** spoken "new line", "new paragraph", punctuation, "scratch that", "all caps … end caps" and a "literal" escape, from per-language phrase lists. In a terminal, or after "command mode", **code mode** turns "ps space dash aux" into `ps -aux`. Footman never presses Enter in a terminal.
 - **Push-to-talk:** both hold-to-talk and tap-to-start / tap-to-stop. **The wake word stays a top priority**, so everything can be done by voice alone.
 - **Everything is configurable by voice.** Every setting can be changed by voice ("Alfred, turn on quiet mode"), as well as from the web UI and CLI. Footman can also explain where a setting lives and what it does.
 - **Replies:** speech vs. notification-only is a setting, and there's a quiet mode.
