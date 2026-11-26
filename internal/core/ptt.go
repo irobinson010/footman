@@ -146,6 +146,7 @@ func (p *Pipeline) record(ctx, rctx context.Context, r *recording) {
 		bus.Publish(p.d.Bus, Failed, Failure{State: Listening, Err: fmt.Sprintf("microphone: %v", err)})
 		return
 	}
+	frames = p.level(cctx, frames)
 	p.setMic(platform.Recording)
 	// Keep speech-to-text loaded (loading it while the user speaks, if it
 	// was unloaded) until this utterance is transcribed, so neither a reload

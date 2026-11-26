@@ -115,6 +115,12 @@ func cmdSetup(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
+	// Offer the microphone check while the user is at the keyboard.
+	if _, ok := terminalFD(stdin); ok && !nonInteractive {
+		if offerMicCheck(context.Background(), p, res.ConfigPath, in, stdout) != nil {
+			_, _ = fmt.Fprintln(stdout, "Microphone check skipped; run `footman mic check` later.")
+		}
+	}
 	_, _ = fmt.Fprintf(stdout, "\nSetup complete. Receipt: %s\nUndo it all with: footman uninstall\n", res.ReceiptPath)
 	return 0
 }
