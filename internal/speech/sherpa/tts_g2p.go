@@ -114,6 +114,9 @@ type g2p struct {
 	tokens map[rune]bool
 	// article is how the word "a" is said.
 	article string
+	// onSpell, if set, is told each unknown word that falls back to being
+	// spelled letter by letter (tests use it to find unpronounceable words).
+	onSpell func(word string)
 }
 
 func newG2P(misaki bool, acc accent, primary []lexicon, fallback lexicon, tokens map[rune]bool) *g2p {
@@ -229,6 +232,9 @@ func (g *g2p) word(w string, first bool) string {
 	}
 	if p, ok := g.compound(lw); ok {
 		return p
+	}
+	if g.onSpell != nil {
+		g.onSpell(w)
 	}
 	return g.spell(w)
 }

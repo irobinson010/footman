@@ -98,6 +98,7 @@ func ttsChoice(cfg *config.Config, lp loadedPersona) (engine string, v speech.Vo
 	}
 	pv := lp.pack.Voice
 	v.Speed = float32(pv.Speed)
+	v.Respell = lp.pack.Pronounce
 	if engine != ttsPersona && engine != "" && engine != pv.Engine {
 		return engine, v
 	}
@@ -106,7 +107,7 @@ func ttsChoice(cfg *config.Config, lp loadedPersona) (engine string, v speech.Vo
 	if pv.ModelIsPath() {
 		if lp.dir == "" {
 			// A shipped pack has no folder on disk to load a file from.
-			return engine, speech.Voice{Speed: v.Speed}
+			return engine, speech.Voice{Speed: v.Speed, Respell: v.Respell}
 		}
 		v.ID = filepath.Join(lp.dir, filepath.FromSlash(pv.Model))
 	}

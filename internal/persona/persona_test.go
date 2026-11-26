@@ -1,8 +1,10 @@
 package persona_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -59,6 +61,56 @@ func TestLoadGood(t *testing.T) {
 	}
 	if p.Wake.Sensitivity != 0.5 || p.AddressForm.Form != "{title} {name}" || p.Style.Quips != "sometimes" {
 		t.Errorf("defaults not applied: %+v", p)
+	}
+}
+
+func TestLoadPronounce(t *testing.T) {
+	m := goodFS()
+	m["persona.toml"] = &fstest.MapFile{Data: []byte(goodManifest + "\n[pronounce]\nJawohl = \"yah  vole\"\n\"Es  tut mir leid\" = \"ess toot meer lite\"\n\"selbstverständlich\" = \"zell best fair stend lick\"\n")}
+	p, err := load(t, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"jawohl": "yah vole", "es tut mir leid": "ess toot meer lite", "selbstverständlich": "zell best fair stend lick"}
+	if !reflect.DeepEqual(p.Pronounce, want) {
+		t.Errorf("Pronounce = %v, want %v", p.Pronounce, want)
+	}
+	if p, err := load(t, goodFS()); err != nil || p.Pronounce != nil {
+		t.Errorf("no table: %v, %v", p.Pronounce, err)
+	}
+}
+
+func TestLoadRejectsPronounce(t *testing.T) {
+	long := strings.Repeat("a", persona.MaxPronounceValueRunes+1)
+	var many strings.Builder
+	for i := 0; i <= persona.MaxPronounce; i++ {
+		fmt.Fprintf(&many, "w%c%c%c = \"x\"\n", 'a'+i%26, 'a'+i/26%26, 'a'+i/676)
+	}
+	cases := []struct{ name, table, want string }{
+		{"markup in respelling", `x = "<say-as>yes</say-as>"`, "plain words"},
+		{"digits in respelling", `x = "yah 2"`, "plain words"},
+		{"punctuation in key", `"a,b" = "x"`, "may use only letters"},
+		{"empty respelling", `x = ""`, "respelling must be"},
+		{"long respelling", `x = "` + long + `"`, "respelling must be"},
+		{"long key", `"` + strings.Repeat("a", persona.MaxPronounceKeyRunes+1) + `" = "x"`, "key"},
+		{"too many words", `"a b c d e" = "x"`, "at most 4 words"},
+		{"duplicate after normalizing", "Jawohl = \"a\"\njawohl = \"b\"", "listed twice"},
+		{"too many entries", many.String(), "at most 128"},
+		{"non-string", `x = 3`, "toml"},
+		{"nested table", "[pronounce.x]\ny = \"z\"", "toml"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := goodFS()
+			m["persona.toml"] = &fstest.MapFile{Data: []byte(goodManifest + "\n[pronounce]\n" + c.table + "\n")}
+			if c.name == "nested table" {
+				m["persona.toml"] = &fstest.MapFile{Data: []byte(goodManifest + "\n" + c.table + "\n")}
+			}
+			_, err := load(t, m)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want it to mention %q", err, c.want)
+			}
+		})
 	}
 }
 
