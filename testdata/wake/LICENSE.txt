@@ -1,0 +1,9 @@
+The clips in this folder are synthetic speech made by gen.py with the Piper
+en_US-libritts_r-medium voice (sherpa-onnx release tts-models, int8 build).
+The voice was trained on LibriTTS-R (https://www.openslr.org/141/), which is
+licensed Creative Commons Attribution 4.0 International (CC-BY-4.0),
+https://creativecommons.org/licenses/by/4.0/
+
+LibriTTS-R: Y. Koizumi et al., "LibriTTS-R: A Restored Multi-Speaker
+Text-to-Speech Corpus", Interspeech 2023. The clips contain no real
+recordings of any person.

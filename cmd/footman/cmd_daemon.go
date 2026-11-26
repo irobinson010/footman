@@ -24,6 +24,7 @@ import (
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
 	"github.com/irobinson010/footman/internal/speech/accel"
+	"github.com/irobinson010/footman/internal/speech/sherpa"
 	"github.com/irobinson010/footman/internal/store"
 )
 
@@ -34,9 +35,9 @@ func init() {
 // fakeName is the registry name every area's fake registers under (ADR-0021).
 const fakeName = "fake"
 
-// defaultWake is the wake-word engine (no config key yet). The sherpa-onnx
-// keyword spotter will register under it.
-const defaultWake = "sherpa"
+// defaultWake is the wake-word engine (no config key yet): the sherpa-onnx
+// keyword spotter.
+const defaultWake = sherpa.KWSName
 
 // daemonOptions configure runDaemon.
 type daemonOptions struct {
@@ -139,7 +140,8 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	// Closed after the pipeline: this ends the desktop sessions (on Linux,
 	// the RemoteDesktop portal session and the hotkeys' portal connection).
 	defer closeIfCloser(deps.Platform)
-	logSpeech(logf, o.dataDir, deps.STT, deps.VAD)
+	defer closeIfCloser(deps.Wake)
+	logSpeech(logf, o.dataDir, deps.STT, deps.VAD, deps.Wake)
 	// Speech models unload when idle and load again on use
 	// (speech.unload_after, ADR-0028).
 	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
@@ -302,6 +304,7 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 		if err != nil {
 			closeIfCloser(d.STT)
 			closeIfCloser(d.VAD)
+			closeIfCloser(d.Wake)
 		}
 	}()
 
@@ -338,8 +341,11 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 	rl.vad = reloader(speech.VADs, impl["vad"], vadOpts)
 
 	if cfg.Bool("input.wake_word") {
-		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), nil, devFakes); err != nil {
-			return d, nil, rl, err
+		// Like the VAD, the wake word is optional: without its model the
+		// hotkeys still work.
+		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), wakeOptions(name(defaultWake), dirs, cfg), devFakes); err != nil {
+			logf("wake word unavailable: %v", err)
+			d.Wake, impl["wake"], err = nil, "", nil
 		}
 	} else {
 		impl["wake"] = ""

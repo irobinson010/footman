@@ -63,14 +63,14 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: .models
-          key: models-tiny-silero-${{ hashFiles('internal/speech/models/models.go') }}
+          key: models-tiny-silero-kws-${{ hashFiles('internal/speech/models/models.go') }}
       - name: Fetch models (checks SHA-256)
-        run: go run ./cmd/footman models --dir "$FOOTMAN_TEST_MODELS" fetch whisper-tiny.en silero-vad
+        run: go run ./cmd/footman models --dir "$FOOTMAN_TEST_MODELS" fetch whisper-tiny.en silero-vad kws-zipformer-gigaspeech
       - name: Vet and test with -tags native
         run: |
           eval "$(scripts/native/whispercpp.sh env)"
           go vet -tags native ./...
-          go test -tags native -v -run 'Transcribe|Silero|Parakeet|Registered|Unloads|SetupSpeech' ./internal/speech/... ./cmd/footman/
+          go test -tags native -v -run 'Transcribe|Silero|Parakeet|KWS|Registered|Unloads|SetupSpeech' ./internal/speech/... ./cmd/footman/
           go test -tags native ./...
 
   cross:
