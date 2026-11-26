@@ -52,3 +52,26 @@ ADR numbers are reserved to avoid collisions: 0036 persona packs (S3-01), 0037 i
 - `permissions.*` config keys, the `action_log` table with `store.AppendAction`, `RecentActions` and `Prune` (nothing writes to it or prunes it yet).
 - `platform.Notifier` with click actions; the pipeline's `Acknowledging` state and single `Config.Ack` clip.
 - `internal/persona` and `internal/permissions` are empty packages.
+
+## Measured (S3-07)
+
+**Interim voices** (owner, 2026-11-26): Ashford `bm_george`, Klaus `bm_lewis`, Pettigrew `bm_fable`, Lucy `bf_emma`, all Kokoro `kokoro-en`.
+
+**Agent run, 2026-11-26** (`TestTalkLatency`, `FOOTMAN_TALK_RUNS=10`): 7900X, CPU only, load average 17–21 from other work; real Kokoro (`bm_george`) and Parakeet int8 on the CPU, the fake platform (nothing played) and the fake AI (answers at once). The commands are spoken by Kokoro (`am_michael`) and transcribed for each run; the first run is a warm-up and not counted. Medians, with min–max:
+
+| Command | Speech-to-text | End of speech → first ack sample | End of speech → first reply audio |
+|---|---|---|---|
+| "Ashford, open YouTube." (fast path) | 178 ms (159–344) | **178 ms** (159–345) | 675 ms (625–900) |
+| "Ashford, what is the weather like?" (AI) | 213 ms (136–372) | **213 ms** (137–379) | 758 ms (688–1371) |
+
+The acknowledgement plays from the clip bank in memory, so its latency is speech-to-text plus under a millisecond: under the 300 ms target on this row. The reply's first audio is live Kokoro synthesis after the command has run (about 500 ms under this load; ADR-0037 measured 236 ms at load 8); the AI row excludes the model's own time. Loading Kokoro took 1.7 s and rendering Ashford's 21 clips 9.1 s.
+
+**Owner run on the real desktop:** to do (see the PR for #84).
+
+Reproduce (no audio is played):
+
+```bash
+eval "$(scripts/native/whispercpp.sh env)"
+FOOTMAN_TEST_MODELS=~/models FOOTMAN_TALK_RUNS=10 FOOTMAN_TALK_WAVS=/tmp/talk \
+  go test -tags native -count=1 -v -run TestTalkLatency ./cmd/footman/
+```

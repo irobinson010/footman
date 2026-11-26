@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,10 +18,12 @@ import (
 	"github.com/irobinson010/footman/internal/config"
 	"github.com/irobinson010/footman/internal/core"
 	"github.com/irobinson010/footman/internal/dictation"
+	"github.com/irobinson010/footman/internal/install"
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
 	"github.com/irobinson010/footman/internal/llm/claude"
 	"github.com/irobinson010/footman/internal/permissions"
+	"github.com/irobinson010/footman/internal/persona/clipbank"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
@@ -200,13 +203,28 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			}
 		}
 	}
+	// The clip bank (S3-03, ADR-0040) pre-renders the persona's short
+	// lines with the CPU voice into <cache>/clips and plays the
+	// acknowledgement from memory.
+	bank := clipbank.New(clipbank.Options{
+		Dir: clipsDir(o), TTS: deps.TTS,
+		Log: slog.New(slog.NewTextHandler(logw, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
+	defer bank.Close()
+	if err := install.RecordIn(o.dataDir, install.Entry{Kind: install.KindTree, Group: install.GroupCache, Path: clipsDir(o)}); err != nil {
+		logf("could not record the clip cache in the install receipt: %v", err)
+	}
+	pcfg.Ack = bank
 	p, err := core.New(deps, pcfg)
 	if err != nil {
 		return err
 	}
 	defer p.Close()
-	// From here on the persona follows the config. The clip bank (S3-03)
-	// subscribes with personas.OnChange to render the new persona's clips.
+	// From here on the persona follows the config: the pipeline's voice,
+	// prompt and lines, the wake words, and the clip bank.
+	personas.OnChange(func(c PersonaChange) {
+		bank.Set(clipbank.Target{Pack: c.Pack, Voice: c.Voice, Address: c.Address, Lang: c.Config.String("user.language")})
+	})
 	personas.pipeline = p
 	if ws, ok := deps.Wake.(*wakeSwitch); ok {
 		personas.wake = ws
@@ -518,6 +536,16 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		Notify:        cfg.Bool("replies.notify"),
 		QuietHours:    cfg.String("replies.quiet_hours"),
 	}
+}
+
+// clipsDir is where the clip bank caches its clips: <cache>/clips (in tests
+// without a cache folder, <data>/cache/clips).
+func clipsDir(o daemonOptions) string {
+	cache := o.cacheDir
+	if cache == "" {
+		cache = filepath.Join(o.dataDir, "cache")
+	}
+	return filepath.Join(cache, "clips")
 }
 
 // speakingConfirmer is the permission broker with the persona's confirm
