@@ -96,7 +96,7 @@ func TestFirstSentenceSpokenBeforeReplyEnds(t *testing.T) {
 		spy.Audio = pl.Audio()
 		d.Platform = spyPlatform{pl, spy}
 		d.LLM = gatedLLM{first: "Good morning, sir. ", rest: "The weather is fine.", gate: gate}
-		c.Ack = audio.Clip{}
+		c.Ack = nil
 	})
 	starts := bus.Subscribe(r.bus, core.SpeechStarted, 4)
 	done := make(chan error, 1)
@@ -211,7 +211,7 @@ func TestStopMidReply(t *testing.T) {
 		spy.Audio = pl.Audio()
 		d.Platform = spyPlatform{pl, spy}
 		d.LLM = gatedLLM{first: "Once upon a time. ", rest: "The end.", gate: gate}
-		c.Ack = audio.Clip{}
+		c.Ack = nil
 	})
 	done := make(chan error, 1)
 	go func() {
