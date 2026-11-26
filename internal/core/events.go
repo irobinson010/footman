@@ -99,6 +99,12 @@ type FastPathRan struct {
 	Turn uint64
 	Rule string
 	Err  string `json:",omitempty"`
+	// Reply is what the rule said back, if anything.
+	Reply string `json:",omitempty"`
+	// Confirmation is how the permission gate decided ("auto", "click",
+	// "voice", "policy" or "timeout"). A refused rule has Err set and did
+	// not run.
+	Confirmation string `json:",omitempty"`
 }
 
 // ToolRan is published for each tool call the AI makes.
@@ -109,6 +115,32 @@ type ToolRan struct {
 	Result string
 	// IsError is true when the tool failed, was refused or does not exist.
 	IsError bool
+	// Confirmation is how the permission gate decided ("auto", "click",
+	// "voice", "policy" or "timeout"); empty for an unknown tool.
+	Confirmation string `json:",omitempty"`
+}
+
+// Actors recorded in the action log (design §29): the owner until speaker
+// recognition ships, and local API clients.
+const (
+	ActorOwner = "owner"
+	ActorAPI   = "api"
+)
+
+// SettingChange is published when a setting changed, whoever changed it: by
+// voice, through the local API, or by editing the config file.
+type SettingChange struct {
+	// Key is the dotted key; Old and New are the values in file form
+	// (empty when unset). Secret values are references, never secrets.
+	Key, Old, New string
+	// Actor is ActorOwner or ActorAPI.
+	Actor string
+	// How it was confirmed: "voice", "click", or "auto" when no
+	// confirmation was needed (the local API, a hand edit).
+	How string
+	// Reason says what led to it, such as "config.set" or "config file
+	// edited".
+	Reason string
 }
 
 // Reply is published with what Footman says back.
@@ -165,6 +197,8 @@ var (
 	// MicChanged reports the microphone status, which the tray also shows
 	// (design §29).
 	MicChanged = bus.NewTopic[platform.TrayStatus]("pipeline.mic")
+	// SettingChanged reports every setting change, for the action log.
+	SettingChanged = bus.NewTopic[SettingChange]("settings.changed")
 	// JobUpdated carries progress of background jobs.
 	JobUpdated = bus.NewTopic[JobEvent]("jobs.update")
 )

@@ -117,6 +117,27 @@ func stripPrefix(tokens []string, phrases [][]string) ([]string, bool) {
 	return tokens, false
 }
 
+// stripWake removes a wake word from the start of tokens. The command audio
+// starts a little before the end of the wake word (the spotter reports it
+// late), so the transcript may begin with the wake word's tail instead, as in
+// "ford, open YouTube" for "Ashford, open YouTube": a first word that is the
+// last four or more letters of a wake word is dropped too.
+func (r *Router) stripWake(tokens []string) []string {
+	if rest, ok := stripPrefix(tokens, r.wake); ok || len(tokens) == 0 {
+		return rest
+	}
+	first := dictation.Norm(tokens[0])
+	if len(first) < 4 {
+		return tokens
+	}
+	for _, p := range r.wake {
+		if last := p[len(p)-1]; len(last) > len(first) && strings.HasSuffix(last, first) {
+			return tokens[1:]
+		}
+	}
+	return tokens
+}
+
 // BreakGlass reports whether text is the break-glass stop phrase. It is only
 // true for a wake-word utterance (ADR-0017): "stop everything" said to
 // someone on a call, typed by dictation or sent as a hotkey command does
@@ -125,7 +146,7 @@ func (r *Router) BreakGlass(t Trigger, text string) bool {
 	if t != TriggerWake {
 		return false
 	}
-	tokens, _ := stripPrefix(strings.Fields(text), r.wake)
+	tokens := r.stripWake(strings.Fields(text))
 	rest := dictation.NormWords(strings.Join(tokens, " "))
 	for _, p := range r.stop {
 		if len(rest) == len(p) && dictation.HasPrefixWords(rest, p) {
@@ -144,7 +165,7 @@ func (r *Router) Route(t Trigger, text string) Route {
 	case TriggerCommand:
 		return route(RouteCommand, tokens)
 	}
-	tokens, _ = stripPrefix(tokens, r.wake)
+	tokens = r.stripWake(tokens)
 	if rest, ok := stripPrefix(tokens, r.dictate); ok {
 		return route(RouteDictation, rest)
 	}

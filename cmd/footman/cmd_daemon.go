@@ -20,6 +20,7 @@ import (
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
 	"github.com/irobinson010/footman/internal/llm/claude"
+	"github.com/irobinson010/footman/internal/permissions"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
@@ -147,14 +148,27 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
 	defer models.Close()
 	deps.Bus = b
+	// The permission gate reads the policy live from the config (ADR-0038)
+	// and asks the confirmation broker, which shows a notification with
+	// Allow and Deny and answers `footman confirm` (ADR-0039).
+	broker := &permissions.Broker{Bus: b, Logf: logf}
+	defer broker.Close()
+	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: broker}
+	deps.Gate = gate
+	// Settings by voice: tightening applies at once, loosening asks the
+	// broker for a click.
+	settings := &core.Settings{Store: cfgFile, Bus: b, Confirm: broker}
+	deps.Tools = append(deps.Tools, core.SettingsTools(settings)...)
 	if o.deps != nil {
 		o.deps(&deps)
 	}
+	broker.Notifier = deps.Platform.Notifier()
 	if o.devFakes {
 		logf("WARNING: running with --dev-fakes; fakes stand in for: %v", fakedAreas(impl))
 	}
 
 	pcfg := pipelineConfig(cfg)
+	pcfg.FastRules = append([]core.FastRule{core.SettingsRule(settings)}, core.DefaultFastRules(nil)...)
 	if pcfg.Mic == "" && cfg.Bool("audio.prefer_echo_cancel") {
 		if devs, err := deps.Platform.Audio().Inputs(ctx); err == nil {
 			if d, ok := echoCancelSource(devs); ok {
@@ -173,6 +187,19 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	defer bg.Wait()
 	bctx, stopBG := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBG()
+	// The outcome of a clicked setting change is shown as a notification.
+	settings.Told = func(text string) {
+		if _, err := broker.Notifier.Notify(bctx, platform.Notification{Title: "Footman", Body: text}); err != nil && bctx.Err() == nil {
+			logf("settings: %s (no notification: %v)", text, err)
+		}
+	}
+
+	// The action log records every action from the bus; it stops (writing
+	// what it has received) before the store closes.
+	actionLog := &permissions.Log{Store: st, Config: cfgFile.Current, Logf: logf}
+	defer actionLog.Watch(b)()
+	// Retention: prune old history and action-log rows now and daily.
+	bg.Go(func() { permissions.Retain(bctx, st, cfgFile.Current, permissions.PruneEvery, logf) })
 
 	// History: keep transcripts when the config says so.
 	transcripts := bus.Subscribe(b, core.Transcribed, 64)
@@ -218,7 +245,11 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 				logf("config not reloaded: %v", err)
 				return
 			}
+			old := cfgFile.Current()
 			cfgFile.Replace(c)
+			// Changes made through config.set or by voice are already in
+			// old, so only hand edits show up here.
+			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
 		})
 	})
 
@@ -246,7 +277,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	srv := api.NewServer()
-	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
+	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, Actions: st, Confirm: broker, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
 		Socket: o.socket, ConfigPath: o.configPath, Hotkeys: hotkeyInfo(pcfg),
 	}})
