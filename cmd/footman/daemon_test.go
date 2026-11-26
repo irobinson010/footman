@@ -220,7 +220,7 @@ func TestDaemonIntegration(t *testing.T) {
 		t.Errorf("opened %v", got)
 	}
 	var states []string
-	for range 4 {
+	for range 5 {
 		_, data := next()
 		states = append(states, data)
 	}
@@ -228,7 +228,8 @@ func TestDaemonIntegration(t *testing.T) {
 		`{"from":"idle","to":"routing","turn":1}`,
 		`{"from":"routing","to":"acknowledging","turn":1}`,
 		`{"from":"acknowledging","to":"fast_path","turn":1}`,
-		`{"from":"fast_path","to":"idle","turn":0}`,
+		`{"from":"fast_path","to":"replying","turn":1}`,
+		`{"from":"replying","to":"idle","turn":0}`,
 	}
 	if !slices.Equal(states, want) {
 		t.Errorf("states:\n%s\nwant:\n%s", strings.Join(states, "\n"), strings.Join(want, "\n"))
