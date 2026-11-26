@@ -284,6 +284,29 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			logf("turn %d: %s", ev.Data.Turn, ev.Data.Err)
 		}
 	})
+	// The wake word and how each turn ended, for the journal (never the
+	// text).
+	wakes := bus.Subscribe(b, core.WakeHeard, 64)
+	defer wakes.Close()
+	bg.Go(func() {
+		for ev := range wakes.C() {
+			logf("wake word heard: %s", ev.Data.Keyword)
+		}
+	})
+	rejected := bus.Subscribe(b, core.WakeRejected, 64)
+	defer rejected.Close()
+	bg.Go(func() {
+		for ev := range rejected.C() {
+			logf("%s", wakeRejectedLine(ev.Data))
+		}
+	})
+	outcomes := bus.Subscribe(b, core.TurnDone, 64)
+	defer outcomes.Close()
+	bg.Go(func() {
+		for ev := range outcomes.C() {
+			logf("%s", outcomeLine(ev.Data))
+		}
+	})
 
 	// Pick up edits to the config file (by hand, config.set or voice): the
 	// reply policy and the persona apply at once; other pipeline settings
@@ -531,6 +554,7 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		NoCommands:    cfg.String("dictation.commands") == "off",
 		NoTerminal:    !cfg.Bool("dictation.terminal_mode"),
 		MinCommand:    core.DefaultMinCommand,
+		VerifyWake:    cfg.Bool("speech.wake.verify"),
 		Quiet:         cfg.Bool("replies.quiet"),
 		Speak:         cfg.String("replies.speak"),
 		Notify:        cfg.Bool("replies.notify"),
@@ -574,4 +598,23 @@ func hotkeyInfo(c core.Config) []api.HotkeyInfo {
 		out = append(out, api.HotkeyInfo{Action: k.action, Key: k.key, Mode: string(mode)})
 	}
 	return out
+}
+
+// wakeRejectedLine is the journal line for a wake the second stage dropped.
+func wakeRejectedLine(r core.WakeRejection) string {
+	return fmt.Sprintf("turn %d: wake word not confirmed by speech-to-text (%s; %.1f s checked in %d ms), dropped",
+		r.Turn, r.Reason, r.Audio.Seconds(), r.Took.Milliseconds())
+}
+
+// outcomeLine is the journal line for how a turn ended: the trigger, the
+// route, what handled a command, and the error, if any. Never the text.
+func outcomeLine(o core.Outcome) string {
+	line := fmt.Sprintf("turn %d: %s -> %s", o.Turn, o.Trigger, o.Route)
+	if o.Handler != "" {
+		line += " via " + o.Handler
+	}
+	if o.Err != "" {
+		return line + ", failed: " + o.Err
+	}
+	return line + ", ok"
 }

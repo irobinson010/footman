@@ -44,4 +44,5 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0038](0038-permission-gate-and-action-log.md) | Permission gate and action log | Accepted |
 | [0039](0039-click-confirmations.md) | Click confirmations: broker, channels, expiry; tighten by voice, loosen by click | Accepted |
 | [0040](0040-clip-bank-and-acknowledgement-timing.md) | Clip bank and acknowledgement timing | Accepted |
+| [0041](0041-two-stage-wake-word.md) | Two-stage wake word: a sensitive spotter checked by speech-to-text | Accepted |
 | [0042](0042-persona-replies-spoken-and-shown.md) | The persona talks back: wiring, live reload, replies spoken and shown | Accepted |
