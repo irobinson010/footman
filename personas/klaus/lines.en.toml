@@ -1,0 +1,36 @@
+ack = [
+  "Jawohl, {address}.",
+  "Understood, {address}.",
+  "At once, {address}.",
+  "Selbstverständlich.",
+  "It will be done.",
+  "Very well.",
+  "Gut. Proceeding.",
+]
+working = [
+  "One moment, {address}.",
+  "Working on it. Bitte, a little patience.",
+  "In progress.",
+  "This requires some time, {address}.",
+]
+done = [
+  "It is complete, {address}.",
+  "Erledigt. All done.",
+  "The task is finished, {address}.",
+  "Done, and in order.",
+]
+confirm = [
+  "Shall I proceed, {address}?",
+  "Do you confirm, {address}?",
+  "Bitte confirm before I continue.",
+]
+error = [
+  "That has failed, {address}.",
+  "Es tut mir leid, {address}. It did not work.",
+  "An error occurred. I regret it.",
+]
+quips = [
+  "Efficiency is its own reward.",
+  "Order is the foundation of all good service.",
+  "I do not rush. I am simply never late.",
+]
