@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/irobinson010/footman/internal/dictation"
 )
@@ -80,6 +81,7 @@ var (
 // command, and each hotkey means what it says. The smart tier will replace it
 // behind the same Route method.
 type Router struct {
+	mu      sync.RWMutex // guards wake
 	wake    [][]string
 	dictate [][]string
 	stop    [][]string
@@ -95,16 +97,26 @@ func NewRouter(wakeWords, dictateWords, stopPhrases []string) *Router {
 	if stopPhrases == nil {
 		stopPhrases = DefaultStopPhrases
 	}
-	split := func(ps []string) [][]string {
-		var out [][]string
-		for _, p := range ps {
-			if w := dictation.NormWords(p); len(w) > 0 {
-				out = append(out, w)
-			}
+	return &Router{wake: splitPhrases(wakeWords), dictate: splitPhrases(dictateWords), stop: splitPhrases(stopPhrases)}
+}
+
+func splitPhrases(ps []string) [][]string {
+	var out [][]string
+	for _, p := range ps {
+		if w := dictation.NormWords(p); len(w) > 0 {
+			out = append(out, w)
 		}
-		return out
 	}
-	return &Router{wake: split(wakeWords), dictate: split(dictateWords), stop: split(stopPhrases)}
+	return out
+}
+
+// SetWakeWords replaces the wake words stripped from transcripts, as when the
+// listening personas change while running.
+func (r *Router) SetWakeWords(wakeWords []string) {
+	w := splitPhrases(wakeWords)
+	r.mu.Lock()
+	r.wake = w
+	r.mu.Unlock()
 }
 
 // stripPrefix removes the first of phrases found at the start of tokens.
@@ -123,14 +135,17 @@ func stripPrefix(tokens []string, phrases [][]string) ([]string, bool) {
 // "ford, open YouTube" for "Ashford, open YouTube": a first word that is the
 // last four or more letters of a wake word is dropped too.
 func (r *Router) stripWake(tokens []string) []string {
-	if rest, ok := stripPrefix(tokens, r.wake); ok || len(tokens) == 0 {
+	r.mu.RLock()
+	wake := r.wake
+	r.mu.RUnlock()
+	if rest, ok := stripPrefix(tokens, wake); ok || len(tokens) == 0 {
 		return rest
 	}
 	first := dictation.Norm(tokens[0])
 	if len(first) < 4 {
 		return tokens
 	}
-	for _, p := range r.wake {
+	for _, p := range wake {
 		if last := p[len(p)-1]; len(last) > len(first) && strings.HasSuffix(last, first) {
 			return tokens[1:]
 		}

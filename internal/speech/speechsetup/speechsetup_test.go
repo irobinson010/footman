@@ -245,6 +245,20 @@ func TestCPUOnlyMachineFetchesAndSkipsWarmup(t *testing.T) {
 	}
 }
 
+// The persona's voice and its lexicon are downloaded too (S3-07), after
+// the speech-to-text models, and not warmed up.
+func TestFetchesThePersonaVoice(t *testing.T) {
+	r := newRig(t, "[input]\nwake_word = false\n")
+	r.env.Hardware = accel.Hardware{RAM: 16 << 30, CPUs: 8}
+	r.env.Voices = []string{"tts-lexicon-en-us", "kokoro-en"}
+	if _, err := Run(context.Background(), r.env); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.fetched, ",") != "parakeet-tdt-0.6b-v2,silero-vad,tts-lexicon-en-us,kokoro-en" || len(r.opened) != 0 {
+		t.Fatalf("fetched %v opened %v", r.fetched, r.opened)
+	}
+}
+
 func TestNoWakeWordSkipsItsModel(t *testing.T) {
 	r := newRig(t, "[input]\nwake_word = false\n")
 	r.env.Hardware = accel.Hardware{RAM: 16 << 30, CPUs: 8}
