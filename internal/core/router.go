@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/irobinson010/footman/internal/dictation"
@@ -81,6 +82,7 @@ var (
 // command, and each hotkey means what it says. The smart tier will replace it
 // behind the same Route method.
 type Router struct {
+	mu      sync.RWMutex // guards wake
 	wake    [][]string
 	dictate [][]string
 	stop    [][]string
@@ -96,16 +98,26 @@ func NewRouter(wakeWords, dictateWords, stopPhrases []string) *Router {
 	if stopPhrases == nil {
 		stopPhrases = DefaultStopPhrases
 	}
-	split := func(ps []string) [][]string {
-		var out [][]string
-		for _, p := range ps {
-			if w := dictation.NormWords(p); len(w) > 0 {
-				out = append(out, w)
-			}
+	return &Router{wake: splitPhrases(wakeWords), dictate: splitPhrases(dictateWords), stop: splitPhrases(stopPhrases)}
+}
+
+func splitPhrases(ps []string) [][]string {
+	var out [][]string
+	for _, p := range ps {
+		if w := dictation.NormWords(p); len(w) > 0 {
+			out = append(out, w)
 		}
-		return out
 	}
-	return &Router{wake: split(wakeWords), dictate: split(dictateWords), stop: split(stopPhrases)}
+	return out
+}
+
+// SetWakeWords replaces the wake words stripped from transcripts, as when the
+// listening personas change while running.
+func (r *Router) SetWakeWords(wakeWords []string) {
+	w := splitPhrases(wakeWords)
+	r.mu.Lock()
+	r.wake = w
+	r.mu.Unlock()
 }
 
 // stripPrefix removes the first of phrases found at the start of tokens.
@@ -124,14 +136,17 @@ func stripPrefix(tokens []string, phrases [][]string) ([]string, bool) {
 // "ford, open YouTube" for "Ashford, open YouTube": a first word that is the
 // last four or more letters of a wake word is dropped too.
 func (r *Router) stripWake(tokens []string) []string {
-	if rest, ok := stripPrefix(tokens, r.wake); ok || len(tokens) == 0 {
+	r.mu.RLock()
+	wake := r.wake
+	r.mu.RUnlock()
+	if rest, ok := stripPrefix(tokens, wake); ok || len(tokens) == 0 {
 		return rest
 	}
 	first := dictation.Norm(tokens[0])
 	if len(first) < 4 {
 		return tokens
 	}
-	for _, p := range r.wake {
+	for _, p := range wake {
 		if last := p[len(p)-1]; len(last) > len(first) && strings.HasSuffix(last, first) {
 			return tokens[1:]
 		}
@@ -158,6 +173,9 @@ var wakeFillers = map[string]bool{
 // that is the last four or more letters of a wake word counts ("ford"), as
 // in stripWake.
 func (r *Router) MatchWake(text string) (rest string, ok bool) {
+	r.mu.RLock()
+	wake := r.wake // the live list (SetWakeWords)
+	r.mu.RUnlock()
 	tokens := strings.Fields(text)
 	// Words that were only punctuation do not count towards the lead.
 	var idx []int
@@ -166,13 +184,22 @@ func (r *Router) MatchWake(text string) (rest string, ok bool) {
 			idx = append(idx, i)
 		}
 	}
+	// A phrase's last word alone also counts when it is a name of four or
+	// more letters, as speech-to-text often drops a leading "hey" ("Ashford"
+	// for "hey ashford").
+	phrases := wake
+	for _, p := range wake {
+		if len(p) > 1 && len(letters(p[len(p)-1])) >= 4 {
+			phrases = append(phrases[:len(phrases):len(phrases)], p[len(p)-1:])
+		}
+	}
 	for s := 0; s <= 2 && s < len(idx); s++ {
 		if s > 0 && !wakeFillers[letters(tokens[idx[s-1]])] {
 			break
 		}
 		// The closest match wins, so "Hey Foot man" takes all three words.
 		best, end := -1, 0
-		for _, p := range r.wake {
+		for _, p := range phrases {
 			want := letters(strings.Join(p, ""))
 			got := ""
 			for k := 0; k <= len(p) && s+k < len(idx); k++ {
@@ -189,7 +216,7 @@ func (r *Router) MatchWake(text string) (rest string, ok bool) {
 		if len(first) < 4 {
 			continue
 		}
-		for _, p := range r.wake {
+		for _, p := range wake {
 			if last := letters(p[len(p)-1]); len(last) > len(first) && strings.HasSuffix(last, first) {
 				return strings.Join(tokens[idx[s]+1:], " "), true
 			}
