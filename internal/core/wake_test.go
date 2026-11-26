@@ -120,7 +120,7 @@ func TestPushToTalkPausesWakeListening(t *testing.T) {
 	ctx, cancel := context.WithCancel(r.ctx())
 	done := make(chan error, 1)
 	go func() { done <- r.p.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); _ = <-done })
 	awaitMic := func(want platform.TrayStatus) {
 		t.Helper()
 		await(t, mic, func(s platform.TrayStatus) bool { return s == want })
@@ -162,7 +162,7 @@ func TestSetWakeListening(t *testing.T) {
 	ctx, cancel := context.WithCancel(r.ctx())
 	done := make(chan error, 1)
 	go func() { done <- r.p.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); _ = <-done })
 
 	await(t, mic, func(s platform.TrayStatus) bool { return s == platform.WakeListening })
 	r.p.SetWakeListening(false)
