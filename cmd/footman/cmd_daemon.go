@@ -19,6 +19,7 @@ import (
 	"github.com/irobinson010/footman/internal/dictation"
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
+	"github.com/irobinson010/footman/internal/llm/claude"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
@@ -349,6 +350,9 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 	rl.tts = reloader(speech.TTSs, impl["tts"], nil)
 	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
 		return d, nil, rl, err
+	}
+	if cfg.String("ai.provider") == claude.Name && !(devFakes && impl["llm"] == fakeName) {
+		d.LLM, impl["llm"] = newClaude(cfg, d.Platform), claude.Name
 	}
 	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), nil, devFakes); err != nil {
 		return d, nil, rl, err
