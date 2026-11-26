@@ -29,6 +29,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -272,6 +273,16 @@ func key(t Target, text string) string {
 		"clipbank-v1", text, t.Pack.ID, t.Pack.Version, t.Voice.ID, t.Voice.Speaker,
 		t.Voice.Language, strconv.FormatFloat(float64(t.Voice.Speed), 'g', -1, 32), t.Salt,
 	} {
+		h.Write([]byte(s))
+		h.Write([]byte{0})
+	}
+	// Respellings change how a clip sounds, so they are part of the key.
+	rs := make([]string, 0, len(t.Voice.Respell))
+	for k, v := range t.Voice.Respell {
+		rs = append(rs, k+"\x01"+v)
+	}
+	sort.Strings(rs)
+	for _, s := range rs {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}

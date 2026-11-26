@@ -10,6 +10,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -53,6 +54,7 @@ type manifest struct {
 		Verbosity string   `toml:"verbosity"`
 		Quips     string   `toml:"quips"`
 	} `toml:"style"`
+	Pronounce map[string]string `toml:"pronounce"`
 }
 
 // LoadDir loads and validates the pack in dir. Symbolic links anywhere in the
@@ -94,6 +96,7 @@ func Load(fsys fs.FS, name string) (*Pack, error) {
 	}
 	p := &Pack{fsys: fsys, lines: map[string]*lineSet{}}
 	p.fill(&m, is)
+	p.Pronounce = checkPronounce(m.Pronounce, is)
 
 	// style.md
 	stylePath := m.Style.Prompt
@@ -399,4 +402,66 @@ func (p *Pack) Files() []string {
 	})
 	sort.Strings(out)
 	return out
+}
+
+// checkPronounce validates [pronounce]: each key is a word or short phrase
+// of letters (and inner apostrophes or hyphens) and each value a plain-text
+// respelling of letters, spaces, apostrophes and hyphens. Keys are returned
+// lower case with single spaces.
+func checkPronounce(in map[string]string, is *issues) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	if len(in) > MaxPronounce {
+		is.addf("pronounce: at most %d entries", MaxPronounce)
+		return nil
+	}
+	keys := make([]string, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make(map[string]string, len(in))
+	for _, k := range keys {
+		v := in[k]
+		nk := strings.ToLower(strings.Join(strings.Fields(k), " "))
+		switch {
+		case nk == "" || utf8.RuneCountInString(nk) > MaxPronounceKeyRunes || len(strings.Fields(nk)) > MaxPronounceKeyWords:
+			is.addf("pronounce: key %q must be 1-%d characters and at most %d words", k, MaxPronounceKeyRunes, MaxPronounceKeyWords)
+			continue
+		case !plainWords(nk):
+			is.addf("pronounce: key %q may use only letters, spaces, apostrophes and hyphens", k)
+			continue
+		}
+		nv := strings.Join(strings.Fields(v), " ")
+		switch {
+		case nv == "" || utf8.RuneCountInString(nv) > MaxPronounceValueRunes:
+			is.addf("pronounce.%s: respelling must be 1-%d characters", nk, MaxPronounceValueRunes)
+			continue
+		case !plainWords(nv):
+			is.addf("pronounce.%s: respelling %q must be plain words (letters, spaces, apostrophes and hyphens)", nk, v)
+			continue
+		}
+		if _, dup := out[nk]; dup {
+			is.addf("pronounce: %q is listed twice", nk)
+			continue
+		}
+		out[nk] = nv
+	}
+	return out
+}
+
+// plainWords reports whether s is only letters, spaces, apostrophes and
+// hyphens, starting and ending with a letter.
+func plainWords(s string) bool {
+	rs := []rune(s)
+	if len(rs) == 0 || !unicode.IsLetter(rs[0]) || !unicode.IsLetter(rs[len(rs)-1]) {
+		return false
+	}
+	for _, r := range rs {
+		if !unicode.IsLetter(r) && r != ' ' && r != '\'' && r != '-' {
+			return false
+		}
+	}
+	return true
 }

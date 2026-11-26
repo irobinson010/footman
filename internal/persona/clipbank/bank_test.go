@@ -181,6 +181,12 @@ func TestVoiceChangeRerendersAll(t *testing.T) {
 	if n := len(f.Spoken()) - before; n != 10 {
 		t.Errorf("re-rendered %d lines after a speed change, want 10 in all", n)
 	}
+	tg.Voice.Respell = map[string]string{"jawohl": "yah vole"}
+	b.Set(tg)
+	wait(t, b)
+	if n := len(f.Spoken()) - before; n != 15 {
+		t.Errorf("re-rendered %d lines after a respelling change, want 15 in all", n)
+	}
 }
 
 // slowTTS blocks rendering of lines with {address} filled until released.
