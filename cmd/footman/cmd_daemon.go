@@ -148,19 +148,27 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
 	defer models.Close()
 	deps.Bus = b
-	// The permission gate reads the policy live from the config (ADR-0038).
-	// Nothing can ask for confirmation yet, so calls that need it are
-	// refused; the click-confirmation broker (#83) sets gate.Confirmer.
-	gate := &permissions.Gate{Config: cfgFile.Current}
+	// The permission gate reads the policy live from the config (ADR-0038)
+	// and asks the confirmation broker, which shows a notification with
+	// Allow and Deny and answers `footman confirm` (ADR-0039).
+	broker := &permissions.Broker{Bus: b, Logf: logf}
+	defer broker.Close()
+	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: broker}
 	deps.Gate = gate
+	// Settings by voice: tightening applies at once, loosening asks the
+	// broker for a click.
+	settings := &core.Settings{Store: cfgFile, Bus: b, Confirm: broker}
+	deps.Tools = append(deps.Tools, core.SettingsTools(settings)...)
 	if o.deps != nil {
 		o.deps(&deps)
 	}
+	broker.Notifier = deps.Platform.Notifier()
 	if o.devFakes {
 		logf("WARNING: running with --dev-fakes; fakes stand in for: %v", fakedAreas(impl))
 	}
 
 	pcfg := pipelineConfig(cfg)
+	pcfg.FastRules = append([]core.FastRule{core.SettingsRule(settings)}, core.DefaultFastRules(nil)...)
 	if pcfg.Mic == "" && cfg.Bool("audio.prefer_echo_cancel") {
 		if devs, err := deps.Platform.Audio().Inputs(ctx); err == nil {
 			if d, ok := echoCancelSource(devs); ok {
@@ -179,6 +187,12 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	defer bg.Wait()
 	bctx, stopBG := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBG()
+	// The outcome of a clicked setting change is shown as a notification.
+	settings.Told = func(text string) {
+		if _, err := broker.Notifier.Notify(bctx, platform.Notification{Title: "Footman", Body: text}); err != nil && bctx.Err() == nil {
+			logf("settings: %s (no notification: %v)", text, err)
+		}
+	}
 
 	// The action log records every action from the bus; it stops (writing
 	// what it has received) before the store closes.
@@ -264,7 +278,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	srv := api.NewServer()
-	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, Actions: st, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
+	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, Actions: st, Confirm: broker, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
 		Socket: o.socket, ConfigPath: o.configPath, Hotkeys: hotkeyInfo(pcfg),
 	}})

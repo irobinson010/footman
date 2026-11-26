@@ -39,7 +39,9 @@ type Model struct {
 	ID string
 	// Engine is the family that loads it (WhisperCpp or Sherpa).
 	Engine string
-	// Kind is what the model does: "stt", "vad" or "kws" (wake word).
+	// Kind is what the model does: "stt", "vad", "kws" (wake word), "tts"
+	// (a text-to-speech voice) or "lexicon" (a pronunciation lexicon the
+	// TTS voices share).
 	Kind string
 	// File is the file or folder name inside the models folder.
 	File string
@@ -57,11 +59,14 @@ type Model struct {
 	English bool
 	// License is the model's license.
 	License string
+	// Requires lists the catalog IDs Fetch downloads first because this
+	// model needs them (a TTS voice's pronunciation lexicon).
+	Requires []string
 }
 
 // Catalog lists every model Footman knows how to fetch. The checksums are
-// those of the files fetched for spikes S0-07 and S0-08 (for ggml files, the
-// Hugging Face LFS object ID).
+// those of the files fetched for spikes S0-07 and S0-08 and for S3-02 (for
+// ggml files, the Hugging Face LFS object ID).
 var Catalog = []Model{
 	{ID: "whisper-turbo-q5", Engine: WhisperCpp, Kind: "stt", File: "ggml-large-v3-turbo-q5_0.bin",
 		URL:    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
@@ -92,7 +97,31 @@ var Catalog = []Model{
 		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2",
 		SHA256: "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a", Size: 17626723,
 		Archive: "tar.bz2", License: "Apache-2.0"},
+
+	// Text-to-speech voices (ADR-0037): the interim stock voices until the
+	// trained persona voices exist. A voice's License covers its weights and
+	// training data; the shared lexicon's is its own.
+	{ID: "kokoro-en", Engine: Sherpa, Kind: "tts", File: "kokoro-multi-lang-v1_0", English: true,
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
+		SHA256: "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4", Size: 349886476,
+		Archive: "tar.bz2", License: "Apache-2.0", Requires: []string{TTSLexicon}},
+	{ID: "piper-en-us-norman", Engine: Sherpa, Kind: "tts", File: "vits-piper-en_US-norman-medium", English: true,
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-norman-medium.tar.bz2",
+		SHA256: "1f32065d480abe9abc7c7f91442125d0b34c1cc065d1e600466cac408eabf3b8", Size: 67203672,
+		Archive: "tar.bz2", License: "MIT weights, public-domain data", Requires: []string{TTSLexicon}},
+	{ID: "piper-en-us-ljspeech", Engine: Sherpa, Kind: "tts", File: "vits-piper-en_US-ljspeech-medium", English: true,
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium.tar.bz2",
+		SHA256: "3dfb4b759d8be032a4903a9538d128b0fda2a06ab1de6cbc2d93a97e2dd83dba", Size: 67169893,
+		Archive: "tar.bz2", License: "MIT weights, public-domain data", Requires: []string{TTSLexicon}},
+	{ID: TTSLexicon, Engine: Sherpa, Kind: "lexicon", File: "lexicon-en-us.txt", English: true,
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt",
+		SHA256: "8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a", Size: 6305773,
+		License: "unconfirmed: CMUdict + espeak-ng data (ADR-0037)"},
 }
+
+// TTSLexicon is the catalog ID of the American English pronunciation
+// lexicon (espeak-ng IPA) that the TTS voices share.
+const TTSLexicon = "tts-lexicon-en-us"
 
 // Lookup returns the catalog entry with the given ID.
 func Lookup(id string) (Model, bool) {
@@ -181,8 +210,18 @@ type FetchOptions struct {
 // Fetch downloads m into dir unless it is already there, verifying its
 // SHA-256, and returns its path. Archives are unpacked; the archive itself
 // is not kept. Nothing appears at the final path until the download is
-// verified and unpacked.
+// verified and unpacked. The models in m.Requires are fetched first, with
+// the same options.
 func Fetch(ctx context.Context, m Model, dir string, o FetchOptions) (string, error) {
+	for _, id := range m.Requires {
+		r, ok := Lookup(id)
+		if !ok || r.ID == m.ID {
+			return "", fmt.Errorf("model %s requires unknown model %s", m.ID, id)
+		}
+		if _, err := Fetch(ctx, r, dir, o); err != nil {
+			return "", err
+		}
+	}
 	dest := m.Path(dir)
 	if o.Record != nil {
 		if err := o.Record(dir, true); err != nil {

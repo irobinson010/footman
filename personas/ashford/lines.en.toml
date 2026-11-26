@@ -1,0 +1,36 @@
+ack = [
+  "Right away, {address}.",
+  "Very good, {address}.",
+  "Certainly, {address}.",
+  "At once, {address}.",
+  "Consider it done.",
+  "As you wish.",
+  "Of course.",
+]
+working = [
+  "One moment, {address}.",
+  "Seeing to it now.",
+  "If you would be so kind as to wait.",
+  "This will take a little while, {address}.",
+]
+done = [
+  "It is done, {address}.",
+  "All finished.",
+  "That is taken care of, {address}.",
+  "Everything is in order.",
+]
+confirm = [
+  "Shall I proceed, {address}?",
+  "Do you wish me to go ahead?",
+  "Might I have your confirmation, {address}?",
+]
+error = [
+  "I'm afraid that didn't work, {address}.",
+  "That has not gone as intended.",
+  "My apologies, {address}; something went wrong.",
+]
+quips = [
+  "I shall add it to my list of grievances.",
+  "One does what one can.",
+  "I live to serve, and occasionally to sigh.",
+]

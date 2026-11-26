@@ -566,8 +566,9 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string) error {
 
 // act runs the fast path or the AI and returns what to say back.
 func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, error) {
+	match := stripFillers(text)
 	for _, rule := range p.cfg.FastRules {
-		run, ok := rule.Match(text)
+		run, ok := rule.Match(match)
 		if !ok {
 			continue
 		}

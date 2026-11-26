@@ -133,6 +133,25 @@ func (r *rig) path() []core.State {
 	}
 }
 
+// pathTo is path for a turn that ends asynchronously: it waits (up to 2 s)
+// until last has been entered, then returns the states so far.
+func (r *rig) pathTo(last core.State) []core.State {
+	r.t.Helper()
+	var out []core.State
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-r.states.C():
+			out = append(out, ev.Data.To)
+			if ev.Data.To == last {
+				return append(out, r.path()...)
+			}
+		case <-timeout:
+			return out
+		}
+	}
+}
+
 func (r *rig) input() *pfake.Input       { return r.plat.Input().(*pfake.Input) }
 func (r *rig) launcher() *pfake.Launcher { return r.plat.Launcher().(*pfake.Launcher) }
 func (r *rig) speaker() *pfake.Audio     { return r.plat.Audio().(*pfake.Audio) }
@@ -310,7 +329,7 @@ func TestCommandWithToolCall(t *testing.T) {
 	for _, d := range reqs[0].Tools {
 		names = append(names, d.Name)
 	}
-	equal(t, "tools offered", names, []string{"weather", "open_url", "open_app", core.StartTaskTool})
+	equal(t, "tools offered", names, []string{"weather", "open_url", "open_app", "quick_action", core.StartTaskTool})
 	last := reqs[1].Messages[len(reqs[1].Messages)-1]
 	if last.Role != llm.ToolResult || last.ToolCallID != "c1" || last.Text != "sunny, 20C" {
 		t.Errorf("tool result message = %+v", last)
@@ -390,6 +409,8 @@ func TestFastPathVolumeMedia(t *testing.T) {
 		{"footman play", "media play", "Playing."},
 		{"footman next track", "media next", "Next."},
 		{"footman previous song", "media previous", "Previous."},
+		{"Footman, and volume down.", "volume -10", "Volume down."},
+		{"footman okay, pause the music", "media pause", "Paused."},
 	}
 	for _, c := range cases {
 		t.Run(c.say, func(t *testing.T) {
@@ -683,4 +704,14 @@ func TestNewAndRunNeedDeps(t *testing.T) {
 	if err := r.p.Run(r.ctx()); err == nil {
 		t.Error("Run without a VAD succeeded")
 	}
+}
+
+// The AI can change the volume and control playback through quick_action.
+func TestQuickActionTool(t *testing.T) {
+	r := newRig(t, nil)
+	r.ai.Queue(lfake.Reply{ToolCalls: []llm.ToolCall{{
+		ID: "c1", Name: "quick_action", Args: json.RawMessage(`{"action":"volume down"}`),
+	}}}, lfake.Reply{Text: "Turned it down."})
+	r.submit(core.TriggerWake, "footman it's a bit loud in here")
+	equal(t, "controls", r.plat.Controls(), []string{"volume -10"})
 }
