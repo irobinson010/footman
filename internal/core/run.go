@@ -304,12 +304,13 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				segs = nil
 				continue
 			}
+			segAt := time.Now()
 			trig, seg, ok := p.claimSegment(seg)
 			if !ok {
 				continue // not addressed to Footman, or only the wake word
 			}
 			expire = nil
-			turns.Go(func() { p.handleSegment(ctx, trig, seg) })
+			turns.Go(func() { p.handleSegment(ctx, trig, seg, segAt) })
 		}
 	}
 	return mctx.Err() == nil, nil

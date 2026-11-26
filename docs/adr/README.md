@@ -43,3 +43,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0037](0037-interim-tts-sherpa-kokoro-piper.md) | Interim TTS: sherpa-onnx Kokoro and Piper voices, phonemized in Go | Accepted |
 | [0038](0038-permission-gate-and-action-log.md) | Permission gate and action log | Accepted |
 | [0039](0039-click-confirmations.md) | Click confirmations: broker, channels, expiry; tighten by voice, loosen by click | Accepted |
+| [0040](0040-clip-bank-and-acknowledgement-timing.md) | Clip bank and acknowledgement timing | Accepted |

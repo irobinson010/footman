@@ -101,9 +101,9 @@ type Config struct {
 	// TypeMax is the longest text auto mode types (default
 	// dictation.DefaultTypeMax).
 	TypeMax int
-	// Ack is the persona's acknowledgement clip, played as a command starts.
-	// Empty means none.
-	Ack audio.Clip
+	// Ack supplies the persona's acknowledgement clip, played as a command
+	// starts (the clip bank, or FixedAck). Nil means none.
+	Ack AckSource
 	// Voice is the TTS voice for replies, until SetPersona.
 	Voice speech.Voice
 	// Speak is the reply policy (config replies.speak): "always",
@@ -242,7 +242,7 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	return &Pipeline{
 		d: d, cfg: cfg, formatter: dictation.NewFormatter(lang), ctx: ctx, cancel: cancel,
 		state: Idle, quiet: cfg.Quiet, changed: make(chan struct{}),
-		turns: map[uint64]context.CancelFunc{},
+		turns:   map[uint64]context.CancelFunc{},
 		jobs:    map[string]jobs.Job{},
 		persona: Persona{Voice: cfg.Voice, System: cfg.System},
 	}, nil
@@ -437,7 +437,9 @@ func (p *Pipeline) Submit(ctx context.Context, u Utterance) error {
 }
 
 // handleSegment handles one utterance of captured speech.
-func (p *Pipeline) handleSegment(ctx context.Context, trig Trigger, seg speech.Segment) {
+// ended is when the VAD handed over the segment, the first moment the end of
+// speech is known.
+func (p *Pipeline) handleSegment(ctx context.Context, trig Trigger, seg speech.Segment, ended time.Time) {
 	id, tctx := p.beginTurn(ctx)
 	if id == 0 {
 		// Busy: only the break-glass stop can get through (ADR-0017).
@@ -449,7 +451,7 @@ func (p *Pipeline) handleSegment(ctx context.Context, trig Trigger, seg speech.S
 		return
 	}
 	defer p.endTurn(id)
-	p.transcribeAndHandle(tctx, id, trig, seg, time.Time{})
+	p.transcribeAndHandle(tctx, id, trig, seg, ended)
 }
 
 // transcribeAndHandle transcribes seg for turn id and handles the text.
@@ -483,7 +485,7 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 	case RouteDictation:
 		err = p.dictate(ctx, id, r.Text, u.Ended)
 	case RouteCommand:
-		err = p.command(ctx, id, r.Text)
+		err = p.command(ctx, id, r.Text, u.Ended)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return p.fail(id, err)
@@ -550,9 +552,9 @@ func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended ti
 	return nil
 }
 
-func (p *Pipeline) command(ctx context.Context, id uint64, text string) error {
+func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended time.Time) error {
 	p.setState(id, Acknowledging)
-	ack := p.playAck(ctx)
+	ack := p.playAck(ctx, id, ended)
 	typed, _ := ctx.Value(typedKey{}).(bool)
 	var sp *speaker
 	if p.shouldSpeak(typed) {
@@ -624,19 +626,65 @@ func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, err
 	return p.converse(ctx, id, text)
 }
 
+// AckSource supplies acknowledgement clips. Ack returns a random clip that
+// is ready to play now, or false when there is none. It must not block: the
+// acknowledgement exists to be instant.
+type AckSource interface {
+	Ack() (audio.Clip, bool)
+}
+
+type fixedAck audio.Clip
+
+func (f fixedAck) Ack() (audio.Clip, bool) {
+	c := audio.Clip(f)
+	return c, len(c.Samples) > 0
+}
+
+// FixedAck is an AckSource that always returns c (none if c is empty).
+func FixedAck(c audio.Clip) AckSource { return fixedAck(c) }
+
 // playAck starts the acknowledgement clip and returns a channel closed when it
-// has finished.
-func (p *Pipeline) playAck(ctx context.Context) <-chan struct{} {
+// has finished. When the first sample is handed to the player it publishes
+// Acknowledged; ended is when the speech ended, if known.
+func (p *Pipeline) playAck(ctx context.Context, id uint64, ended time.Time) <-chan struct{} {
 	done := make(chan struct{})
-	if len(p.cfg.Ack.Samples) == 0 || p.Quiet() {
+	var clip audio.Clip
+	ok := false
+	if p.cfg.Ack != nil && !p.Quiet() {
+		clip, ok = p.cfg.Ack.Ack()
+	}
+	if !ok || len(clip.Samples) == 0 {
 		close(done)
 		return done
 	}
+	began := time.Now()
+	st := &ackStream{Stream: audio.NewClipStream(clip, 320), publish: func(at time.Time) {
+		a := Acknowledgement{Turn: id, Clip: clip.Duration(), Lead: at.Sub(began)}
+		if !ended.IsZero() {
+			a.Latency = at.Sub(ended)
+		}
+		bus.Publish(p.d.Bus, Acknowledged, a)
+	}}
 	go func() {
 		defer close(done)
-		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(p.cfg.Ack, 320))
+		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, st)
 	}()
 	return done
+}
+
+// ackStream reports the moment the player first reads a sample.
+type ackStream struct {
+	audio.Stream
+	once    sync.Once
+	publish func(time.Time)
+}
+
+func (s *ackStream) Recv() (audio.Frame, error) {
+	f, err := s.Stream.Recv()
+	if err == nil {
+		s.once.Do(func() { s.publish(time.Now()) })
+	}
+	return f, err
 }
 
 // reply speaks text in the persona's voice and also shows it as a
