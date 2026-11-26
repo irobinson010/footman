@@ -355,7 +355,7 @@ func (m *methods) sayText(ctx context.Context, c *Conn, params json.RawMessage) 
 	default:
 		return nil, Errorf(CodeInvalidParams, "as must be command, dictate or wake, not %q", p.As)
 	}
-	err := m.d.Pipeline.Submit(ctx, core.Utterance{Trigger: trig, Text: p.Text})
+	err := m.d.Pipeline.Submit(ctx, core.Utterance{Trigger: trig, Text: p.Text, Typed: true})
 	switch {
 	case errors.Is(err, core.ErrBusy):
 		return nil, Errorf(CodeBusy, "footman is busy with another utterance")
