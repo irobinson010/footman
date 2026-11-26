@@ -369,8 +369,57 @@ func TestFastPath(t *testing.T) {
 			if len(r.ai.Requests()) != 0 {
 				t.Error("fast path command went to the AI")
 			}
-			equal(t, "states", r.path(), []core.State{core.Routing, core.Acknowledging, core.FastPath, core.Idle})
+			equal(t, "states", r.path(), []core.State{core.Routing, core.Acknowledging, core.FastPath, core.Replying, core.Idle})
 		})
+	}
+}
+
+func TestFastPathVolumeMedia(t *testing.T) {
+	cases := []struct {
+		say   string
+		want  string
+		reply string
+	}{
+		{"Footman, volume down", "volume -10", "Volume down."},
+		{"footman turn the volume up", "volume +10", "Volume up."},
+		{"footman mute", "mute", "Muted."},
+		{"footman unmute", "unmute", "Unmuted."},
+		{"Footman, set volume to 40%", "volume =40", "Volume 40 percent."},
+		{"footman volume 25 percent", "volume =25", "Volume 25 percent."},
+		{"Footman, pause music", "media pause", "Paused."},
+		{"footman play", "media play", "Playing."},
+		{"footman next track", "media next", "Next."},
+		{"footman previous song", "media previous", "Previous."},
+	}
+	for _, c := range cases {
+		t.Run(c.say, func(t *testing.T) {
+			r := newRig(t, nil)
+			r.submit(core.TriggerWake, c.say)
+			equal(t, "controls", r.plat.Controls(), []string{c.want})
+			equal(t, "spoken", spoken(r.tts), []string{c.reply})
+			if len(r.ai.Requests()) != 0 {
+				t.Error("fast path command went to the AI")
+			}
+		})
+	}
+}
+
+func TestFastRulesDeclareAct(t *testing.T) {
+	for _, rule := range core.DefaultFastRules(map[string]string{"Docs": "https://go.dev"}) {
+		if rule.Permission != plugins.Act {
+			t.Errorf("rule %s permission = %v, want act", rule.Name, rule.Permission)
+		}
+	}
+	rule := core.DefaultFastRules(map[string]string{"Docs": "https://go.dev"})[0]
+	if _, ok := rule.Match("open docs"); !ok {
+		t.Error("user alias not matched")
+	}
+	for _, text := range []string{"volume", "pause the meeting now", "set the table", "volume 150", "next week"} {
+		for _, rule := range core.DefaultFastRules(nil)[1:] {
+			if _, ok := rule.Match(text); ok {
+				t.Errorf("rule %s matched %q", rule.Name, text)
+			}
+		}
 	}
 }
 
