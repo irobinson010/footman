@@ -58,7 +58,7 @@ var startTaskDef = llm.ToolDef{
 func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string, error) {
 	tools := map[string]plugins.Tool{}
 	var defs []llm.ToolDef
-	for _, t := range p.d.Tools {
+	for _, t := range p.allTools() {
 		s := t.Spec()
 		tools[s.Name] = t
 		defs = append(defs, llm.ToolDef{Name: s.Name, Description: s.Description, Schema: s.Schema})
@@ -135,4 +135,75 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 		return "", fmt.Errorf("start job: %w", err)
 	}
 	return "On it. I'll let you know when it's done.", nil
+}
+
+// allTools returns the configured tools plus the built-in fast-path actions
+// (open_url, open_app), unless a configured tool already uses the name.
+func (p *Pipeline) allTools() []plugins.Tool {
+	all := append([]plugins.Tool(nil), p.d.Tools...)
+	have := map[string]bool{}
+	for _, t := range all {
+		have[t.Spec().Name] = true
+	}
+	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}} {
+		if !have[t.Spec().Name] {
+			all = append(all, t)
+		}
+	}
+	return all
+}
+
+// openURLTool and openAppTool expose the fast-path "open" action to the AI.
+type openURLTool struct{ p *Pipeline }
+
+func (openURLTool) Spec() plugins.ToolSpec {
+	return plugins.ToolSpec{
+		Name:        "open_url",
+		Description: "Open a web page in the user's default browser, for example when they say \"open YouTube\".",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"url":{"type":"string","description":"Full URL, such as https://www.youtube.com."}},"required":["url"]}`),
+		Permission: plugins.Act,
+	}
+}
+
+func (t openURLTool) Run(ctx context.Context, args json.RawMessage) (plugins.Result, error) {
+	var a struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || a.URL == "" {
+		return plugins.Result{Text: "url is required", IsError: true}, nil
+	}
+	u, ok := asURL(a.URL)
+	if !ok {
+		return plugins.Result{Text: "not a valid URL: " + a.URL, IsError: true}, nil
+	}
+	if err := t.p.d.Platform.Launcher().OpenURL(ctx, u); err != nil {
+		return plugins.Result{}, err
+	}
+	return plugins.Result{Text: "opened " + u}, nil
+}
+
+type openAppTool struct{ p *Pipeline }
+
+func (openAppTool) Spec() plugins.ToolSpec {
+	return plugins.ToolSpec{
+		Name:        "open_app",
+		Description: "Start an application by name.",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"app":{"type":"string","description":"Application name or desktop ID."}},"required":["app"]}`),
+		Permission: plugins.Act,
+	}
+}
+
+func (t openAppTool) Run(ctx context.Context, args json.RawMessage) (plugins.Result, error) {
+	var a struct {
+		App string `json:"app"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || a.App == "" {
+		return plugins.Result{Text: "app is required", IsError: true}, nil
+	}
+	if err := t.p.d.Platform.Launcher().OpenApp(ctx, a.App); err != nil {
+		return plugins.Result{}, err
+	}
+	return plugins.Result{Text: "started " + a.App}, nil
 }
