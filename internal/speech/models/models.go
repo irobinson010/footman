@@ -39,7 +39,7 @@ type Model struct {
 	ID string
 	// Engine is the family that loads it (WhisperCpp or Sherpa).
 	Engine string
-	// Kind is what the model does: "stt" or "vad".
+	// Kind is what the model does: "stt", "vad" or "kws" (wake word).
 	Kind string
 	// File is the file or folder name inside the models folder.
 	File string
@@ -88,6 +88,10 @@ var Catalog = []Model{
 	{ID: "silero-vad", Engine: Sherpa, Kind: "vad", File: "silero_vad.onnx",
 		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
 		SHA256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", Size: 643854, License: "MIT"},
+	{ID: "kws-zipformer-gigaspeech", Engine: Sherpa, Kind: "kws", File: "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01", English: true,
+		URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2",
+		SHA256: "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a", Size: 17626723,
+		Archive: "tar.bz2", License: "Apache-2.0"},
 }
 
 // Lookup returns the catalog entry with the given ID.

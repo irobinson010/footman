@@ -4,10 +4,12 @@
 //     English transducer that is the default on machines without a GPU.
 //   - "silero" in speech.VADs: Silero VAD, which splits microphone audio
 //     into utterances.
+//   - "sherpa" in speech.WakeWords: keyword spotting for the wake words and
+//     the break-glass stop phrase.
 //
 // They share one wrapper around the official sherpa-onnx Go module, which
 // ships prebuilt onnxruntime and sherpa-onnx libraries (CPU) for Linux,
-// macOS and Windows; the keyword spotter for the wake word will join them.
+// macOS and Windows.
 // The engines need cgo, so they are compiled only with the `native` build
 // tag. This file holds the options, which need no cgo.
 package sherpa
@@ -22,6 +24,8 @@ const (
 	ParakeetName = "sherpa-parakeet"
 	// SileroName is the Silero VAD's name.
 	SileroName = "silero"
+	// KWSName is the keyword-spotting wake-word engine's name.
+	KWSName = "sherpa"
 )
 
 // Common are the options every sherpa engine takes.
@@ -115,3 +119,49 @@ func (o SileroOptions) withDefaults() SileroOptions {
 
 // sileroWindow is the number of 16 kHz samples Silero VAD takes per step.
 const sileroWindow = 512
+
+// KWS defaults (spike S0-08: boost is the sensitivity knob, 2 is the
+// recommended value, and above 4 false wakes appear).
+const (
+	// DefaultBoost is speech.wake.boost.
+	DefaultBoost = 2
+	// DefaultThreshold is speech.wake.threshold.
+	DefaultThreshold = 0.05
+	// DefaultKWSModel is the keyword-spotting model's catalog ID.
+	DefaultKWSModel = "kws-zipformer-gigaspeech"
+)
+
+// KWSOptions configure the keyword-spotting wake-word engine.
+type KWSOptions struct {
+	Common
+	// Model is a model catalog ID or a path to the model folder. Default
+	// kws-zipformer-gigaspeech.
+	Model string `json:"model"`
+	// Keywords are the wake words to listen for, such as "ashford" or
+	// "hey footman" (default just "hey footman"). Each also opens the
+	// break-glass window.
+	Keywords []string `json:"keywords"`
+	// Boost is the score added to each token of a keyword: higher is more
+	// sensitive and gives more false wakes (default 2; keep it 1 to 4).
+	Boost float32 `json:"boost"`
+	// Threshold is the score a keyword must reach (default 0.05; changing
+	// it matters little, use Boost).
+	Threshold float32 `json:"threshold"`
+}
+
+func (o KWSOptions) withDefaults() KWSOptions {
+	if o.Model == "" {
+		o.Model = DefaultKWSModel
+	}
+	if len(o.Keywords) == 0 {
+		o.Keywords = []string{"hey footman"}
+	}
+	if o.Boost <= 0 {
+		o.Boost = DefaultBoost
+	}
+	if o.Threshold <= 0 {
+		o.Threshold = DefaultThreshold
+	}
+	o.Common = o.Common.withDefaults(1)
+	return o
+}
