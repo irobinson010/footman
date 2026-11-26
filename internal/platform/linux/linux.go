@@ -31,6 +31,7 @@ func init() {
 // Platform is the Linux platform.
 type Platform struct {
 	bus *bus
+	run runFunc
 
 	input     *Input
 	audio     *Audio
@@ -63,9 +64,10 @@ func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc)
 	paths := &Paths{}
 	return &Platform{
 		bus:       b,
+		run:       run,
 		input:     newInput(b, dial, windows, paths),
 		windows:   windows,
-		launcher:  &Launcher{run: run, dataDirs: dataDirs},
+		launcher:  &Launcher{bus: b, run: run, dataDirs: dataDirs},
 		notifier:  &Notifier{bus: b, waiters: map[uint32]*waiter{}},
 		clipboard: &Clipboard{run: run},
 		secrets:   &Secrets{bus: b},

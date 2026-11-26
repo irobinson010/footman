@@ -2,9 +2,14 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/irobinson010/footman/internal/dictation"
+	"github.com/irobinson010/footman/internal/platform"
+	"github.com/irobinson010/footman/internal/plugins"
 )
 
 // FastAction is a command matched locally, without the AI (design §5: target
@@ -16,6 +21,9 @@ type FastAction func(ctx context.Context, p *Pipeline) (reply string, err error)
 type FastRule struct {
 	// Name identifies the rule in events and logs.
 	Name string
+	// Permission is the level of what the rule does (design §29). Every
+	// built-in rule is Act.
+	Permission plugins.Permission
 	// Match recognizes the command.
 	Match func(text string) (FastAction, bool)
 }
@@ -33,7 +41,7 @@ var DefaultSites = map[string]string{
 // is started as an app.
 func OpenRule(sites map[string]string) FastRule {
 	verbs := [][]string{{"open"}, {"launch"}}
-	return FastRule{Name: "open", Match: func(text string) (FastAction, bool) {
+	return FastRule{Name: "open", Permission: plugins.Act, Match: func(text string) (FastAction, bool) {
 		tokens, ok := stripPrefix(strings.Fields(text), verbs)
 		if !ok || len(tokens) == 0 {
 			return nil, false
@@ -43,20 +51,29 @@ func OpenRule(sites map[string]string) FastRule {
 			return nil, false
 		}
 		if u, ok := sites[dictation.Norm(target)]; ok {
-			return openURL(u), true
+			return openURL(u, target), true
 		}
 		if u, ok := asURL(target); ok {
-			return openURL(u), true
+			return openURL(u, target), true
 		}
 		return func(ctx context.Context, p *Pipeline) (string, error) {
-			return "", p.d.Platform.Launcher().OpenApp(ctx, target)
+			if err := p.d.Platform.Launcher().OpenApp(ctx, target); err != nil {
+				if errors.Is(err, platform.ErrNotFound) {
+					return fmt.Sprintf("I couldn't find an app called %s.", target), nil
+				}
+				return "", err
+			}
+			return "Opening " + target + ".", nil
 		}, true
 	}}
 }
 
-func openURL(u string) FastAction {
+func openURL(u, name string) FastAction {
 	return func(ctx context.Context, p *Pipeline) (string, error) {
-		return "", p.d.Platform.Launcher().OpenURL(ctx, u)
+		if err := p.d.Platform.Launcher().OpenURL(ctx, u); err != nil {
+			return "", err
+		}
+		return "Opening " + name + ".", nil
 	}
 }
 
@@ -77,10 +94,110 @@ func asURL(target string) (string, bool) {
 	return "https://" + strings.ToLower(host) + target[len(host):], true
 }
 
-// DefaultFastRules returns the built-in fast-path rules.
-func DefaultFastRules(sites map[string]string) []FastRule {
-	if sites == nil {
-		sites = DefaultSites
+// VolumeRule matches "volume up", "volume down", "mute", "unmute" and
+// "set volume to 40 percent" (and close variants).
+func VolumeRule() FastRule {
+	return FastRule{Name: "volume", Permission: plugins.Act, Match: func(text string) (FastAction, bool) {
+		w := dictation.NormWords(text)
+		for len(w) > 0 && (w[0] == "please" || w[0] == "turn" || w[0] == "set") {
+			w = w[1:]
+		}
+		w = dropWords(w, "the", "to", "percent", "it")
+		vol := func(f func(context.Context, platform.VolumeControl) error, reply string) (FastAction, bool) {
+			return func(ctx context.Context, p *Pipeline) (string, error) {
+				v, ok := p.d.Platform.(platform.VolumeControl)
+				if !ok {
+					return "", fmt.Errorf("volume: %w", platform.ErrUnsupported)
+				}
+				if err := f(ctx, v); err != nil {
+					return "", err
+				}
+				return reply, nil
+			}, true
+		}
+		const step = 10
+		switch strings.Join(w, " ") {
+		case "volume up", "up volume", "louder":
+			return vol(func(ctx context.Context, v platform.VolumeControl) error { return v.ChangeVolume(ctx, step) }, "Volume up.")
+		case "volume down", "down volume", "quieter":
+			return vol(func(ctx context.Context, v platform.VolumeControl) error { return v.ChangeVolume(ctx, -step) }, "Volume down.")
+		case "mute", "volume mute", "mute volume":
+			return vol(func(ctx context.Context, v platform.VolumeControl) error { return v.SetMute(ctx, true) }, "Muted.")
+		case "unmute", "volume unmute", "unmute volume":
+			return vol(func(ctx context.Context, v platform.VolumeControl) error { return v.SetMute(ctx, false) }, "Unmuted.")
+		}
+		if len(w) == 2 && (w[0] == "volume" || w[1] == "volume") {
+			n := w[0]
+			if w[0] == "volume" {
+				n = w[1]
+			}
+			if pct, err := strconv.Atoi(n); err == nil && pct >= 0 && pct <= 100 {
+				return vol(func(ctx context.Context, v platform.VolumeControl) error { return v.SetVolume(ctx, pct) },
+					fmt.Sprintf("Volume %d percent.", pct))
+			}
+		}
+		return nil, false
+	}}
+}
+
+func dropWords(w []string, drop ...string) []string {
+	var out []string
+outer:
+	for _, x := range w {
+		for _, d := range drop {
+			if x == d {
+				continue outer
+			}
+		}
+		out = append(out, x)
 	}
-	return []FastRule{OpenRule(sites)}
+	return out
+}
+
+// MediaRule matches "play music", "pause", "next track", "previous song" and
+// close variants.
+func MediaRule() FastRule {
+	return FastRule{Name: "media", Permission: plugins.Act, Match: func(text string) (FastAction, bool) {
+		w := dropWords(dictation.NormWords(text), "please", "the", "my", "music", "media", "song", "track", "playback")
+		var cmd platform.MediaCommand
+		var reply string
+		switch strings.Join(w, " ") {
+		case "play", "resume", "unpause":
+			cmd, reply = platform.MediaPlay, "Playing."
+		case "pause", "stop":
+			cmd, reply = platform.MediaPause, "Paused."
+		case "next", "skip", "skip next", "play next":
+			cmd, reply = platform.MediaNext, "Next."
+		case "previous", "back", "go back", "play previous", "last":
+			cmd, reply = platform.MediaPrevious, "Previous."
+		default:
+			return nil, false
+		}
+		return func(ctx context.Context, p *Pipeline) (string, error) {
+			m, ok := p.d.Platform.(platform.MediaControl)
+			if !ok {
+				return "", fmt.Errorf("media: %w", platform.ErrUnsupported)
+			}
+			if err := m.Media(ctx, cmd); err != nil {
+				if errors.Is(err, platform.ErrNotFound) {
+					return "Nothing is playing.", nil
+				}
+				return "", err
+			}
+			return reply, nil
+		}, true
+	}}
+}
+
+// DefaultFastRules returns the built-in fast-path rules. sites are the user's
+// own site aliases (spoken name to URL), added to DefaultSites.
+func DefaultFastRules(sites map[string]string) []FastRule {
+	all := make(map[string]string, len(DefaultSites)+len(sites))
+	for k, v := range DefaultSites {
+		all[k] = v
+	}
+	for k, v := range sites {
+		all[dictation.Norm(k)] = v
+	}
+	return []FastRule{OpenRule(all), VolumeRule(), MediaRule()}
 }
