@@ -57,7 +57,9 @@ func (l *Launcher) OpenFile(ctx context.Context, path string) error {
 }
 
 func (l *Launcher) xdgOpen(ctx context.Context, target string) error {
-	_, err := l.run(ctx, runSpec{Name: "xdg-open", Args: []string{"--", target}, Grace: launchGrace})
+	// No "--": xdg-open rejects it ("unexpected option"). target cannot start
+	// with "-": OpenURL requires a scheme and OpenFile an absolute path.
+	_, err := l.run(ctx, runSpec{Name: "xdg-open", Args: []string{target}, Grace: launchGrace})
 	if errors.Is(err, errNoTool) {
 		if perr := l.portalOpen(ctx, target); perr == nil {
 			return nil
