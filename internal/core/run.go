@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"sync"
+	"time"
 
 	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/bus"
@@ -24,12 +25,17 @@ import (
 // talk) or the VAD's end of speech or a second tap (tap to talk) ends it.
 //
 // With a wake-word engine, the microphone is also open the whole time:
-// frames go to the wake-word spotter and the VAD. The wake word (or Arm)
-// arms the pipeline (Listening), and the VAD's next end of speech is then
-// transcribed and handled. Speech that ends while nothing is armed is
-// ignored, so nothing said without the wake word or a hotkey is ever
-// transcribed. Without one, the microphone is closed except while a hotkey
-// records, and Run returns only when ctx is done.
+// frames go to the wake-word spotter and the VAD (the tray shows "listening
+// for the wake word"). The wake word (or Arm) arms the pipeline (Listening),
+// and the VAD's next end of speech is then cut to the command (a short
+// pre-roll before the end of the wake word, at most MaxCommand), transcribed
+// and handled. A wake word nothing follows within WakeWindow is dropped
+// silently. Speech that ends while nothing is armed is ignored, so nothing
+// said without the wake word or a hotkey is ever transcribed. While a
+// push-to-talk recording runs, or after SetWakeListening(false), the wake
+// microphone is closed, so the device is never opened twice. Without an
+// engine, the microphone is closed except while a hotkey records, and Run
+// returns only when ctx is done.
 func (p *Pipeline) Run(ctx context.Context) error {
 	if p.d.VAD == nil {
 		return errors.New("core: Run needs a VAD")
@@ -58,8 +64,9 @@ const (
 	MicMuted MicState = "muted"
 	// MicStopped means the loop has returned and will not listen again.
 	MicStopped MicState = "stopped"
-	// MicPushToTalk means there is no wake word: the microphone is closed
-	// and opens only while a push-to-talk hotkey records.
+	// MicPushToTalk means there is no wake word, or it was switched off: the
+	// microphone is closed and opens only while a push-to-talk hotkey
+	// records.
 	MicPushToTalk MicState = "push_to_talk"
 	// MicRecording means a push-to-talk hotkey is recording right now.
 	MicRecording MicState = "recording"
@@ -99,7 +106,7 @@ func (p *Pipeline) Mic() MicStatus {
 		return MicStatus{State: MicRecording}
 	case p.muted:
 		return MicStatus{State: MicMuted}
-	case p.mic.pttOnly:
+	case p.mic.pttOnly || p.wakeOff:
 		return MicStatus{State: MicPushToTalk}
 	}
 	return MicStatus{State: MicOn}
@@ -135,12 +142,14 @@ func (p *Pipeline) microphone(ctx context.Context) error {
 	defer turns.Wait()
 	for {
 		p.mu.Lock()
-		muted, unmuted := p.muted, p.unmuted
+		muted, off, recording, changed := p.muted, p.wakeOff, p.rec != nil, p.changed
 		p.mu.Unlock()
-		if muted {
-			p.setMic(platform.MicOff)
+		if muted || off || recording {
+			if !recording { // a recording shows its own status
+				p.setMic(platform.MicOff)
+			}
 			select {
-			case <-unmuted:
+			case <-changed:
 				continue
 			case <-ctx.Done():
 				return ctx.Err()
@@ -239,7 +248,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 	mctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	p.mu.Lock()
-	if p.muted {
+	if p.muted || p.wakeOff || p.rec != nil {
 		p.mu.Unlock()
 		return false, nil
 	}
@@ -251,6 +260,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 		p.mu.Unlock()
 	}()
 
+	defer p.disarm() // a wake word nothing followed before the stream ended
 	frames, err := p.d.Platform.Audio().Capture(mctx, p.cfg.Mic, audio.Speech)
 	if err != nil {
 		return false, err
@@ -266,8 +276,13 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 	}
 	segs := p.d.VAD.Detect(mctx, vadIn)
 
+	// A wake word that no command follows is dropped when this fires.
+	var expire <-chan time.Time
 	for segs != nil || wakes != nil {
 		select {
+		case <-expire:
+			expire = nil
+			p.disarm()
 		case w, ok := <-wakes:
 			if !ok {
 				wakes = nil
@@ -280,20 +295,33 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				p.stop(StopVoice)
 				continue
 			}
-			p.Arm(TriggerWake)
+			p.arm(TriggerWake, w.At, true)
+			expire = time.After(p.cfg.WakeWindow)
+			p.earcon(mctx)
 		case seg, ok := <-segs:
 			if !ok {
 				segs = nil
 				continue
 			}
-			trig := p.takeArmed()
-			if trig == 0 {
-				continue // not addressed to Footman
+			trig, seg, ok := p.claimSegment(seg)
+			if !ok {
+				continue // not addressed to Footman, or only the wake word
 			}
+			expire = nil
 			turns.Go(func() { p.handleSegment(ctx, trig, seg) })
 		}
 	}
 	return mctx.Err() == nil, nil
+}
+
+// earcon plays the short wake sound, unless there is none or quiet mode is on.
+func (p *Pipeline) earcon(ctx context.Context) {
+	if len(p.cfg.Earcon.Samples) == 0 || p.Quiet() {
+		return
+	}
+	go func() {
+		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(p.cfg.Earcon, 320))
+	}()
 }
 
 // tee copies every frame to two unbuffered channels, the wake-word spotter's

@@ -37,3 +37,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0031](0031-uninstall-desktop-grants-and-test-session-guard.md) | Uninstall undoes desktop grants; tests never reach the real session | Accepted |
 | [0032](0032-dictation-commands-and-code-mode.md) | Dictation commands and code mode | Accepted |
 | [0033](0033-wake-word-keyword-spotting.md) | Wake word: sherpa-onnx keyword spotting with a gated break-glass spotter | Accepted |
+| [0034](0034-always-on-listening-loop.md) | Always-on listening loop: command capture, pause for push-to-talk, quiet mode | Accepted |

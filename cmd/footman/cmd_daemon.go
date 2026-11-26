@@ -428,6 +428,10 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		Language:      cfg.String("user.language"),
 		NoCommands:    cfg.String("dictation.commands") == "off",
 		NoTerminal:    !cfg.Bool("dictation.terminal_mode"),
+		// "Ashford, open YouTube" must lose "Ashford", as the spotter heard it.
+		WakeWords:  append(wakePhrases(cfg), "footman"),
+		MinCommand: core.DefaultMinCommand,
+		Quiet:      cfg.Bool("replies.quiet"),
 	}
 }
 

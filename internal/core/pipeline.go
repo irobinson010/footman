@@ -74,6 +74,23 @@ type Config struct {
 	// MaxUtterance caps one push-to-talk recording (default
 	// DefaultMaxUtterance).
 	MaxUtterance time.Duration
+	// MinCommand is the least speech that must follow a wake word for the
+	// utterance to count; shorter is a false wake and is passed over (zero
+	// means any; the daemon uses DefaultMinCommand).
+	MinCommand time.Duration
+	// MaxCommand caps the audio of one command said after the wake word
+	// (default DefaultMaxCommand).
+	MaxCommand time.Duration
+	// WakeWindow is how long after the wake word a command may start before
+	// the wake is dropped (default DefaultWakeWindow).
+	WakeWindow time.Duration
+	// Quiet is quiet mode: no earcon or acknowledgement sound, and replies
+	// are shown rather than spoken. See SetQuiet.
+	Quiet bool
+	// Earcon is a short sound played when the wake word is heard, unless
+	// quiet. Empty means none. It should be brief and soft: the microphone
+	// stays open while it plays.
+	Earcon audio.Clip
 	// Insert is the dictation insert mode (default auto).
 	Insert dictation.InsertMode
 	// TypeMax is the longest text auto mode types (default
@@ -125,8 +142,12 @@ type Pipeline struct {
 	busy       uint64 // the turn being handled, or 0
 	turns      map[uint64]context.CancelFunc
 	armed      Trigger
+	armedAt    time.Duration // stream offset the wake word ended at, if armedTimed
+	armedTimed bool
 	muted      bool
-	unmuted    chan struct{} // closed by Unmute
+	wakeOff    bool          // wake listening switched off (SetWakeListening)
+	quiet      bool          // quiet mode
+	changed    chan struct{} // closed, and replaced, when muted, wakeOff or rec change
 	micCancel  context.CancelFunc
 	mic        micLoop
 	rec        *recording // the push-to-talk recording, if any
@@ -175,6 +196,12 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	if cfg.TypeMax <= 0 {
 		cfg.TypeMax = dictation.DefaultTypeMax
 	}
+	if cfg.MaxCommand <= 0 {
+		cfg.MaxCommand = DefaultMaxCommand
+	}
+	if cfg.WakeWindow <= 0 {
+		cfg.WakeWindow = DefaultWakeWindow
+	}
 	if cfg.MaxToolRounds <= 0 {
 		cfg.MaxToolRounds = 8
 	}
@@ -195,7 +222,7 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	}
 	return &Pipeline{
 		d: d, cfg: cfg, formatter: dictation.NewFormatter(lang), ctx: ctx, cancel: cancel,
-		state: Idle,
+		state: Idle, quiet: cfg.Quiet, changed: make(chan struct{}),
 		turns: map[uint64]context.CancelFunc{},
 		jobs:  map[string]jobs.Job{},
 	}, nil
@@ -254,20 +281,65 @@ func (p *Pipeline) setState(turn uint64, to State) {
 // end of speech is handled as a wake-word, dictation or command utterance.
 // Run calls it for the wake word and hotkeys; the tray and API may too.
 func (p *Pipeline) Arm(trig Trigger) {
+	p.arm(trig, 0, false)
+}
+
+// arm is Arm; for a wake word, at is the stream offset where it ended, so
+// the command is cut from just before that point (timed is true).
+func (p *Pipeline) arm(trig Trigger, at time.Duration, timed bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.armed = trig
+	p.armed, p.armedAt, p.armedTimed = trig, at, timed
 	if p.busy == 0 {
 		p.setStateLocked(Listening, 0)
 	}
 }
 
-func (p *Pipeline) takeArmed() Trigger {
+// disarm drops an armed wake that nothing followed, silently (design §17).
+func (p *Pipeline) disarm() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	t := p.armed
-	p.armed = 0
-	return t
+	if p.armed == 0 {
+		return
+	}
+	p.armed, p.armedTimed = 0, false
+	if p.busy == 0 && p.rec == nil {
+		p.setStateLocked(Idle, 0)
+	}
+}
+
+// claimSegment hands seg to the armed trigger. For a wake word it first cuts
+// the audio to the command: from a pre-roll before the end of the wake word
+// (so the first word after it is not clipped, nor the wake word kept), to at
+// most MaxCommand. A segment that ended before the wake word, or has less
+// than MinCommand left after it (the wake word itself, said alone), is not
+// claimed and the wake stays armed for the next one. ok is false then, or
+// when nothing is armed.
+func (p *Pipeline) claimSegment(seg speech.Segment) (trig Trigger, out speech.Segment, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.armed == 0 {
+		return 0, seg, false
+	}
+	if p.armedTimed {
+		cut := p.armedAt - wakePreRoll
+		if seg.End <= p.armedAt {
+			return 0, seg, false
+		}
+		if from := audio.Speech.Samples(cut - seg.Start); from > 0 {
+			seg.Audio.Samples = seg.Audio.Samples[min(from, len(seg.Audio.Samples)):]
+			seg.Start = max(seg.Start, cut)
+		}
+		if seg.Audio.Duration() < max(p.cfg.MinCommand, time.Millisecond) {
+			return 0, seg, false
+		}
+		if n := audio.Speech.Samples(p.cfg.MaxCommand); len(seg.Audio.Samples) > n {
+			seg.Audio.Samples = seg.Audio.Samples[:n]
+		}
+	}
+	trig = p.armed
+	p.armed, p.armedTimed = 0, false
+	return trig, seg, true
 }
 
 // beginTurn claims the pipeline for a new utterance. It returns 0 if another
@@ -495,7 +567,7 @@ func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, err
 // has finished.
 func (p *Pipeline) playAck(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
-	if len(p.cfg.Ack.Samples) == 0 {
+	if len(p.cfg.Ack.Samples) == 0 || p.Quiet() {
 		close(done)
 		return done
 	}
@@ -510,7 +582,7 @@ func (p *Pipeline) playAck(ctx context.Context) <-chan struct{} {
 func (p *Pipeline) reply(ctx context.Context, id uint64, text string) error {
 	p.setState(id, Replying)
 	bus.Publish(p.d.Bus, Replied, Reply{Turn: id, Text: text})
-	if p.d.TTS == nil {
+	if p.d.TTS == nil || p.Quiet() {
 		// The notification outlives the turn.
 		_, err := p.d.Platform.Notifier().Notify(p.ctx, platform.Notification{Title: "Footman", Body: text})
 		return err
@@ -548,13 +620,8 @@ func (p *Pipeline) stop(src StopSource) {
 		p.rec.cancel() // the audio so far is discarded
 		p.rec = nil
 	}
-	if !p.muted {
-		p.muted = true
-		p.unmuted = make(chan struct{})
-	}
-	if p.micCancel != nil {
-		p.micCancel()
-	}
+	p.muted = true
+	p.pauseWakeLocked()
 	p.setStateLocked(Idle, 0)
 	p.mu.Unlock()
 
@@ -582,8 +649,68 @@ func (p *Pipeline) Unmute() {
 func (p *Pipeline) unmuteLocked() {
 	if p.muted {
 		p.muted = false
-		close(p.unmuted)
+		p.notifyLocked()
 	}
+}
+
+// notifyLocked wakes the microphone loop to look at muted, wakeOff and rec
+// again. p.mu must be held.
+func (p *Pipeline) notifyLocked() {
+	close(p.changed)
+	p.changed = make(chan struct{})
+}
+
+// pauseWakeLocked closes the wake-listening microphone, if open, and wakes
+// the loop to see why. p.mu must be held.
+func (p *Pipeline) pauseWakeLocked() {
+	if p.micCancel != nil {
+		p.micCancel()
+	}
+	p.notifyLocked()
+}
+
+// SetWakeListening turns always-on wake-word listening on or off while the
+// daemon runs (the CLI and API toggle). Off closes the microphone, leaving
+// only push-to-talk; it has no effect without a wake-word engine.
+func (p *Pipeline) SetWakeListening(on bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.wakeOff == !on {
+		return
+	}
+	p.wakeOff = !on
+	if on {
+		p.notifyLocked()
+		return
+	}
+	p.armed, p.armedTimed = 0, false
+	p.pauseWakeLocked()
+	if p.busy == 0 && p.rec == nil {
+		p.setStateLocked(Idle, 0)
+	}
+}
+
+// WakeListening reports whether the microphone is listening for the wake
+// word: there is an engine and it has not been switched off.
+func (p *Pipeline) WakeListening() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.d.Wake != nil && !p.wakeOff
+}
+
+// SetQuiet turns quiet mode on or off: no earcon or acknowledgement sound,
+// and replies are shown as notifications rather than spoken.
+func (p *Pipeline) SetQuiet(on bool) {
+	p.mu.Lock()
+	p.quiet = on
+	p.mu.Unlock()
+}
+
+// Quiet reports whether quiet mode is on.
+func (p *Pipeline) Quiet() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.quiet
 }
 
 func (p *Pipeline) setMic(s platform.TrayStatus) {
