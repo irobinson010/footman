@@ -190,7 +190,8 @@ func TestSetupSpeechStepWithRealEngines(t *testing.T) {
 	models := speechtest.ModelsDir(t, "silero-vad", "whisper-tiny.en")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	cfg := "version = 1\n[speech.stt]\nengine = \"whispercpp\"\nmodel = \"whisper-tiny.en\"\n"
+	// No persona voice to download: the TTS engine is the fake.
+	cfg := "version = 1\n[speech.stt]\nengine = \"whispercpp\"\nmodel = \"whisper-tiny.en\"\n[speech.tts]\nengine = \"fake\"\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

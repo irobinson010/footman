@@ -24,7 +24,14 @@ func setupSpeech(progress io.Writer) func(context.Context, install.SpeechEnv) er
 }
 
 func runSpeechSetup(ctx context.Context, se install.SpeechEnv, dirs speechDirs, hw accel.Hardware, engines map[string][]string, progress io.Writer) error {
+	// The default persona's voice is fetched too (download only; it runs on
+	// the CPU).
+	var voices []string
+	if cfg, err := config.Load(se.ConfigPath); err == nil {
+		voices = personaVoiceModels(cfg, se.DataDir, func(f string, a ...any) { se.Step("persona      "+f, a...) })
+	}
 	env := speechsetup.Env{
+		Voices:     voices,
 		ConfigPath: se.ConfigPath,
 		ModelsDir:  dirs.models,
 		Hardware:   hw,
