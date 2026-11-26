@@ -114,7 +114,7 @@ func (g *Gate) Decide(ctx context.Context, spec plugins.ToolSpec, args json.RawM
 		case cctx.Err() != nil:
 			return HowTimeout, fmt.Errorf("%s: %w", spec.Name, ErrTimeout)
 		}
-		return HowPolicy, fmt.Errorf("%s needs confirmation and asking failed (%v): %w", spec.Name, err, ErrNoConfirmer)
+		return HowPolicy, fmt.Errorf("%s needs confirmation and asking failed (%w): %w", spec.Name, err, ErrNoConfirmer)
 	}
 	how := d.How
 	if how == "" {
