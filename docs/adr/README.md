@@ -40,3 +40,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0034](0034-always-on-listening-loop.md) | Always-on listening loop: command capture, pause for push-to-talk, quiet mode | Accepted |
 | [0035](0035-microphone-level-agc-and-mic-check.md) | Microphone level: automatic gain and `footman mic check` | Accepted |
 | [0038](0038-permission-gate-and-action-log.md) | Permission gate and action log | Accepted |
+| [0039](0039-click-confirmations.md) | Click confirmations: broker, channels, expiry; tighten by voice, loosen by click | Accepted |
