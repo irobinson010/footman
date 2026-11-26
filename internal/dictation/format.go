@@ -284,7 +284,7 @@ func render(pieces []piece, code bool) string {
 			var sp bool
 			if code {
 				word := func(k kind) bool { return k == kWord || k == kLetter }
-				sp = word(prev.kind) && word(p.kind) && !(prev.kind == kLetter && p.kind == kLetter)
+				sp = word(prev.kind) && word(p.kind) && (prev.kind != kLetter || p.kind != kLetter)
 			} else {
 				sp = prev.kind != kBreak && p.kind != kBreak && !prev.glueRight && !p.glueLeft
 			}
