@@ -201,3 +201,19 @@ func DefaultFastRules(sites map[string]string) []FastRule {
 	}
 	return []FastRule{OpenRule(all), VolumeRule(), MediaRule()}
 }
+
+// fillers are words people start a command with that change nothing, as in
+// "and volume down" or "okay, pause the music".
+var fillers = map[string]bool{
+	"and": true, "so": true, "um": true, "uh": true, "uhm": true, "er": true,
+	"okay": true, "ok": true, "oh": true, "also": true, "then": true, "now": true,
+}
+
+// stripFillers drops leading filler words, so the fast-path rules still match.
+func stripFillers(text string) string {
+	tokens := strings.Fields(text)
+	for len(tokens) > 1 && fillers[dictation.Norm(tokens[0])] {
+		tokens = tokens[1:]
+	}
+	return strings.Join(tokens, " ")
+}

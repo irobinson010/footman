@@ -13,8 +13,8 @@ import (
 )
 
 // ErrNeedsConfirmation is returned by DefaultGate for tools that need the
-// user's confirmation, which the walking skeleton cannot ask for yet.
-var ErrNeedsConfirmation = errors.New("needs confirmation, which is not available yet")
+// user's confirmation, which it cannot ask for.
+var ErrNeedsConfirmation = errors.New("needs confirmation, which is not available")
 
 // Gate is the permission gate (design §29). Check returns nil to let a tool
 // call run, or an error the AI is told about. untrusted is true once
@@ -23,20 +23,54 @@ type Gate interface {
 	Check(ctx context.Context, spec plugins.ToolSpec, args json.RawMessage, untrusted bool) error
 }
 
-// DefaultGate runs Read and Act tools and refuses Destructive and Outward
-// ones, which always need confirmation by default (design §29); asking for it
-// arrives with the confirmations work.
+// Decider is a Gate that also says how it decided, for the action log:
+// "auto", "click", "voice", "policy" or "timeout" (permissions.Decision.How).
+// permissions.Gate implements it. For a Gate that does not, an allowed call
+// is recorded as "auto" and a refused one as "policy".
+type Decider interface {
+	Gate
+	Decide(ctx context.Context, spec plugins.ToolSpec, args json.RawMessage, untrusted bool) (how string, err error)
+}
+
+// How a gate decided, for gates that are not Deciders.
+const (
+	howAuto   = "auto"
+	howPolicy = "policy"
+)
+
+// DefaultGate is the gate the pipeline uses when Deps.Gate is nil: the
+// default policy (design §29) with nobody to ask. It runs Read and Act tools
+// and refuses Destructive and Outward ones, which need confirmation. The
+// daemon uses permissions.Gate instead, which reads the policy from config
+// and asks a Confirmer (ADR-0038).
 type DefaultGate struct{}
 
 // Check implements Gate.
-func (DefaultGate) Check(_ context.Context, spec plugins.ToolSpec, _ json.RawMessage, _ bool) error {
+func (g DefaultGate) Check(ctx context.Context, spec plugins.ToolSpec, args json.RawMessage, untrusted bool) error {
+	_, err := g.Decide(ctx, spec, args, untrusted)
+	return err
+}
+
+// Decide implements Decider.
+func (DefaultGate) Decide(_ context.Context, spec plugins.ToolSpec, _ json.RawMessage, _ bool) (string, error) {
 	switch spec.Permission {
 	case plugins.Read, plugins.Act:
-		return nil
+		return howAuto, nil
 	case plugins.Destructive, plugins.Outward:
-		return fmt.Errorf("%s is a %s action: %w", spec.Name, spec.Permission, ErrNeedsConfirmation)
+		return howPolicy, fmt.Errorf("%s is a %s action: %w", spec.Name, spec.Permission, ErrNeedsConfirmation)
 	}
-	return fmt.Errorf("%s has invalid permission %v", spec.Name, spec.Permission)
+	return howPolicy, fmt.Errorf("%s has invalid permission %v", spec.Name, spec.Permission)
+}
+
+// decide runs the gate and says how it decided.
+func (p *Pipeline) decide(ctx context.Context, spec plugins.ToolSpec, args json.RawMessage, untrusted bool) (string, error) {
+	if d, ok := p.d.Gate.(Decider); ok {
+		return d.Decide(ctx, spec, args, untrusted)
+	}
+	if err := p.d.Gate.Check(ctx, spec, args, untrusted); err != nil {
+		return howPolicy, err
+	}
+	return howAuto, nil
 }
 
 // StartTaskTool is the name of the built-in tool the AI calls to hand a long
@@ -87,9 +121,9 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 				return p.startTask(id, call, untrusted)
 			}
 			p.setState(id, RunningTool)
-			res := p.runTool(ctx, tools[call.Name], call, untrusted)
+			res, how := p.runTool(ctx, tools[call.Name], call, untrusted)
 			untrusted = untrusted || res.Untrusted
-			bus.Publish(p.d.Bus, ToolCalled, ToolRan{Turn: id, Name: call.Name, Args: call.Args, Result: res.Text, IsError: res.IsError})
+			bus.Publish(p.d.Bus, ToolCalled, ToolRan{Turn: id, Name: call.Name, Args: call.Args, Result: res.Text, IsError: res.IsError, Confirmation: how})
 			msgs = append(msgs, llm.Message{Role: llm.ToolResult, ToolCallID: call.ID, Text: res.Text, IsError: res.IsError})
 		}
 		if err := ctx.Err(); err != nil {
@@ -99,20 +133,22 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	return "Sorry, I couldn't finish that.", nil
 }
 
-// runTool runs one tool call through the gate. Failures become error results
+// runTool runs one tool call through the gate and returns its result and how
+// the gate decided ("" for an unknown tool). Failures become error results
 // the AI can see and recover from.
-func (p *Pipeline) runTool(ctx context.Context, t plugins.Tool, call llm.ToolCall, untrusted bool) plugins.Result {
+func (p *Pipeline) runTool(ctx context.Context, t plugins.Tool, call llm.ToolCall, untrusted bool) (plugins.Result, string) {
 	if t == nil {
-		return plugins.Result{Text: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
+		return plugins.Result{Text: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}, ""
 	}
-	if err := p.d.Gate.Check(ctx, t.Spec(), call.Args, untrusted); err != nil {
-		return plugins.Result{Text: "refused: " + err.Error(), IsError: true}
+	how, err := p.decide(ctx, t.Spec(), call.Args, untrusted)
+	if err != nil {
+		return plugins.Result{Text: "refused: " + err.Error(), IsError: true}, how
 	}
 	res, err := t.Run(ctx, call.Args)
 	if err != nil {
-		return plugins.Result{Text: err.Error(), IsError: true, Untrusted: res.Untrusted}
+		return plugins.Result{Text: err.Error(), IsError: true, Untrusted: res.Untrusted}, how
 	}
-	return res
+	return res, how
 }
 
 // startTask hands the AI's start_task call to the worker and ends the turn at
@@ -126,7 +162,7 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 		return "Sorry, I couldn't work out what that task was.", nil
 	}
 	id, err := p.StartJob(jobs.Task{Prompt: args.Prompt, Dir: args.Dir, Untrusted: untrusted})
-	ev := ToolRan{Turn: turn, Name: call.Name, Args: call.Args, Result: id}
+	ev := ToolRan{Turn: turn, Name: call.Name, Args: call.Args, Result: id, Confirmation: howAuto}
 	if err != nil {
 		ev.Result, ev.IsError = err.Error(), true
 	}
@@ -138,14 +174,14 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 }
 
 // allTools returns the configured tools plus the built-in fast-path actions
-// (open_url, open_app), unless a configured tool already uses the name.
+// (open_url, open_app, quick_action), unless a configured tool already uses the name.
 func (p *Pipeline) allTools() []plugins.Tool {
 	all := append([]plugins.Tool(nil), p.d.Tools...)
 	have := map[string]bool{}
 	for _, t := range all {
 		have[t.Spec().Name] = true
 	}
-	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}} {
+	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}, quickActionTool{p}} {
 		if !have[t.Spec().Name] {
 			all = append(all, t)
 		}
@@ -206,4 +242,39 @@ func (t openAppTool) Run(ctx context.Context, args json.RawMessage) (plugins.Res
 		return plugins.Result{}, err
 	}
 	return plugins.Result{Text: "started " + a.App}, nil
+}
+
+// quickActionTool exposes the volume and media fast-path rules to the AI, for
+// commands the fast path didn't recognize as said ("turn it down a bit").
+type quickActionTool struct{ p *Pipeline }
+
+func (quickActionTool) Spec() plugins.ToolSpec {
+	return plugins.ToolSpec{
+		Name: "quick_action",
+		Description: "Change the volume or control music and video playback. Pass one of: " +
+			"\"volume up\", \"volume down\", \"mute\", \"unmute\", \"set volume to N percent\", " +
+			"\"play\", \"pause\", \"next\", \"previous\".",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"action":{"type":"string","description":"The action, such as \"volume down\" or \"pause\"."}},"required":["action"]}`),
+		Permission: plugins.Act,
+	}
+}
+
+func (t quickActionTool) Run(ctx context.Context, args json.RawMessage) (plugins.Result, error) {
+	var a struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || a.Action == "" {
+		return plugins.Result{Text: "action is required", IsError: true}, nil
+	}
+	for _, rule := range []FastRule{VolumeRule(), MediaRule()} {
+		if run, ok := rule.Match(a.Action); ok {
+			reply, err := run(ctx, t.p)
+			if err != nil {
+				return plugins.Result{}, err
+			}
+			return plugins.Result{Text: reply}, nil
+		}
+	}
+	return plugins.Result{Text: "unknown action: " + a.Action, IsError: true}, nil
 }
