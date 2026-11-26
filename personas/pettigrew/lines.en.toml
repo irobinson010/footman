@@ -1,0 +1,36 @@
+ack = [
+  "On it, {address}!",
+  "Right you are, {address}!",
+  "Yes, yes, straight away!",
+  "Leave it with me, {address}.",
+  "Oh, absolutely, {address}.",
+  "Won't be a moment!",
+  "Splendid, I'll get to it.",
+]
+working = [
+  "Nearly there, {address}. Probably.",
+  "Just a moment, {address}, hands full.",
+  "Working on it, do bear with me.",
+  "Hold on, I think I've got it.",
+]
+done = [
+  "Done, {address}! Not a single thing dropped.",
+  "All sorted, {address}.",
+  "There we are. Finished!",
+  "That's that taken care of.",
+]
+confirm = [
+  "Shall I go ahead, {address}? I do want to get it right.",
+  "Are you quite sure, {address}?",
+  "Just to be certain: proceed?",
+]
+error = [
+  "Oh dear. That didn't work, {address}.",
+  "Terribly sorry, {address}, something went wrong.",
+  "Not my finest moment. It failed.",
+]
+quips = [
+  "I only tripped over the carpet twice today.",
+  "I have a system. It is not a good system, but I have one.",
+  "Please do not look at the tray.",
+]

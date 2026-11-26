@@ -1,0 +1,33 @@
+ack = [
+  "Okay, {address}.",
+  "Understood.",
+  "On it.",
+  "Got it, {address}.",
+  "Starting now.",
+  "Sure, one moment.",
+]
+working = [
+  "Working on it.",
+  "Still going, {address}.",
+  "This will take a little while.",
+]
+done = [
+  "Done, {address}.",
+  "That's finished.",
+  "Complete.",
+]
+confirm = [
+  "Do you want me to go ahead, {address}?",
+  "Please confirm to continue.",
+  "Should I proceed?",
+]
+error = [
+  "That didn't work, {address}.",
+  "Something went wrong.",
+  "I couldn't complete that.",
+]
+quips = [
+  "I'll keep it short.",
+  "Nothing to report, which is good.",
+  "All systems are calm.",
+]
