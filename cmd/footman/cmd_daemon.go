@@ -20,6 +20,7 @@ import (
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
 	"github.com/irobinson010/footman/internal/llm/claude"
+	"github.com/irobinson010/footman/internal/permissions"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
 	"github.com/irobinson010/footman/internal/speech"
@@ -147,6 +148,11 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
 	defer models.Close()
 	deps.Bus = b
+	// The permission gate reads the policy live from the config (ADR-0038).
+	// Nothing can ask for confirmation yet, so calls that need it are
+	// refused; the click-confirmation broker (#83) sets gate.Confirmer.
+	gate := &permissions.Gate{Config: cfgFile.Current}
+	deps.Gate = gate
 	if o.deps != nil {
 		o.deps(&deps)
 	}
@@ -173,6 +179,13 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	defer bg.Wait()
 	bctx, stopBG := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBG()
+
+	// The action log records every action from the bus; it stops (writing
+	// what it has received) before the store closes.
+	actionLog := &permissions.Log{Store: st, Config: cfgFile.Current, Logf: logf}
+	defer actionLog.Watch(b)()
+	// Retention: prune old history and action-log rows now and daily.
+	bg.Go(func() { permissions.Retain(bctx, st, cfgFile.Current, permissions.PruneEvery, logf) })
 
 	// History: keep transcripts when the config says so.
 	transcripts := bus.Subscribe(b, core.Transcribed, 64)
@@ -218,7 +231,11 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 				logf("config not reloaded: %v", err)
 				return
 			}
+			old := cfgFile.Current()
 			cfgFile.Replace(c)
+			// Changes made through config.set or by voice are already in
+			// old, so only hand edits show up here.
+			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
 		})
 	})
 
@@ -246,7 +263,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	srv := api.NewServer()
-	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
+	api.Register(srv, api.Deps{Pipeline: p, Bus: b, Config: cfgFile, Actions: st, STT: deps.STT, VAD: deps.VAD, Models: models.Status, Info: api.Info{
 		Version: version, Started: started, DevFakes: o.devFakes, Implementations: impl,
 		Socket: o.socket, ConfigPath: o.configPath, Hotkeys: hotkeyInfo(pcfg),
 	}})
