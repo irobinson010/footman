@@ -136,6 +136,35 @@ func TestVerifiedWakeReportedLate(t *testing.T) {
 	equal(t, "opened", r.launcher().URLs(), []string{"https://www.youtube.com"})
 }
 
+// The check uses the live wake list (SetWakeWords, as when the personas or
+// speech.wake.extra change): pack words such as "hey ashford" and an extra
+// "alfred" pass once set, and a word no longer listed does not.
+func TestVerifyUsesLiveWakeWords(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		live []string
+		want bool
+	}{
+		{"Alfred, open YouTube", nil, false},
+		{"Alfred, open YouTube", []string{"hey ashford", "alfred", "footman"}, true},
+		{"Hey Ashford, open YouTube", []string{"hey ashford", "alfred", "footman"}, true},
+		{"Ashferd, open YouTube", []string{"hey ashford", "alfred", "footman"}, true},
+		{"Jeeves, open YouTube", []string{"hey ashford", "alfred", "footman"}, false},
+	} {
+		r := verifyRig(t, "jeeves", "footman")
+		if tc.live != nil {
+			r.p.SetWakeWords(tc.live)
+		}
+		r.speak(repeat("x", 30) + ".")
+		r.wake.Schedule(10)
+		r.transcript(tc.text)
+		r.run()
+		if got := len(r.launcher().URLs()) == 1; got != tc.want {
+			t.Errorf("%q with %v: acted %v, want %v", tc.text, tc.live, got, tc.want)
+		}
+	}
+}
+
 // Speech nobody addressed is never transcribed, with or without the second
 // stage; and without a wake word, the segment before it is never checked.
 func TestVerifyTranscribesOnlyAfterTheSpotter(t *testing.T) {

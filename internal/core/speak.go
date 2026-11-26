@@ -39,6 +39,29 @@ type SpeechStart struct {
 // SpeechStarted reports the time to first spoken audio for a reply.
 var SpeechStarted = bus.NewTopic[SpeechStart]("pipeline.speech")
 
+// SetReplyNotify turns showing spoken replies as notifications too on or off
+// while running (replies.notify). A reply that is not spoken is shown either
+// way.
+func (p *Pipeline) SetReplyNotify(on bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cfg.Notify = on
+}
+
+func (p *Pipeline) notifyReplies() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.cfg.Notify
+}
+
+// replyTitle is the title of reply notifications: the persona's name.
+func (p *Pipeline) replyTitle() string {
+	if n := p.Persona().Name; n != "" {
+		return n
+	}
+	return "Footman"
+}
+
 // SetReplyPolicy changes, while running, when replies are spoken (speak is
 // "always", "when-voice" or "never"; empty means "when-voice") and the quiet
 // hours range like "22:00-07:00" (empty means none).
@@ -461,6 +484,8 @@ type speaker struct {
 	text        strings.Builder
 	// streamedFinal is set when the whole final reply came through Feed.
 	streamedFinal bool
+	// shown is set when the whole reply is shown as a notification.
+	shown bool
 }
 
 func (p *Pipeline) newSpeaker(ctx context.Context, turn uint64) *speaker {
@@ -490,7 +515,7 @@ func (s *speaker) synth() {
 		if err != nil || s.ctx.Err() != nil {
 			continue // drain
 		}
-		st, e := s.p.d.TTS.Speak(s.ctx, t, s.p.cfg.Voice)
+		st, e := s.p.d.TTS.Speak(s.ctx, t, s.p.Persona().Voice)
 		if e != nil {
 			err = e
 			s.cancel()
@@ -554,7 +579,9 @@ func (s *speaker) Finish() error {
 		case s.sentences <- onScreenLine:
 		case <-s.ctx.Done():
 		}
-		_, _ = s.p.d.Platform.Notifier().Notify(s.p.ctx, platform.Notification{Title: "Footman", Body: strings.TrimSpace(s.text.String())})
+		if !s.shown {
+			_, _ = s.p.d.Platform.Notifier().Notify(s.p.ctx, platform.Notification{Title: s.p.replyTitle(), Body: strings.TrimSpace(s.text.String())})
+		}
 	}
 	s.closeIn.Do(func() { close(s.sentences) })
 	synthErr, playErr := s.wait()

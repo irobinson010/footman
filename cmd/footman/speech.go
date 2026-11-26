@@ -3,8 +3,6 @@ package main
 import (
 	"io"
 	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/irobinson010/footman/internal/config"
@@ -83,27 +81,12 @@ func vadOptions(name string, dirs speechDirs, minSilence float64) registry.Confi
 	return nil
 }
 
-// wakePhrases are the wake words the spotter listens for: the listening
-// personas', "hey footman" and speech.wake.extra. The router strips the same
-// ones from transcripts, plus plain "footman".
-func wakePhrases(cfg *config.Config) []string {
-	out := append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
-	for _, w := range cfg.Strings("speech.wake.extra") {
-		if w = strings.ToLower(strings.TrimSpace(w)); w != "" && !slices.Contains(out, w) {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
-// wakeOptions are the options for the wake-word engine named name: the
-// listening personas' wake words and "hey footman", with the sensitivity from
-// speech.wake.*.
-func wakeOptions(name string, dirs speechDirs, cfg *config.Config) registry.Config {
+// wakeOptions are the options for the wake-word engine named name: keywords
+// (personaWakeWords), with the sensitivity from speech.wake.*.
+func wakeOptions(name string, dirs speechDirs, cfg *config.Config, keywords []string) registry.Config {
 	if name != sherpa.KWSName {
 		return nil
 	}
-	keywords := wakePhrases(cfg)
 	return registry.Map{
 		"models_dir": dirs.models,
 		"keywords":   keywords,

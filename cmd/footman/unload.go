@@ -15,11 +15,15 @@ import (
 )
 
 // reloaders build a fresh engine for an area, to load it again after it was
-// unloaded. A nil one means the area has no engine.
+// unloaded. A nil one means the area has no engine. Text-to-speech is
+// managed by ttsEngines, which keeps an idle Holder per engine.
 type reloaders struct {
 	stt func() (speech.STT, error)
 	vad func() (speech.VAD, error)
-	tts func() (speech.TTS, error)
+	// tts builds a text-to-speech engine for newTTSEngines: the one
+	// registered as engine (or its stand-in), loading v's model first, and
+	// the registry name it built ("" for none).
+	tts func(engine string, v speech.Voice) (speech.TTS, string, error)
 }
 
 // reloader returns a function that builds the engine registered as name again
@@ -47,6 +51,7 @@ func unloadAfter(cfg *config.Config) time.Duration {
 // speechModels are the daemon's speech engines that unload when idle.
 type speechModels struct {
 	states []func() idle.State
+	more   []func() []idle.State // areas with several engines (TTS)
 	closes []func() error
 	after  func() time.Duration
 }
@@ -56,12 +61,7 @@ type speechModels struct {
 // them. Areas without an engine are left alone.
 func manageSpeech(d *core.Deps, impl map[string]string, rl reloaders, after func() time.Duration) *speechModels {
 	m := &speechModels{after: after}
-	// Unloading only lowers the daemon's memory if the freed heap goes back
-	// to the OS: the engines' (C) and the recordings' (Go).
-	o := idle.Options{After: after, OnUnload: func() {
-		memtrim.Trim()
-		debug.FreeOSMemory()
-	}}
+	o := idleOptions(after)
 	add := func(h interface {
 		State() idle.State
 		Close() error
@@ -79,12 +79,24 @@ func manageSpeech(d *core.Deps, impl map[string]string, rl reloaders, after func
 		d.VAD = idle.VAD{H: h}
 		add(h)
 	}
-	if d.TTS != nil && rl.tts != nil {
-		h := idle.New("tts", impl["tts"], d.TTS, rl.tts, o)
-		d.TTS = idle.TTS{H: h}
-		add(h)
-	}
 	return m
+}
+
+// idleOptions are the idle-unloading options of every speech engine.
+func idleOptions(after func() time.Duration) idle.Options {
+	// Unloading only lowers the daemon's memory if the freed heap goes back
+	// to the OS: the engines' (C) and the recordings' (Go).
+	return idle.Options{After: after, OnUnload: func() {
+		memtrim.Trim()
+		debug.FreeOSMemory()
+	}}
+}
+
+// addTTS reports the text-to-speech engines in status and closes them with
+// the rest.
+func (m *speechModels) addTTS(t *ttsEngines) {
+	m.more = append(m.more, t.States)
+	m.closes = append(m.closes, t.Close)
 }
 
 // Close closes every engine, loaded or not.
@@ -98,8 +110,14 @@ func (m *speechModels) Close() {
 // Status is the models part of status.get.
 func (m *speechModels) Status() api.ModelsStatus {
 	st := api.ModelsStatus{UnloadAfter: m.after().String()}
+	var all []idle.State
 	for _, f := range m.states {
-		s := f()
+		all = append(all, f())
+	}
+	for _, f := range m.more {
+		all = append(all, f()...)
+	}
+	for _, s := range all {
 		st.Models = append(st.Models, api.ModelState{
 			Name: s.Name, Engine: s.Engine, Loaded: s.Loaded, Since: s.Since, Loads: s.Loads, InUse: s.InUse,
 		})

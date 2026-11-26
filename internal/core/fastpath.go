@@ -217,3 +217,45 @@ func stripFillers(text string) string {
 	}
 	return strings.Join(tokens, " ")
 }
+
+// PersonaSwitcher switches the default persona for PersonaRule. The daemon's
+// sets personas.default through Settings and applies it at once.
+type PersonaSwitcher interface {
+	// Find returns the ID of the persona a spoken name refers to, given as
+	// normalized words ("klaus", "lucy"), or false.
+	Find(name string) (id string, ok bool)
+	// Switch makes id the default persona and returns what to say back,
+	// which is spoken in the new persona's voice.
+	Switch(ctx context.Context, id string) (reply string, err error)
+}
+
+// switchVerbs start a persona switch: "switch to Klaus", "use Lucy", "change
+// persona to Pettigrew", "let me talk to Ashford".
+var switchVerbs = [][]string{
+	{"switch", "persona", "to"}, {"change", "persona", "to"}, {"set", "persona", "to"},
+	{"switch", "over", "to"}, {"switch", "back", "to"}, {"switch", "to"}, {"change", "to"}, {"swap", "to"},
+	{"let", "me", "talk", "to"}, {"let", "me", "speak", "to"}, {"talk", "to"}, {"speak", "to"},
+	{"bring", "in"}, {"use"},
+}
+
+// PersonaRule matches "switch to <persona>", "use <persona>" and close
+// variants for a persona s knows by that name. Anything else, such as "use
+// Google", is not matched and falls through to the next rule or the AI.
+func PersonaRule(s PersonaSwitcher) FastRule {
+	return FastRule{Name: "persona", Permission: plugins.Act, Match: func(text string) (FastAction, bool) {
+		w := dropWords(dictation.NormWords(text), "please", "the", "my")
+		rest, ok := stripPrefix(w, switchVerbs)
+		if !ok {
+			return nil, false
+		}
+		rest = dropWords(rest, "persona", "voice", "butler", "assistant", "instead", "now")
+		if len(rest) == 0 {
+			return nil, false
+		}
+		id, ok := s.Find(strings.Join(rest, " "))
+		if !ok {
+			return nil, false
+		}
+		return func(ctx context.Context, _ *Pipeline) (string, error) { return s.Switch(ctx, id) }, true
+	}}
+}

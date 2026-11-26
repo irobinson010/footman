@@ -34,6 +34,7 @@
   "personas.listening": [
     "ashford"
   ],
+  "replies.notify": true,
   "replies.quiet": false,
   "replies.quiet_hours": "",
   "replies.speak": "when-voice",

@@ -49,6 +49,10 @@ type Env struct {
 	// Hardware and Engines are what accel.Detect and accel.Engines return.
 	Hardware accel.Hardware
 	Engines  map[string][]string
+	// Voices are the catalog IDs of the default persona's voice, its
+	// pronunciation lexicon first. They are only downloaded: the voice runs
+	// on the CPU, so there is nothing to warm up or compare.
+	Voices []string
 
 	// Step reports one line of progress.
 	Step func(format string, a ...any)
@@ -138,6 +142,7 @@ func Run(ctx context.Context, env Env) (Result, error) {
 	if cfg.Bool("input.wake_word") {
 		fetch = append(fetch, WakeModel)
 	}
+	fetch = append(fetch, env.Voices...)
 	if err := env.fetch(ctx, fetch...); err != nil {
 		return res, err
 	}
