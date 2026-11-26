@@ -575,8 +575,8 @@ func (s *speaker) Finish() error {
 func (s *speaker) Abort() {
 	s.cancel()
 	s.closeIn.Do(func() { close(s.sentences) })
-	<-s.synthDone
-	<-s.playDone
+	_ = <-s.synthDone
+	_ = <-s.playDone
 }
 
 type speechError struct {
