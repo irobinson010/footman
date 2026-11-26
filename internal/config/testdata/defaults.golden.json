@@ -1,6 +1,9 @@
 {
   "ai.mode": "cloud",
   "ai.provider": "claude",
+  "audio.agc": true,
+  "audio.agc_max_gain_db": 24,
+  "audio.prefer_echo_cancel": false,
   "coaching.enabled": false,
   "context.cloud": [],
   "context.local": [],

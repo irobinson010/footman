@@ -73,6 +73,9 @@ var schema = []Key{
 	{Path: "input.command.mode", Type: String, Default: "hold", Enum: []string{"hold", "toggle"}, Description: "Command hotkey: hold (hold to talk, releasing ends) or toggle (tap to talk; the end of speech or a second tap ends).", Reload: Restart},
 	{Path: "input.wake_word", Type: Bool, Default: true, Description: "Listen for the wake word.", VoiceSettable: true, Reload: Live},
 	{Path: "input.microphone", Type: String, Default: "default", Description: "Microphone device name, or \"default\".", Reload: Live},
+	{Path: "audio.agc", Type: Bool, Default: true, Description: "Normalise the microphone level before wake-word and speech detection, so a quiet microphone still works (ADR-0035).", Reload: Restart},
+	{Path: "audio.agc_max_gain_db", Type: Float, Default: 24.0, Min: f(0), Max: f(40), Description: "Most the level normaliser may raise a quiet microphone, in dB.", Reload: Restart},
+	{Path: "audio.prefer_echo_cancel", Type: Bool, Default: false, Description: "When input.microphone is \"default\", use an echo-cancelling source (such as PipeWire's echo-cancel) if one is present.", Reload: Restart},
 
 	{Path: "dictation.cleanup", Type: String, Default: "simple", Enum: onOff, Description: "Transcript cleanup level.", VoiceSettable: true, Reload: Live},
 	{Path: "dictation.commands", Type: String, Default: "simple", Enum: onOff, Description: "Spoken editing commands such as \"new line\".", VoiceSettable: true, Reload: Live},

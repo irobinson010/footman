@@ -155,6 +155,14 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	pcfg := pipelineConfig(cfg)
+	if pcfg.Mic == "" && cfg.Bool("audio.prefer_echo_cancel") {
+		if devs, err := deps.Platform.Audio().Inputs(ctx); err == nil {
+			if d, ok := echoCancelSource(devs); ok {
+				logf("using echo-cancelling microphone %q", d.Name)
+				pcfg.Mic = d.ID
+			}
+		}
+	}
 	p, err := core.New(deps, pcfg)
 	if err != nil {
 		return err
@@ -424,6 +432,8 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		CommandHotkey: cfg.String("input.command.key"),
 		CommandMode:   core.TalkMode(cfg.String("input.command.mode")),
 		Mic:           mic,
+		AGC:           cfg.Bool("audio.agc"),
+		AGCMaxGainDB:  cfg.Float("audio.agc_max_gain_db"),
 		Insert:        dictation.InsertMode(cfg.String("dictation.insert")),
 		Language:      cfg.String("user.language"),
 		NoCommands:    cfg.String("dictation.commands") == "off",
