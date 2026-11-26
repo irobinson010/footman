@@ -18,6 +18,13 @@ const (
 	MaxLinesBytes = 64 << 10
 	// MaxLineRunes caps one spoken line.
 	MaxLineRunes = 240
+	// MaxPronounce caps the entries of [pronounce].
+	MaxPronounce = 128
+	// MaxPronounceKeyRunes and MaxPronounceKeyWords cap a pronounce key.
+	MaxPronounceKeyRunes = 40
+	MaxPronounceKeyWords = 4
+	// MaxPronounceValueRunes caps a respelling.
+	MaxPronounceValueRunes = 80
 	// MaxLinesPerKind caps the lines of one kind.
 	MaxLinesPerKind = 64
 	// MaxPackBytes caps the whole pack, voice weights included.
@@ -54,6 +61,9 @@ type Pack struct {
 	AddressForm AddressSpec
 	Voice       Voice
 	Style       Style
+	// Pronounce maps a word or phrase (lower case) to a plain-text English
+	// respelling the voice should say instead; nil when the pack has none.
+	Pronounce map[string]string
 
 	styleText string
 	lines     map[string]*lineSet // by language

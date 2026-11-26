@@ -177,7 +177,7 @@ func (t *TTS) Speak(ctx context.Context, text string, v speech.Voice) (speech.Au
 	t.active.Add(1)
 	t.mu.Unlock()
 
-	pieces := splitSentences(NormalizeText(text), t.o.FirstWords, maxWords)
+	pieces := splitSentences(newRespeller(v.Respell).apply(NormalizeText(text)), t.o.FirstWords, maxWords)
 	format := audio.Format{SampleRate: m.rate, Channels: 1}
 	pause := make([]float32, int(t.o.SentencePause*float32(m.rate)))
 	ctx, cancel := context.WithCancel(ctx)

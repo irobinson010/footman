@@ -96,6 +96,13 @@ type Voice struct {
 	Language string
 	// Speed scales the speaking rate; 0 means the voice default (1.0).
 	Speed float32
+	// Respell maps a word or phrase (lower case, whole words) to an English
+	// respelling made of common words, for names and foreign words the
+	// engine would otherwise mispronounce or spell out letter by letter
+	// ("jawohl" -> "yah vole"). Engines that phonemize themselves apply it
+	// before grapheme-to-phoneme conversion, longest phrase first; others
+	// ignore it. Nil means no respellings.
+	Respell map[string]string
 }
 
 // VAD (voice activity detection) finds the stretches of speech in a stream of
