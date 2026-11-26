@@ -43,6 +43,21 @@ const (
 	turnWait = 30 * time.Second
 )
 
+// Wake-word command capture defaults.
+const (
+	// DefaultMinCommand is the least speech after a wake word that counts as
+	// a command; the daemon uses it, so a lone wake word is dropped.
+	DefaultMinCommand = 250 * time.Millisecond
+	// DefaultMaxCommand caps the audio of one spoken command.
+	DefaultMaxCommand = time.Minute
+	// DefaultWakeWindow is how long a wake word waits for a command.
+	DefaultWakeWindow = 8 * time.Second
+	// wakePreRoll is kept from before the end of the wake word, because the
+	// spotter reports it a little late and the first word after it may
+	// already have started.
+	wakePreRoll = 250 * time.Millisecond
+)
+
 // ErrNoSpeech is published (as a Failure) when a push-to-talk recording held
 // no speech, so nothing was transcribed.
 var ErrNoSpeech = errors.New("no speech heard")
@@ -96,6 +111,7 @@ func (p *Pipeline) talkKey(ctx context.Context, recs *sync.WaitGroup, ev platfor
 	rctx, cancel := context.WithCancel(ctx)
 	r := &recording{trig: trig, hotkey: ev.Hotkey, mode: mode, cancel: cancel, released: make(chan struct{})}
 	p.rec = r
+	p.pauseWakeLocked() // the microphone is the recording's alone
 	if p.busy == 0 {
 		p.setStateLocked(Listening, 0)
 	}
@@ -115,6 +131,7 @@ func (p *Pipeline) record(ctx, rctx context.Context, r *recording) {
 		p.mu.Lock()
 		if p.rec == r {
 			p.rec = nil
+			p.notifyLocked()
 		}
 		if !handled && p.busy == 0 && p.rec == nil && p.armed == 0 && p.state == Listening {
 			p.setStateLocked(Idle, 0)
@@ -207,6 +224,7 @@ loop:
 	p.mu.Lock()
 	if p.rec == r {
 		p.rec = nil // the next press starts a new recording at once
+		p.notifyLocked()
 	}
 	p.mu.Unlock()
 
@@ -256,7 +274,7 @@ func (p *Pipeline) handleRecorded(ctx context.Context, r *recording, seg speech.
 func (p *Pipeline) idleMic() platform.TrayStatus {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.mic.pttOnly || p.muted || !p.mic.started || p.mic.ended {
+	if p.mic.pttOnly || p.wakeOff || p.muted || !p.mic.started || p.mic.ended {
 		return platform.MicOff
 	}
 	return platform.WakeListening

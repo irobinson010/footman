@@ -17,6 +17,8 @@ import (
 func init() {
 	register(command{name: "status", summary: "show whether the daemon is running and what it is doing", run: cmdStatus})
 	register(command{name: "say", summary: "send a command (or dictation) to footman as text", run: cmdSay})
+	register(command{name: "listen", summary: "turn always-on wake-word listening on or off", run: cmdToggle("listen", "wake")})
+	register(command{name: "quiet", summary: "turn quiet mode (no sounds, replies shown not spoken) on or off", run: cmdToggle("quiet", "quiet")})
 	register(command{name: "stop", summary: "stop everything: cancel jobs and speech, mute the microphone", run: cmdStop})
 	register(command{name: "events", summary: "stream live events from the daemon", run: cmdEvents})
 }
@@ -89,6 +91,9 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	_, _ = fmt.Fprintf(stdout, "footman %s is running (pid %d, up %s, API %s)\n", s.Version, s.PID, uptime, s.API)
 	_, _ = fmt.Fprintf(stdout, "  state:       %s\n", s.State)
 	_, _ = fmt.Fprintf(stdout, "  microphone:  %s\n", mic)
+	if s.Quiet {
+		_, _ = fmt.Fprintf(stdout, "  quiet mode:  on\n")
+	}
 	if len(s.Hotkeys) > 0 {
 		var keys []string
 		for _, h := range s.Hotkeys {
@@ -201,6 +206,46 @@ func cmdStop(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	_, _ = fmt.Fprintf(stdout, "Stopped everything: cancelled %s and %s. The microphone is muted.\n",
 		plural(len(res.Jobs), "job"), plural(res.Turns, "request"))
 	return 0
+}
+
+// cmdToggle makes the command that switches one system.set_listening setting
+// (wake or quiet) on or off.
+func cmdToggle(name, setting string) func(context.Context, []string, io.Writer, io.Writer) int {
+	return func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+		fs, socket := clientFlags(name, "on|off", stderr)
+		if code, ok := parseFlags(fs, args); !ok {
+			return code
+		}
+		if fs.NArg() != 1 || (fs.Arg(0) != "on" && fs.Arg(0) != "off") {
+			fs.Usage()
+			return 2
+		}
+		on := fs.Arg(0) == "on"
+		var params api.ListeningParams
+		if setting == "wake" {
+			params.Wake = &on
+		} else {
+			params.Quiet = &on
+		}
+		c := dial(ctx, *socket, stderr)
+		if c == nil {
+			return 1
+		}
+		defer func() { _ = c.Close() }()
+		var res api.ListeningResult
+		if err := c.Call(ctx, "system.set_listening", params, &res); err != nil {
+			return fail(stderr, err)
+		}
+		_, _ = fmt.Fprintf(stdout, "Wake-word listening is %s; quiet mode is %s.\n", onOff(res.Wake), onOff(res.Quiet))
+		return 0
+	}
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 func plural(n int, word string) string {
