@@ -28,13 +28,31 @@ type Segment struct {
 	Audio Audio
 }
 
+// WakeKind says what a WakeEvent reports.
+type WakeKind string
+
+const (
+	// WakeKindWake is a wake word (the zero value of WakeEvent.Kind is
+	// treated the same).
+	WakeKindWake WakeKind = "wake"
+	// WakeKindBreakGlass is the break-glass stop phrase ("stop everything",
+	// "cancel everything") spoken right after a wake word (ADR-0017). A
+	// spotter never reports it without the wake word.
+	WakeKindBreakGlass WakeKind = "break-glass"
+)
+
 // WakeEvent reports that a wake word was heard.
 type WakeEvent struct {
-	// Keyword is the wake word that matched, such as "ashford".
+	// Kind is WakeKindWake (or empty) for a wake word, WakeKindBreakGlass
+	// for the stop phrase that followed one.
+	Kind WakeKind
+	// Keyword is the wake word that matched, such as "ashford"; for a
+	// break-glass event, the phrase, such as "stop everything".
 	Keyword string
 	// At is the offset from the start of the input stream where it ended.
 	At time.Duration
-	// Score is the engine's confidence in [0, 1].
+	// Score is the engine's confidence in [0, 1], or 0 if the engine does
+	// not report one.
 	Score float32
 }
 

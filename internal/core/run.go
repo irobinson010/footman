@@ -268,9 +268,16 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 
 	for segs != nil || wakes != nil {
 		select {
-		case _, ok := <-wakes:
+		case w, ok := <-wakes:
 			if !ok {
 				wakes = nil
+				continue
+			}
+			if w.Kind == speech.WakeKindBreakGlass {
+				// The spotter heard the stop phrase right after a wake
+				// word (ADR-0017): stop at once, without waiting for the
+				// utterance to be transcribed.
+				p.stop(StopVoice)
 				continue
 			}
 			p.Arm(TriggerWake)

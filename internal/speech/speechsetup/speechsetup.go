@@ -36,6 +36,10 @@ const (
 // with the speech-to-text model.
 const VADModel = "silero-vad"
 
+// WakeModel is the wake-word keyword-spotting model; setup fetches it when
+// input.wake_word is on.
+const WakeModel = "kws-zipformer-gigaspeech"
+
 // Env is everything Run needs from the machine.
 type Env struct {
 	// ConfigPath is the config file. It must exist.
@@ -130,7 +134,11 @@ func Run(ctx context.Context, env Env) (Result, error) {
 	res.Choice = primary
 	env.Step("speech       %s", primary)
 
-	if err := env.fetch(ctx, primary.Model, VADModel); err != nil {
+	fetch := []string{primary.Model, VADModel}
+	if cfg.Bool("input.wake_word") {
+		fetch = append(fetch, WakeModel)
+	}
+	if err := env.fetch(ctx, fetch...); err != nil {
 		return res, err
 	}
 

@@ -39,6 +39,8 @@
   "speech.tts.engine": "persona",
   "speech.unload_after": "10m",
   "speech.vad.min_silence": 0.5,
+  "speech.wake.boost": 2,
+  "speech.wake.threshold": 0.05,
   "user.language": "en",
   "user.name": "",
   "version": 1,

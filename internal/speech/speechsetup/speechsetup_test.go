@@ -138,7 +138,7 @@ func TestFastGPUKeepsAuto(t *testing.T) {
 	if got := r.cfgText(); strings.Contains(got, "accelerator") {
 		t.Fatalf("config changed: %q", got)
 	}
-	if want := []string{"whisper-turbo-q5", "silero-vad", "parakeet-tdt-0.6b-v2"}; strings.Join(r.fetched, ",") != strings.Join(want, ",") {
+	if want := []string{"whisper-turbo-q5", "silero-vad", "kws-zipformer-gigaspeech", "parakeet-tdt-0.6b-v2"}; strings.Join(r.fetched, ",") != strings.Join(want, ",") {
 		t.Fatalf("fetched %v, want %v", r.fetched, want)
 	}
 	if res.GPU.Median != 150*time.Millisecond || res.CPU.Median != 600*time.Millisecond {
@@ -239,6 +239,17 @@ func TestCPUOnlyMachineFetchesAndSkipsWarmup(t *testing.T) {
 	}
 	if res.Choice.Engine != accel.EngineSherpaParakeet || len(r.opened) != 0 {
 		t.Fatalf("res %+v opened %v", res, r.opened)
+	}
+	if strings.Join(r.fetched, ",") != "parakeet-tdt-0.6b-v2,silero-vad,kws-zipformer-gigaspeech" {
+		t.Fatalf("fetched %v", r.fetched)
+	}
+}
+
+func TestNoWakeWordSkipsItsModel(t *testing.T) {
+	r := newRig(t, "[input]\nwake_word = false\n")
+	r.env.Hardware = accel.Hardware{RAM: 16 << 30, CPUs: 8}
+	if _, err := Run(context.Background(), r.env); err != nil {
+		t.Fatal(err)
 	}
 	if strings.Join(r.fetched, ",") != "parakeet-tdt-0.6b-v2,silero-vad" {
 		t.Fatalf("fetched %v", r.fetched)

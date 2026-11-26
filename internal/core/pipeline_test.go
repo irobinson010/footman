@@ -512,6 +512,33 @@ func TestBreakGlassCancelsJob(t *testing.T) {
 	}
 }
 
+// A break-glass event from the wake-word spotter stops at once, without a
+// transcript.
+func TestBreakGlassEventStops(t *testing.T) {
+	r := newRig(t, nil)
+	j := r.startHeldJob()
+	stops := bus.Subscribe(r.bus, core.StopDone, 4)
+	r.wake.Kind, r.wake.Keyword = speech.WakeKindBreakGlass, "stop everything"
+	r.wake.Schedule(0)
+	r.say(2)
+
+	ctx, cancel := context.WithCancel(r.ctx())
+	done := make(chan error, 1)
+	go func() { done <- r.p.Run(ctx) }()
+	ev := await(t, stops, func(core.Stopped) bool { return true })
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v", err)
+	}
+	waitCancelled(t, j)
+	if ev.Source != core.StopVoice || !r.p.Muted() {
+		t.Errorf("Stopped = %+v, muted %v", ev, r.p.Muted())
+	}
+	if n := len(r.stt.Inputs()); n != 0 {
+		t.Errorf("STT called %d times", n)
+	}
+}
+
 // Stop (the hotkey and tray path) also cancels jobs.
 func TestStopCancelsJob(t *testing.T) {
 	r := newRig(t, nil)
