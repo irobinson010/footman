@@ -133,6 +133,25 @@ func (r *rig) path() []core.State {
 	}
 }
 
+// pathTo is path for a turn that ends asynchronously: it waits (up to 2 s)
+// until last has been entered, then returns the states so far.
+func (r *rig) pathTo(last core.State) []core.State {
+	r.t.Helper()
+	var out []core.State
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-r.states.C():
+			out = append(out, ev.Data.To)
+			if ev.Data.To == last {
+				return append(out, r.path()...)
+			}
+		case <-timeout:
+			return out
+		}
+	}
+}
+
 func (r *rig) input() *pfake.Input       { return r.plat.Input().(*pfake.Input) }
 func (r *rig) launcher() *pfake.Launcher { return r.plat.Launcher().(*pfake.Launcher) }
 func (r *rig) speaker() *pfake.Audio     { return r.plat.Audio().(*pfake.Audio) }
