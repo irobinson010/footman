@@ -351,7 +351,7 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
 		return d, nil, rl, err
 	}
-	if cfg.String("ai.provider") == claude.Name && !(devFakes && impl["llm"] == fakeName) {
+	if cfg.String("ai.provider") == claude.Name && (!devFakes || impl["llm"] != fakeName) {
 		d.LLM, impl["llm"] = newClaude(cfg, d.Platform), claude.Name
 	}
 	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), nil, devFakes); err != nil {
