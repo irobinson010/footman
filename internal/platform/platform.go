@@ -73,6 +73,17 @@ type Input interface {
 	Paste(ctx context.Context, text string) error
 }
 
+// InputEditing is an optional extension of Input for dictation formatting
+// (ADR-0032). Dictation checks for it with a type assertion and falls back to
+// plain text when an Input lacks it.
+type InputEditing interface {
+	// FocusedTerminal reports whether the focused app is a terminal
+	// emulator. It reports false when it cannot tell.
+	FocusedTerminal(ctx context.Context) bool
+	// Backspace presses BackSpace n times, to take back text just inserted.
+	Backspace(ctx context.Context, n int) error
+}
+
 // InputSetup is an optional extension of Input for desktops that need a
 // one-time setup step. Setup checks for it with a type assertion.
 type InputSetup interface {

@@ -342,6 +342,36 @@ func (in *Input) pasteKeysFor(ctx context.Context) []uint32 {
 	return pasteKeys(app)
 }
 
+// FocusedTerminal implements platform.InputEditing.
+func (in *Input) FocusedTerminal(ctx context.Context) bool {
+	if in.windows == nil {
+		return false
+	}
+	wctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	w, err := in.windows.Active(wctx)
+	return err == nil && isTerminal(w.App)
+}
+
+// Backspace implements platform.InputEditing.
+func (in *Input) Backspace(ctx context.Context, n int) error {
+	in.insertMu.Lock()
+	defer in.insertMu.Unlock()
+	p, s, err := in.remote.ensure(ctx)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := in.remote.tap(ctx, p, s, keysymBackSpace); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func pasteKeys(app string) []uint32 {
 	if isTerminal(app) {
 		return []uint32{keysymControlL, keysymShiftL, 'v'}

@@ -22,16 +22,20 @@ type Input struct {
 
 	setupBinary string
 	prepared    int
+	backspaces  []int
 	resets      []string
 	// Err, if set, is returned by Type, Paste, SetupInput, BindHotkeys and
 	// PrepareInsert.
 	Err error
+	// Terminal is what FocusedTerminal reports.
+	Terminal bool
 	// Files is what SetupInput reports.
 	Files platform.InputFiles
 }
 
 var _ platform.InputSetup = (*Input)(nil)
 var _ platform.InputReset = (*Input)(nil)
+var _ platform.InputEditing = (*Input)(nil)
 
 type hotkeySub struct {
 	mu     sync.Mutex // held while sending, and to close ch
@@ -94,6 +98,31 @@ func (in *Input) Press(combo string, pressed bool) int {
 // Type implements platform.Input by recording text.
 func (in *Input) Type(ctx context.Context, text string) error {
 	return in.record(ctx, &in.typed, text)
+}
+
+// FocusedTerminal implements platform.InputEditing.
+func (in *Input) FocusedTerminal(context.Context) bool {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.Terminal
+}
+
+// Backspace implements platform.InputEditing by recording n.
+func (in *Input) Backspace(ctx context.Context, n int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.backspaces = append(in.backspaces, n)
+	return in.Err
+}
+
+// Backspaces returns the BackSpace counts requested, in order.
+func (in *Input) Backspaces() []int {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return slices.Clone(in.backspaces)
 }
 
 // Paste implements platform.Input by recording text.
