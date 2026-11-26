@@ -70,7 +70,7 @@ func newRig(t *testing.T, edit func(*core.Deps, *core.Config)) *rig {
 	}
 	cfg := core.Config{
 		DictateHotkey: "F8", CommandHotkey: "Shift+F8", StopHotkey: "Ctrl+F8",
-		Ack: audio.Clip{Format: audio.Speech, Samples: []float32{0.1, 0.1}},
+		Ack: core.FixedAck(audio.Clip{Format: audio.Speech, Samples: []float32{0.1, 0.1}}),
 	}
 	if edit != nil {
 		edit(&d, &cfg)
