@@ -162,7 +162,7 @@ func onnxFile(t *testing.T, graph int, meta map[string]string) string {
 		return append(b, payload...)
 	}
 	var b []byte
-	b = binary.AppendUvarint(b, 1<<3|0) // ir_version
+	b = binary.AppendUvarint(b, 1<<3) // ir_version (field 1, varint)
 	b = binary.AppendUvarint(b, 8)
 	b = field(b, 7, make([]byte, graph)) // graph
 	for k, v := range meta {

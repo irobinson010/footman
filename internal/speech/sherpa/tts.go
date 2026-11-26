@@ -25,6 +25,14 @@ func init() {
 	}
 }
 
+// maxWords is the longest sentence synthesized at once, in words; longer
+// ones are cut at their pauses (S3-02: Kokoro's memory grows with the
+// longest piece it has seen).
+const maxWords = 25
+
+// errNoLexicon reports a model with no pronunciation lexicon to use.
+var errNoLexicon = errors.New("no pronunciation lexicon")
+
 // TTS is the sherpa-onnx text-to-speech engine, registered as "kokoro" and
 // "piper" (ADR-0037). It loads Kokoro and Piper/VITS models, the stock
 // voices and fine-tuned ones alike, and keeps each model it has been asked
@@ -301,13 +309,13 @@ func (t *TTS) g2pLocked(m *ttsModel, acc accent) (*g2p, error) {
 			return nil, fmt.Errorf("%s: %w", t.name, err)
 		}
 	} else if len(primary) == 0 {
-		return nil, fmt.Errorf("%s: %w for %s: %v", t.name, errNoLexicon, m.files.dir, err)
+		return nil, fmt.Errorf("%s: %w for %s: %w", t.name, errNoLexicon, m.files.dir, err)
 	}
-	tokens, err := loadTokens(m.files.tokens)
+	raw, err := os.ReadFile(m.files.tokens)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", t.name, err)
 	}
-	g := newG2P(misaki, acc, primary, fallback, tokens)
+	g := newG2P(misaki, acc, primary, fallback, parseTokens(string(raw)))
 	m.g2p[acc] = g
 	return g, nil
 }
