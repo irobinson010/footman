@@ -55,7 +55,7 @@ const (
 	// wakePreRoll is kept from before the end of the wake word, because the
 	// spotter reports it a little late and the first word after it may
 	// already have started.
-	wakePreRoll = 250 * time.Millisecond
+	wakePreRoll = 600 * time.Millisecond
 )
 
 // ErrNoSpeech is published (as a Failure) when a push-to-talk recording held
