@@ -47,6 +47,12 @@ type Platform struct {
 	controls []string
 	// ControlErr, if set, is returned by the volume and media methods.
 	ControlErr error
+	// Sys is what Facts and Status report (platform.SystemInfo); SysErr, if
+	// set, is returned by both. StatusTop records Status's last top.
+	Sys       platform.SystemFacts
+	SysStatus platform.SystemStatus
+	SysErr    error
+	StatusTop int
 }
 
 // New builds a Platform from cfg (key "root": the directory under which Paths
@@ -99,6 +105,23 @@ func (p *Platform) Secrets() platform.Secrets { return p.secrets }
 func (p *Platform) Paths() platform.Paths { return p.paths }
 
 var _ platform.VolumeControl = (*Platform)(nil)
+var _ platform.SystemInfo = (*Platform)(nil)
+
+// Facts implements platform.SystemInfo with p.Sys.
+func (p *Platform) Facts(context.Context) (platform.SystemFacts, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.Sys, p.SysErr
+}
+
+// Status implements platform.SystemInfo with p.SysStatus.
+func (p *Platform) Status(_ context.Context, top int) (platform.SystemStatus, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.StatusTop = top
+	return p.SysStatus, p.SysErr
+}
+
 var _ platform.MediaControl = (*Platform)(nil)
 
 // ChangeVolume implements platform.VolumeControl.

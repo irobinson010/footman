@@ -145,6 +145,12 @@ func expandContext(items []string) []string {
 	return out
 }
 
+// ContextAllows reports whether a context.local or context.cloud list lets
+// the AI see item ("system", "clipboard", ...), counting "all".
+func ContextAllows(list []string, item string) bool {
+	return slices.Contains(expandContext(list), item)
+}
+
 // ParseValue converts spoken text into a value of the key's type, validated
 // against the schema. Errors are phrased to be read back to the user.
 func ParseValue(path, text string) (any, error) {

@@ -17,6 +17,7 @@ windows (KDE), clipboard, audio and the systemd user service.
 | Windows | KWin scripting over D-Bus (KDE Plasma only; `ErrUnsupported` elsewhere) |
 | Clipboard | `wl-copy` / `wl-paste` (package `wl-clipboard`) |
 | Audio | `pactl` (list, watch), `parec` (capture) and `pacat` (playback) from `pulseaudio-utils`; also works on PipeWire via pipewire-pulse (ADR-0026) |
+| System info | `platform.SystemInfo` (ADR-0043). `Facts`: `/etc/os-release`, `/proc/cpuinfo`, `/proc/meminfo`, the session's environment, and `lspci -mm` run once (else `/proc/driver/nvidia`), cached. `Status`: every `/proc/<pid>/stat` sampled twice 0.5 s apart (names only, never command lines), `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, statfs of local filesystems in `/proc/self/mounts`, `/sys/class/power_supply`, and `nvidia-smi` when installed |
 | Service | systemd user unit `$XDG_CONFIG_HOME/systemd/user/footman.service`, started with the graphical session; `systemctl --user` enables, (re)starts, stops and disables it (ADR-0030) |
 
 Pure Go, no cgo.

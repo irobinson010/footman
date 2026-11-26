@@ -43,6 +43,10 @@ func TestVoiceChangeTightenLoosen(t *testing.T) {
 		{"context.cloud", list("clipboard"), list("selection"), VoiceNeedsClick},
 		{"context.local", list("clipboard"), list("all"), VoiceNeedsClick},
 		{"context.local", list("window_title", "clipboard", "selection"), list("all"), VoiceNeedsClick}, // "all" also covers items added later
+		{"context.cloud", list("system"), list(), VoiceAllowed},                                         // "stop telling the AI about my computer"
+		{"context.cloud", list(), list("system"), VoiceNeedsClick},
+		{"context.cloud", list("all"), list("window_title", "clipboard", "selection"), VoiceAllowed}, // all minus system
+		{"context.local", list("system", "clipboard"), list("system"), VoiceAllowed},
 		// No safe direction: always a click.
 		{"web.listen", "127.0.0.1:7878", "127.0.0.1:7879", VoiceNeedsClick},
 		{"ai.providers.x.url", "", "http://x", VoiceNeedsClick},
@@ -66,6 +70,27 @@ func TestVoicePolicyDirectionless(t *testing.T) {
 	}
 	if _, v, _ := VoicePolicy("ai.providers.x.api_key"); v != VoiceNever {
 		t.Errorf("api_key = %v", v)
+	}
+}
+
+func TestContextAllows(t *testing.T) {
+	for _, c := range []struct {
+		list []string
+		item string
+		want bool
+	}{
+		{nil, "system", false},
+		{[]string{"system"}, "system", true},
+		{[]string{"clipboard"}, "system", false},
+		{[]string{"all"}, "system", true},
+		{[]string{"all"}, "clipboard", true},
+	} {
+		if got := ContextAllows(c.list, c.item); got != c.want {
+			t.Errorf("ContextAllows(%v, %q) = %v, want %v", c.list, c.item, got, c.want)
+		}
+	}
+	if d := Defaults().Strings("context.cloud"); !ContextAllows(d, "system") {
+		t.Errorf("context.cloud defaults to %v, want system on (ADR-0043)", d)
 	}
 }
 

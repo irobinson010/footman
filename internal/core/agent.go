@@ -11,6 +11,7 @@ import (
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
+	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/plugins"
 )
 
@@ -102,11 +103,12 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	if p.d.Worker != nil {
 		defs = append(defs, startTaskDef)
 	}
-	msgs := []llm.Message{{Role: llm.User, Text: text}}
+	system, withSystem := p.systemPrompt()
+	msgs := []llm.Message{{Role: llm.User, Text: p.userTurn(text, withSystem)}}
 	untrusted := false
 	for range p.cfg.MaxToolRounds {
 		p.setState(id, Thinking)
-		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: p.Persona().System, Messages: msgs, Tools: defs})
+		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: system, Messages: msgs, Tools: defs})
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
@@ -211,14 +213,19 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 }
 
 // allTools returns the configured tools plus the built-in fast-path actions
-// (open_url, open_app, quick_action), unless a configured tool already uses the name.
+// (open_url, open_app, quick_action) and, when the platform can, the
+// read-only system_status, unless a configured tool already uses the name.
 func (p *Pipeline) allTools() []plugins.Tool {
 	all := append([]plugins.Tool(nil), p.d.Tools...)
 	have := map[string]bool{}
 	for _, t := range all {
 		have[t.Spec().Name] = true
 	}
-	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}, quickActionTool{p}} {
+	builtin := []plugins.Tool{openURLTool{p}, openAppTool{p}, quickActionTool{p}}
+	if _, ok := p.d.Platform.(platform.SystemInfo); ok {
+		builtin = append(builtin, systemStatusTool{p})
+	}
+	for _, t := range builtin {
 		if !have[t.Spec().Name] {
 			all = append(all, t)
 		}
