@@ -292,7 +292,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 ## 18. Privacy, providers, and memory
 
 - **Offline mode** is fully supported: Ollama plus local speech. A **local-first** mode is also supported, where it stays local unless you explicitly ask it to use the cloud ("ask the cloud model…").
-- **Context sharing** (window title, clipboard, selection) is off by default and enabled per item. There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
+- **Context sharing** (window title, clipboard, selection) is off by default and enabled per item. The exception is **`system`**: coarse facts about the machine (OS, desktop, hardware, locale, time zone) and the current time, on by default so answers fit this computer; no names, paths or content ([ADR-0043](adr/0043-system-context-and-status-tool.md)). The AI can also look at what the machine is doing now with the read-only `system_status` tool (process names only, never command lines). There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
 - **Memory** is opt-in, and can be viewed, edited, and deleted from the web UI **and by voice** ("what do you remember about me?", "forget that").
 - **Cost guardrails:** a monthly cap per provider. Footman warns as you approach it, then **asks when to remind you next**, so you don't get constant alerts.
 
@@ -643,8 +643,8 @@ monthly_usd = 10
 warn_at = 0.8
 
 [context]                        # what the AI may see besides your words
-local = []                       # e.g. ["window_title", "clipboard", "selection"] or ["all"]
-cloud = []
+local = ["system"]               # e.g. ["system", "window_title", "clipboard", "selection"] or ["all"]
+cloud = ["system"]               # system: OS, desktop, hardware, time (ADR-0043)
 
 [memory]
 enabled = false

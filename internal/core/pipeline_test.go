@@ -329,7 +329,7 @@ func TestCommandWithToolCall(t *testing.T) {
 	for _, d := range reqs[0].Tools {
 		names = append(names, d.Name)
 	}
-	equal(t, "tools offered", names, []string{"weather", "open_url", "open_app", "quick_action", core.StartTaskTool})
+	equal(t, "tools offered", names, []string{"weather", "open_url", "open_app", "quick_action", core.SystemStatusTool, core.StartTaskTool})
 	last := reqs[1].Messages[len(reqs[1].Messages)-1]
 	if last.Role != llm.ToolResult || last.ToolCallID != "c1" || last.Text != "sunny, 20C" {
 		t.Errorf("tool result message = %+v", last)

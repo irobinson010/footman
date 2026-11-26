@@ -1,0 +1,8 @@
+proc /proc proc rw 0 0
+/dev/nvme0n1p2 / ext4 rw,relatime 0 0
+/dev/nvme0n1p1 /boot/efi vfat rw 0 0
+/dev/nvme1n1 /mnt/big\040disk btrfs rw 0 0
+/dev/nvme1n1 /mnt/big\040disk/sub btrfs rw 0 0
+tmpfs /tmp tmpfs rw 0 0
+/dev/loop3 /snap/core/1 squashfs ro 0 0
+server:/x /net nfs4 rw 0 0

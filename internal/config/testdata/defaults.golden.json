@@ -5,8 +5,12 @@
   "audio.agc_max_gain_db": 24,
   "audio.prefer_echo_cancel": false,
   "coaching.enabled": false,
-  "context.cloud": [],
-  "context.local": [],
+  "context.cloud": [
+    "system"
+  ],
+  "context.local": [
+    "system"
+  ],
   "dictation.cleanup": "simple",
   "dictation.commands": "simple",
   "dictation.insert": "auto",
