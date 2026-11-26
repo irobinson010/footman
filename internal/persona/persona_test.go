@@ -226,7 +226,7 @@ func TestSystemPrompt(t *testing.T) {
 	p, _ := load(t, goodFS())
 	s := p.SystemPrompt(core)
 	open, closeAt, rule := strings.Index(s, "<persona-style>"), strings.Index(s, "</persona-style>"), strings.Index(s, core)
-	if !(open >= 0 && open < closeAt && closeAt < rule) {
+	if open < 0 || open >= closeAt || closeAt >= rule {
 		t.Fatalf("order wrong: %d %d %d\n%s", open, closeAt, rule, s)
 	}
 	if !strings.Contains(s, "Be terse.") {

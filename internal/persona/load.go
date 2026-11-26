@@ -2,6 +2,7 @@ package persona
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -161,11 +162,7 @@ func pathModel(v Voice) string {
 }
 
 func asStrict(err error, target **toml.StrictMissingError) bool {
-	se, ok := err.(*toml.StrictMissingError)
-	if ok {
-		*target = se
-	}
-	return ok
+	return errors.As(err, target)
 }
 
 func (p *Pack) fill(m *manifest, is *issues) {

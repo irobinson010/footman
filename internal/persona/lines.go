@@ -2,6 +2,7 @@ package persona
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -45,7 +46,8 @@ func parseLines(b []byte) (*lineSet, []string) {
 	dec := toml.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
-		if se, ok := err.(*toml.StrictMissingError); ok {
+		var se *toml.StrictMissingError
+		if errors.As(err, &se) {
 			var errs []string
 			for _, d := range se.Errors {
 				errs = append(errs, "unknown key "+strings.Join(d.Key(), "."))
