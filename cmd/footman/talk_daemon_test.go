@@ -34,4 +34,8 @@ func TestDaemonSwitchPersonaByVoice(t *testing.T) {
 		t.Errorf("second switch said %q", got)
 	}
 	d.log.waitFor(t, "persona: Klaus")
+	// Klaus took over Ashford's place as the listening persona.
+	if raw, err := os.ReadFile(d.config); err != nil || !strings.Contains(string(raw), `listening = ["klaus"]`) {
+		t.Errorf("config after the switch: %s %v", raw, err)
+	}
 }
