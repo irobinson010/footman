@@ -99,6 +99,23 @@ type (
 		State string `json:"state"`
 		Error string `json:"error"`
 	}
+	wakeData struct {
+		Keyword string  `json:"keyword"`
+		AtMS    float64 `json:"at_ms"`
+	}
+	wakeRejectedData struct {
+		Turn    uint64  `json:"turn"`
+		Reason  string  `json:"reason"`
+		AudioMS float64 `json:"audio_ms"`
+		STTMS   float64 `json:"stt_ms"`
+	}
+	outcomeData struct {
+		Turn    uint64 `json:"turn"`
+		Trigger string `json:"trigger"`
+		Route   string `json:"route"`
+		Handler string `json:"handler,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
 	micData struct {
 		Mic string `json:"mic"`
 	}
@@ -152,6 +169,12 @@ func eventData(data any) any {
 		return stopData{Source: string(d.Source), Jobs: jobs, Turns: d.Turns}
 	case core.Failure:
 		return failureData{Turn: d.Turn, State: d.State.String(), Error: d.Err}
+	case core.Wake:
+		return wakeData{Keyword: d.Keyword, AtMS: ms(d.At)}
+	case core.WakeRejection:
+		return wakeRejectedData{Turn: d.Turn, Reason: d.Reason, AudioMS: ms(d.Audio), STTMS: ms(d.Took)}
+	case core.Outcome:
+		return outcomeData{Turn: d.Turn, Trigger: d.Trigger.String(), Route: d.Route.String(), Handler: d.Handler, Error: d.Err}
 	case platform.TrayStatus:
 		return micData{Mic: micName(d)}
 	case core.JobEvent:

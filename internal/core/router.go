@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/irobinson010/footman/internal/dictation"
 )
@@ -136,6 +137,137 @@ func (r *Router) stripWake(tokens []string) []string {
 		}
 	}
 	return tokens
+}
+
+// wakeFillers may come before the wake word in a transcript MatchWake
+// accepts ("okay, Alfred, ..."), up to two of them. Other words may not: "the
+// Alfred Hitchcock film" is talk about Alfred, not to him.
+var wakeFillers = map[string]bool{
+	"um": true, "umm": true, "uh": true, "uhh": true, "uhm": true, "er": true, "erm": true,
+	"ah": true, "hmm": true, "mm": true, "oh": true, "okay": true, "ok": true, "so": true, "well": true,
+}
+
+// MatchWake is the second stage of the wake word (ADR-0041): it reports
+// whether text, the transcript of the audio from just before the wake word,
+// starts with one of the wake words, after at most two fillers such as "um"
+// or "okay", and returns what follows it. The match is loose, for the spellings
+// speech-to-text gives names: letters are compared with the spaces and
+// punctuation removed ("Hey, Foot man"), three wrong letters in ten are allowed
+// ("Ashferd"), or the consonants may sound the same ("Alford", "Esfort"),
+// and a first word
+// that is the last four or more letters of a wake word counts ("ford"), as
+// in stripWake.
+func (r *Router) MatchWake(text string) (rest string, ok bool) {
+	tokens := strings.Fields(text)
+	// Words that were only punctuation do not count towards the lead.
+	var idx []int
+	for i, t := range tokens {
+		if letters(t) != "" {
+			idx = append(idx, i)
+		}
+	}
+	for s := 0; s <= 2 && s < len(idx); s++ {
+		if s > 0 && !wakeFillers[letters(tokens[idx[s-1]])] {
+			break
+		}
+		// The closest match wins, so "Hey Foot man" takes all three words.
+		best, end := -1, 0
+		for _, p := range r.wake {
+			want := letters(strings.Join(p, ""))
+			got := ""
+			for k := 0; k <= len(p) && s+k < len(idx); k++ {
+				got += letters(tokens[idx[s+k]])
+				if d, ok := wakeLike(got, want); ok && (best < 0 || d < best) {
+					best, end = d, idx[s+k]
+				}
+			}
+		}
+		if best >= 0 {
+			return strings.Join(tokens[end+1:], " "), true
+		}
+		first := letters(tokens[idx[s]])
+		if len(first) < 4 {
+			continue
+		}
+		for _, p := range r.wake {
+			if last := letters(p[len(p)-1]); len(last) > len(first) && strings.HasSuffix(last, first) {
+				return strings.Join(tokens[idx[s]+1:], " "), true
+			}
+		}
+	}
+	return "", false
+}
+
+// letters returns the lower-case letters of w.
+func letters(w string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(w) {
+		if unicode.IsLetter(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// wakeLike reports whether got is close enough to the wake word want: at
+// most three letters in ten different (edit distance), or consonants that
+// sound the same (consonantCode) with about the same length. It also returns
+// the edit distance, to pick the closest of several matches.
+func wakeLike(got, want string) (int, bool) {
+	if got == "" {
+		return 0, false
+	}
+	d := editDistance(got, want)
+	if d <= max(1, len(want)*3/10) {
+		return d, true
+	}
+	n := len(got) - len(want)
+	wc := consonantCode(want)
+	return d, len(wc) >= 3 && consonantCode(got) == wc && n >= -2 && n <= 2
+}
+
+// soundClass groups consonants that speech-to-text mixes up, as Soundex
+// does; vowels, h, w and y have none.
+var soundClass = map[rune]byte{
+	'b': '1', 'f': '1', 'p': '1', 'v': '1',
+	'c': '2', 'g': '2', 'j': '2', 'k': '2', 'q': '2', 's': '2', 'x': '2', 'z': '2',
+	'd': '3', 't': '3', 'l': '4', 'm': '5', 'n': '5', 'r': '6',
+}
+
+// consonantCode is the sound classes of w's consonants, repeats collapsed:
+// "ashford" and "esfort" are both "2163", "alfred" and "alford" "4163".
+func consonantCode(w string) string {
+	var b []byte
+	for _, r := range w {
+		c, ok := soundClass[r]
+		if !ok || (len(b) > 0 && b[len(b)-1] == c) {
+			continue
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
+// editDistance is the Levenshtein distance between a and b, in runes.
+func editDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			c := prev[j-1]
+			if ra[i-1] != rb[j-1] {
+				c++
+			}
+			cur[j] = min(c, prev[j]+1, cur[j-1]+1)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
 }
 
 // BreakGlass reports whether text is the break-glass stop phrase. It is only

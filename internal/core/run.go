@@ -296,6 +296,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				p.stop(StopVoice)
 				continue
 			}
+			bus.Publish(p.d.Bus, WakeHeard, Wake{Keyword: w.Keyword, At: w.At})
 			p.arm(TriggerWake, w.At, true)
 			expire = time.After(p.cfg.WakeWindow)
 			p.earcon(mctx)
@@ -305,12 +306,12 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				continue
 			}
 			segAt := time.Now()
-			trig, seg, ok := p.claimSegment(seg)
+			c, ok := p.claimSegment(seg)
 			if !ok {
 				continue // not addressed to Footman, or only the wake word
 			}
 			expire = nil
-			turns.Go(func() { p.handleSegment(ctx, trig, seg, segAt) })
+			turns.Go(func() { p.handleSegment(ctx, c, segAt) })
 		}
 	}
 	return mctx.Err() == nil, nil

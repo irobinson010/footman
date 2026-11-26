@@ -67,6 +67,44 @@ func TestOpenRuleMatching(t *testing.T) {
 	}
 }
 
+func TestMatchWake(t *testing.T) {
+	r := core.NewRouter([]string{"ashford", "alfred", "hey footman", "footman"}, nil, nil)
+	cases := []struct {
+		text, rest string
+		ok         bool
+	}{
+		{"Ashford, open YouTube", "open YouTube", true},
+		{"Ashferd open YouTube.", "open YouTube.", true},
+		{"Alfred.", "", true},
+		{"Alfred, what's the time?", "what's the time?", true},
+		{"Alford, what's the time?", "what's the time?", true},
+		{"Esfort Open YouTube.", "Open YouTube.", true},
+		{"Hey, Footman. Open YouTube", "Open YouTube", true},
+		{"Hey Foot man, open YouTube", "open YouTube", true},
+		{"Hayfootman. Good morning", "Good morning", true},
+		{"A footman. Good morning", "Good morning", true},
+		{"Hey fuman. Good morning", "Good morning", true},
+		{"Footman, open YouTube", "open YouTube", true},
+		{"ford, open YouTube", "open YouTube", true},
+		{"— Alfred, open YouTube", "open YouTube", true},
+		{"", "", false},
+		{"Open YouTube", "", false},
+		{"The officers were about to take leave", "", false},
+		{"I'll ask Fred tomorrow", "", false},
+		{"and then the Alfred Hitchcock film", "", false},
+		{"Red light", "", false},
+		{"Alpha, what time is it?", "", false},
+		{"Effort open YouTube", "", false},
+		{"Sometimes I think", "", false},
+	}
+	for _, c := range cases {
+		rest, ok := r.MatchWake(c.text)
+		if ok != c.ok || rest != c.rest {
+			t.Errorf("MatchWake(%q) = %q, %v; want %q, %v", c.text, rest, ok, c.rest, c.ok)
+		}
+	}
+}
+
 func TestNames(t *testing.T) {
 	if core.Idle.String() != "idle" || core.FastPath.String() != "fast_path" || core.State(99).String() != "State(99)" {
 		t.Error("State.String")
