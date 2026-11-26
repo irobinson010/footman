@@ -83,6 +83,7 @@ var schema = []Key{
 	{Path: "dictation.insert", Type: String, Default: "auto", Enum: []string{"auto", "type", "paste"}, Description: "How text is inserted into the focused app.", VoiceSettable: true, Reload: Live},
 
 	{Path: "replies.speak", Type: String, Default: "when-voice", Enum: []string{"always", "when-voice", "never"}, Description: "When replies are spoken aloud.", VoiceSettable: true, Reload: Live},
+	{Path: "replies.notify", Type: Bool, Default: true, Description: "Also show spoken replies as a desktop notification. Replies that are not spoken (quiet mode, quiet hours, replies.speak) are always shown.", VoiceSettable: true, Reload: Live},
 	{Path: "replies.quiet", Type: Bool, Default: false, Description: "Quiet mode: no earcon or acknowledgement sound, and replies are shown rather than spoken. Also togglable with footman quiet on|off.", VoiceSettable: true, Reload: Restart},
 	{Path: "replies.quiet_hours", Type: String, Default: "", Format: "timerange", Description: "Local time range with no spoken replies, like 22:00-07:00. Empty means none.", VoiceSettable: true, Reload: Live},
 
@@ -91,7 +92,7 @@ var schema = []Key{
 	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text: auto, cpu, gpu, vulkan or cuda.", Reload: Restart},
 	{Path: "speech.vad.min_silence", Type: Float, Default: 0.5, Min: f(0.1), Max: f(5), Description: "Seconds of silence that end an utterance. Lower ends dictation sooner but splits it at short pauses.", Reload: Restart},
 	{Path: "speech.wake.boost", Type: Float, Default: 2.0, Min: f(0.5), Max: f(4), Description: "Wake-word sensitivity: the boost given to the wake word's sounds. Higher wakes more often, including by mistake; 1 is strict, 2 normal, 4 loose.", Reload: Restart},
-	{Path: "speech.wake.extra", Type: StringList, Default: []string{}, Description: "Extra wake words besides the listening personas' names and \"hey footman\", such as \"alfred\". They wake the default persona.", Reload: Restart},
+	{Path: "speech.wake.extra", Type: StringList, Default: []string{}, Description: "Extra wake words besides the listening and default personas' wake words and \"hey footman\", such as \"alfred\". They wake the default persona.", Reload: Live},
 	{Path: "speech.wake.threshold", Type: Float, Default: 0.05, Min: f(0.01), Max: f(1), Description: "Score the wake word must reach. Changes little; use speech.wake.boost to tune sensitivity.", Reload: Restart},
 	{Path: "speech.tts.engine", Type: String, Default: "persona", Description: "Text-to-speech engine; \"persona\" uses the persona's voice.", Reload: Live},
 	{Path: "speech.unload_after", Type: String, Default: "10m", Format: "duration", Description: "Unload the speech models (speech-to-text, VAD, text-to-speech) after this much idle time, and load them again on next use. 0s keeps them loaded.", Reload: Live},

@@ -75,6 +75,8 @@ func cmdTranscribe(ctx context.Context, args []string, stdout, stderr io.Writer)
 type modelsEnv struct {
 	dir     string
 	cfgPath string
+	// dataDir holds the installed persona packs (for the persona's voice).
+	dataDir string
 	// record adds a model (or, with isDir, the models folder) to the install
 	// receipt; nil records nothing.
 	record func(path, id string, isDir bool) error
@@ -84,7 +86,7 @@ func cmdModels(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	paths := defaultPaths()
 	fs := flag.NewFlagSet("footman models", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	env := modelsEnv{}
+	env := modelsEnv{dataDir: paths.Data}
 	fs.StringVar(&env.dir, "dir", modelsDir(paths.Data), "models folder")
 	fs.StringVar(&env.cfgPath, "config", filepath.Join(paths.Config, "config.toml"), "config file (for the default choice)")
 	fs.Usage = func() {
@@ -94,7 +96,8 @@ func cmdModels(ctx context.Context, args []string, stdout, stderr io.Writer) int
   default      the detected hardware and the engine, model and accelerator
                "auto" picks on it (ADR-0024)
   fetch        download models, checking their SHA-256, and record them in
-               the install receipt; with no IDs, the default model and the VAD
+               the install receipt; with no IDs, the default model, the VAD
+               and the default persona's voice (with its lexicon)
 
 Options:
 `)
@@ -189,6 +192,10 @@ func modelsFetch(ctx context.Context, env modelsEnv, ids []string, stdout, stder
 			return fail(stderr, fmt.Errorf("%w; name the models to fetch (see `footman models list`)", err))
 		}
 		ids = []string{c.Model, defaultVADModel}
+		// And the default persona's voice, with its lexicon.
+		if cfg, err := config.Load(env.cfgPath); err == nil {
+			ids = append(ids, personaVoiceModels(cfg, env.dataDir, func(string, ...any) {})...)
+		}
 	}
 	for _, id := range ids {
 		m, ok := models.Lookup(id)

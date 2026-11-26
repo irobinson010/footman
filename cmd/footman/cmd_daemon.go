@@ -134,7 +134,12 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	b := bus.New()
 	defer b.Close()
 
-	deps, impl, reload, err := wire(cfg, o, logf)
+	// The default persona gives the reply voice, the AI's system prompt and
+	// the stock lines; the listening personas give the wake words (S3-07).
+	personas := newPersonaWiring(o.dataDir, logf)
+	current := personas.load(cfg)
+	wakeWords := personaWakeWords(personas.cat, personas.userDir, cfg)
+	deps, impl, reload, err := wire(cfg, o, wakeWords, logf)
 	if err != nil {
 		return err
 	}
@@ -145,15 +150,28 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	logSpeech(logf, o.dataDir, deps.STT, deps.VAD, deps.Wake)
 	// Speech models unload when idle and load again on use
 	// (speech.unload_after, ADR-0028).
-	models := manageSpeech(&deps, impl, reload, func() time.Duration { return unloadAfter(cfgFile.Current()) })
+	after := func() time.Duration { return unloadAfter(cfgFile.Current()) }
+	models := manageSpeech(&deps, impl, reload, after)
 	defer models.Close()
+	// Text-to-speech: the persona's engine and voice, or the engine
+	// speech.tts.engine names. Without one, replies are only shown.
+	tts := newTTSEngines(reload.tts, idleOptions(after))
+	models.addTTS(tts)
+	engine, voice := ttsChoice(cfg, current)
+	if err := tts.Use(engine, voice); err != nil {
+		logf("text-to-speech unavailable, so replies are only shown (fix it and restart): %v", err)
+	} else {
+		deps.TTS, impl["tts"] = tts, tts.Current()
+		personas.tts = tts
+	}
 	deps.Bus = b
 	// The permission gate reads the policy live from the config (ADR-0038)
 	// and asks the confirmation broker, which shows a notification with
-	// Allow and Deny and answers `footman confirm` (ADR-0039).
+	// Allow and Deny and answers `footman confirm` (ADR-0039). While it
+	// waits, the persona says its confirm line if the reply is spoken.
 	broker := &permissions.Broker{Bus: b, Logf: logf}
 	defer broker.Close()
-	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: broker}
+	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: speakingConfirmer{broker}}
 	deps.Gate = gate
 	// Settings by voice: tightening applies at once, loosening asks the
 	// broker for a click.
@@ -168,7 +186,12 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	}
 
 	pcfg := pipelineConfig(cfg)
-	pcfg.FastRules = append([]core.FastRule{core.SettingsRule(settings)}, core.DefaultFastRules(nil)...)
+	// "Ashford, open YouTube" must lose "Ashford", as the spotter heard it.
+	pcfg.WakeWords = routerWakeWords(wakeWords)
+	pcfg.FastRules = append([]core.FastRule{
+		core.SettingsRule(settings),
+		core.PersonaRule(switcher{w: personas, settings: settings}),
+	}, core.DefaultFastRules(nil)...)
 	if pcfg.Mic == "" && cfg.Bool("audio.prefer_echo_cancel") {
 		if devs, err := deps.Platform.Audio().Inputs(ctx); err == nil {
 			if d, ok := echoCancelSource(devs); ok {
@@ -182,6 +205,13 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		return err
 	}
 	defer p.Close()
+	// From here on the persona follows the config. The clip bank (S3-03)
+	// subscribes with personas.OnChange to render the new persona's clips.
+	personas.pipeline = p
+	if ws, ok := deps.Wake.(*wakeSwitch); ok {
+		personas.wake = ws
+	}
+	personas.apply(cfg)
 
 	var bg sync.WaitGroup
 	defer bg.Wait()
@@ -237,8 +267,9 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		}
 	})
 
-	// Pick up hand edits to the config file. Pipeline settings are read at
-	// start for now; the API sees the new values at once.
+	// Pick up edits to the config file (by hand, config.set or voice): the
+	// reply policy and the persona apply at once; other pipeline settings
+	// are read at start for now. The API sees the new values at once.
 	bg.Go(func() {
 		config.Watch(bctx, o.configPath, config.WatchOptions{}, func(c *config.Config, err error) {
 			if err != nil {
@@ -248,6 +279,8 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			old := cfgFile.Current()
 			cfgFile.Replace(c)
 			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
+			p.SetReplyNotify(c.Bool("replies.notify"))
+			personas.apply(c)
 			// Changes made through config.set or by voice are already in
 			// old, so only hand edits show up here.
 			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
@@ -316,7 +349,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 // Speech-to-text "auto" (the default) is resolved by planSTT. It returns the
 // pipeline dependencies (without the bus) and, per area, the name of what it
 // chose ("" for none).
-func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d core.Deps, impl map[string]string, rl reloaders, err error) {
+func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(string, ...any)) (d core.Deps, impl map[string]string, rl reloaders, err error) {
 	impl = map[string]string{}
 	devFakes, fakesOnly := o.devFakes || o.fakesOnly, o.fakesOnly
 	name := func(want string) string {
@@ -382,18 +415,27 @@ func wire(cfg *config.Config, o daemonOptions, logf func(string, ...any)) (d cor
 
 	if cfg.Bool("input.wake_word") {
 		// Like the VAD, the wake word is optional: without its model the
-		// hotkeys still work.
-		if d.Wake, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), wakeOptions(name(defaultWake), dirs, cfg), devFakes); err != nil {
+		// hotkeys still work. Its words change with the personas, so the
+		// engine is behind a wakeSwitch that builds a new one then.
+		var w speech.WakeWord
+		if w, impl["wake"], err = pick(speech.WakeWords, name(defaultWake), wakeOptions(name(defaultWake), dirs, cfg, wakeWords), devFakes); err != nil {
 			logf("wake word unavailable: %v", err)
-			d.Wake, impl["wake"], err = nil, "", nil
+			w, impl["wake"], err = nil, "", nil
+		}
+		if w != nil {
+			wakeImpl := impl["wake"]
+			d.Wake = &wakeSwitch{cur: w, words: wakeWords, build: func(words []string) (speech.WakeWord, error) {
+				return speech.WakeWords.New(wakeImpl, wakeOptions(wakeImpl, dirs, cfg, words))
+			}}
 		}
 	} else {
 		impl["wake"] = ""
 	}
-	if d.TTS, impl["tts"], err = pick(speech.TTSs, name(cfg.String("speech.tts.engine")), nil, devFakes); err != nil {
-		return d, nil, rl, err
+	// Text-to-speech is built after wiring, for the persona's engine (see
+	// ttsEngines); it is optional, as replies can be shown instead.
+	rl.tts = func(engine string, v speech.Voice) (speech.TTS, string, error) {
+		return pick(speech.TTSs, name(engine), ttsOptions(name(engine), dirs, v), devFakes)
 	}
-	rl.tts = reloader(speech.TTSs, impl["tts"], nil)
 	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
 		return d, nil, rl, err
 	}
@@ -470,13 +512,21 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		Language:      cfg.String("user.language"),
 		NoCommands:    cfg.String("dictation.commands") == "off",
 		NoTerminal:    !cfg.Bool("dictation.terminal_mode"),
-		// "Ashford, open YouTube" must lose "Ashford", as the spotter heard it.
-		WakeWords:  append(wakePhrases(cfg), "footman"),
-		MinCommand: core.DefaultMinCommand,
-		Quiet:      cfg.Bool("replies.quiet"),
-		Speak:      cfg.String("replies.speak"),
-		QuietHours: cfg.String("replies.quiet_hours"),
+		MinCommand:    core.DefaultMinCommand,
+		Quiet:         cfg.Bool("replies.quiet"),
+		Speak:         cfg.String("replies.speak"),
+		Notify:        cfg.Bool("replies.notify"),
+		QuietHours:    cfg.String("replies.quiet_hours"),
 	}
+}
+
+// speakingConfirmer is the permission broker with the persona's confirm
+// line said (when the reply is spoken) as each confirmation is asked.
+type speakingConfirmer struct{ *permissions.Broker }
+
+func (c speakingConfirmer) Confirm(ctx context.Context, r permissions.Request) (permissions.Decision, error) {
+	core.Confirming(ctx)
+	return c.Broker.Confirm(ctx, r)
 }
 
 // hotkeyInfo describes the push-to-talk keys for status.get.

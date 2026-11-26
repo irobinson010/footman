@@ -104,18 +104,22 @@ type Config struct {
 	// Ack is the persona's acknowledgement clip, played as a command starts.
 	// Empty means none.
 	Ack audio.Clip
-	// Voice is the TTS voice for replies.
+	// Voice is the TTS voice for replies, until SetPersona.
 	Voice speech.Voice
 	// Speak is the reply policy (config replies.speak): "always",
 	// "when-voice" (the default: only for requests that came by voice) or
 	// "never". Change it while running with SetReplyPolicy.
 	Speak string
+	// Notify shows every reply as a notification too, even one that is
+	// spoken (config replies.notify). A reply that is not spoken is always
+	// shown. Change it while running with SetReplyNotify.
+	Notify bool
 	// QuietHours is a range like "22:00-07:00" with no spoken replies (config
 	// replies.quiet_hours). Empty means none.
 	QuietHours string
 	// Now is the clock for quiet hours (default time.Now).
 	Now func() time.Time
-	// System is the LLM system prompt.
+	// System is the LLM system prompt, until SetPersona.
 	System string
 	// Model overrides the provider's default model.
 	Model string
@@ -172,6 +176,7 @@ type Pipeline struct {
 	hotkeyErrs map[string]string // hotkeys that could not be registered
 	jobSeq     int
 	jobs       map[string]jobs.Job
+	persona    Persona // voice, system prompt and lines (SetPersona)
 }
 
 // New builds a pipeline in the Idle state.
@@ -238,7 +243,8 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 		d: d, cfg: cfg, formatter: dictation.NewFormatter(lang), ctx: ctx, cancel: cancel,
 		state: Idle, quiet: cfg.Quiet, changed: make(chan struct{}),
 		turns: map[uint64]context.CancelFunc{},
-		jobs:  map[string]jobs.Job{},
+		jobs:    map[string]jobs.Job{},
+		persona: Persona{Voice: cfg.Voice, System: cfg.System},
 	}, nil
 }
 
@@ -555,6 +561,22 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string) error {
 	}
 	reply, err := p.act(ctx, id, text)
 	<-ack // don't talk over the acknowledgement
+	if err == nil && reply == "" {
+		// It worked and there is nothing else to say.
+		if reply = p.line(LineDone, ""); sp != nil {
+			sp.streamedFinal = false
+		}
+	}
+	if err != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		// Say the persona's error line; the caller still publishes the
+		// failure.
+		if l := p.line(LineError, ""); l != "" {
+			if rerr := p.replyShown(ctx, id, l, l+"\n"+err.Error()); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			return err
+		}
+	}
 	if err != nil || reply == "" {
 		if sp != nil {
 			sp.Abort()
@@ -617,17 +639,28 @@ func (p *Pipeline) playAck(ctx context.Context) <-chan struct{} {
 	return done
 }
 
-// reply speaks text, or shows it as a notification when the reply policy or
-// quiet mode says not to speak. A reply the AI streamed has mostly been spoken
-// already; this waits for the rest.
+// reply speaks text in the persona's voice and also shows it as a
+// notification (replies.notify), or only shows it when the reply policy,
+// quiet mode or quiet hours say not to speak. A reply the AI streamed has
+// mostly been spoken already; this waits for the rest.
 func (p *Pipeline) reply(ctx context.Context, id uint64, text string) error {
+	return p.replyShown(ctx, id, text, text)
+}
+
+// replyShown is reply with a different text for the notification.
+func (p *Pipeline) replyShown(ctx context.Context, id uint64, text, shown string) error {
 	p.setState(id, Replying)
 	bus.Publish(p.d.Bus, Replied, Reply{Turn: id, Text: text})
 	sp := speakerFrom(ctx)
-	if sp == nil {
+	if sp == nil || p.notifyReplies() {
 		// The notification outlives the turn.
-		_, err := p.d.Platform.Notifier().Notify(p.ctx, platform.Notification{Title: "Footman", Body: text})
-		return err
+		_, err := p.d.Platform.Notifier().Notify(p.ctx, platform.Notification{Title: p.replyTitle(), Body: shown})
+		if sp == nil {
+			return err
+		}
+		// It is spoken too, so a notification that failed does not fail
+		// the reply.
+		sp.shown = true
 	}
 	if !sp.streamedFinal {
 		sp.Break()
