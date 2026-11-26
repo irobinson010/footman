@@ -266,6 +266,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 		return false, err
 	}
 	p.setMic(platform.WakeListening)
+	frames = p.level(mctx, frames)
 
 	var wakes <-chan speech.WakeEvent
 	vadIn := frames
@@ -344,4 +345,13 @@ func tee(ctx context.Context, in <-chan audio.Frame) (first, second <-chan audio
 		}
 	}()
 	return a, b
+}
+
+// level applies the level normaliser (ADR-0035) to captured frames when it is
+// on. Each capture gets its own, so gain never carries between sessions.
+func (p *Pipeline) level(ctx context.Context, in <-chan audio.Frame) <-chan audio.Frame {
+	if !p.cfg.AGC {
+		return in
+	}
+	return audio.NewAGC(audio.AGCConfig{MaxGainDB: p.cfg.AGCMaxGainDB}).Stream(ctx, in)
 }

@@ -328,6 +328,8 @@ The goal is a voice that sounds good, starts speaking in near real time, and nee
 - **Early milestone:** wake-word detection built into the core (openWakeWord / sherpa-onnx keyword spotting) using **ready-made models** for a starter set of names. This comes right after dictation and is a high priority.
 - **Later:** a **wake-word training kit** that lets users train a custom wake word per persona from synthetic samples (many TTS voices plus background noise). It will reuse existing tooling from the user's other repos (Troupe / Resonance Lab), so it is ported rather than built from scratch.
 
+**Input level (ADR-0035).** Input level is the main wake-word risk in real rooms (#8). Captured frames go through a small pure-Go level normaliser (`audio.AGC`) before the VAD and wake-word engine: target RMS -20 dBFS, slow attack (0.3 s) and release (2 s), a noise gate at -50 dBFS that holds the gain instead of raising it, a gain cap (`audio.agc_max_gain_db`, default +24) and a peak guard that never clips. `audio.agc` is on by default. `footman mic check` (also offered at the end of `footman setup`) lists input sources, listens for 5 s without storing anything, shows a live meter and peak/RMS, warns when the level is too low, and saves the chosen source as `input.microphone`. `audio.prefer_echo_cancel` (default off) picks an echo-cancelling source when the microphone is `default`.
+
 ## 24. Repo layout and build (draft)
 
 ```
