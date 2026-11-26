@@ -77,11 +77,22 @@ type Transcript struct {
 	Words []Word
 }
 
-// Voice selects how text-to-speech sounds.
+// Voice selects how text-to-speech sounds. A persona pack's `[voice]`
+// section maps onto it: `model` is ID, `speaker` is Speaker and `speed` is
+// Speed (ADR-0037).
 type Voice struct {
-	// ID names the voice within the engine (for a persona, its voice model).
+	// ID is the voice model: a models-catalog ID (such as
+	// "kokoro-en-int8"), or an absolute path to a model file or folder (a
+	// persona pack's `voice/…` path, resolved against the pack folder by
+	// the caller). Empty means the engine's default model.
 	ID string
-	// Language is the BCP 47 code to speak in; empty means the voice default.
+	// Speaker picks one speaker of a multi-speaker model, by name (such as
+	// "bm_george") or by index ("26"). Empty means the model's default
+	// speaker; a single-speaker model (such as a fine-tuned persona voice)
+	// ignores it.
+	Speaker string
+	// Language is the BCP 47 code to speak in, such as "en-GB"; empty means
+	// the voice default. Engines that know accents use it to pick one.
 	Language string
 	// Speed scales the speaking rate; 0 means the voice default (1.0).
 	Speed float32
