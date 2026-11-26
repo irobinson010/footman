@@ -42,6 +42,7 @@ type Platform struct {
 	clipboard *Clipboard
 	secrets   *Secrets
 	paths     *Paths
+	sys       *sysInfo
 }
 
 var _ platform.Platform = (*Platform)(nil)
@@ -74,6 +75,7 @@ func newPlatform(dial func(...dbus.ConnOption) (*dbus.Conn, error), run runFunc)
 		paths:     paths,
 		audio:     newAudio(run),
 		service:   newService(run),
+		sys:       newSysInfo(run),
 	}
 }
 

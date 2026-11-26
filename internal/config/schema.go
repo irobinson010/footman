@@ -106,8 +106,8 @@ var schema = []Key{
 	{Path: "ai.budget.*.monthly_usd", Type: Float, Description: "Monthly spend limit in US dollars.", Min: f(0), Reload: Live},
 	{Path: "ai.budget.*.warn_at", Type: Float, Description: "Warn when this fraction of the budget is used.", Min: f(0), Max: f(1), Reload: Live},
 
-	{Path: "context.local", Type: StringList, Default: []string{}, Enum: contextItems, Description: "What a local AI may see besides your words.", Reload: Live, Sensitive: true},
-	{Path: "context.cloud", Type: StringList, Default: []string{}, Enum: contextItems, Description: "What a cloud AI may see besides your words.", Reload: Live, Sensitive: true},
+	{Path: "context.local", Type: StringList, Default: []string{"system"}, Enum: contextItems, Description: "What a local AI may see besides your words (system: OS, desktop, hardware, time; ADR-0043).", Reload: Live, Sensitive: true},
+	{Path: "context.cloud", Type: StringList, Default: []string{"system"}, Enum: contextItems, Description: "What a cloud AI may see besides your words (system: OS, desktop, hardware, time; ADR-0043).", Reload: Live, Sensitive: true},
 
 	{Path: "memory.enabled", Type: Bool, Default: false, Description: "Let the assistant remember things between sessions.", VoiceSettable: true, Reload: Live, Sensitive: true},
 
@@ -131,7 +131,7 @@ var schema = []Key{
 	{Path: "web.listen", Type: String, Default: "127.0.0.1:7878", Format: "hostport", Description: "Address of the local web UI and API.", Reload: Restart, Sensitive: true},
 }
 
-var contextItems = []string{"window_title", "clipboard", "selection", "all"}
+var contextItems = []string{"system", "window_title", "clipboard", "selection", "all"}
 
 // Schema returns every known key, in documentation order. The result is a
 // copy and safe to modify. Plugin tables ([plugins.<id>]) are free-form and

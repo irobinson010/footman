@@ -191,6 +191,7 @@ type Pipeline struct {
 	jobSeq     int
 	jobs       map[string]jobs.Job
 	persona    Persona // voice, system prompt and lines (SetPersona)
+	system     string  // facts about the computer for the AI, or "" (SetSystemContext)
 }
 
 // New builds a pipeline in the Idle state.

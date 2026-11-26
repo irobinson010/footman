@@ -230,6 +230,10 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		personas.wake = ws
 	}
 	personas.apply(cfg)
+	// What the AI is told about this computer (ADR-0043): collected once,
+	// given while context.cloud (or .local) includes "system".
+	facts := machineFacts(ctx, deps.Platform, logf)
+	p.SetSystemContext(systemContext(cfg, facts))
 
 	var bg sync.WaitGroup
 	defer bg.Wait()
@@ -322,6 +326,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
 			p.SetReplyNotify(c.Bool("replies.notify"))
 			personas.apply(c)
+			p.SetSystemContext(systemContext(c, facts))
 			// Changes made through config.set or by voice are already in
 			// old, so only hand edits show up here.
 			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
