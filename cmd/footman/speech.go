@@ -4,6 +4,7 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/irobinson010/footman/internal/config"
@@ -83,10 +84,16 @@ func vadOptions(name string, dirs speechDirs, minSilence float64) registry.Confi
 }
 
 // wakePhrases are the wake words the spotter listens for: the listening
-// personas' and "hey footman". The router strips the same ones from
-// transcripts, plus plain "footman".
+// personas', "hey footman" and speech.wake.extra. The router strips the same
+// ones from transcripts, plus plain "footman".
 func wakePhrases(cfg *config.Config) []string {
-	return append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
+	out := append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
+	for _, w := range cfg.Strings("speech.wake.extra") {
+		if w = strings.ToLower(strings.TrimSpace(w)); w != "" && !slices.Contains(out, w) {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // wakeOptions are the options for the wake-word engine named name: the

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -571,8 +572,20 @@ func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, err
 			continue
 		}
 		p.setState(id, FastPath)
+		// Fast-path rules pass the permission gate like tools do; the
+		// command text is what the user is asked about.
+		spec := plugins.ToolSpec{Name: rule.Name, Permission: rule.Permission}
+		args, _ := json.Marshal(map[string]string{"command": text})
+		how, err := p.decide(ctx, spec, args, false)
+		if err != nil {
+			bus.Publish(p.d.Bus, FastPathDone, FastPathRan{Turn: id, Rule: rule.Name, Err: "refused: " + err.Error(), Confirmation: how})
+			if cerr := ctx.Err(); cerr != nil {
+				return "", cerr
+			}
+			return "I can't do that: " + err.Error() + ".", nil
+		}
 		reply, err := run(ctx, p)
-		ev := FastPathRan{Turn: id, Rule: rule.Name}
+		ev := FastPathRan{Turn: id, Rule: rule.Name, Reply: reply, Confirmation: how}
 		if err != nil {
 			ev.Err = err.Error()
 		}
