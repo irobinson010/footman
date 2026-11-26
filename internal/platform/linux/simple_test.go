@@ -71,7 +71,8 @@ func TestLauncher(t *testing.T) {
 	if err := l.OpenURL(ctx, "https://example.com/a b"); err != nil {
 		t.Fatal(err)
 	}
-	if got := (*calls)[0]; got.Name != "xdg-open" || got.Args[len(got.Args)-1] != "https://example.com/a b" {
+	// xdg-open rejects "--" ("unexpected option"), so the URL is the only argument.
+	if got := (*calls)[0]; got.Name != "xdg-open" || len(got.Args) != 1 || got.Args[0] != "https://example.com/a b" {
 		t.Errorf("OpenURL ran %+v", got)
 	}
 	for _, bad := range []string{"", "example.com", "file:///etc/passwd", "javascript:alert(1)", "-x"} {

@@ -63,16 +63,27 @@ type (
 		InsertMS float64 `json:"insert_ms,omitempty"`
 	}
 	fastPathData struct {
-		Turn  uint64 `json:"turn"`
-		Rule  string `json:"rule"`
-		Error string `json:"error,omitempty"`
+		Turn         uint64 `json:"turn"`
+		Rule         string `json:"rule"`
+		Error        string `json:"error,omitempty"`
+		Reply        string `json:"reply,omitempty"`
+		Confirmation string `json:"confirmation,omitempty"`
 	}
 	toolData struct {
-		Turn    uint64          `json:"turn"`
-		Name    string          `json:"name"`
-		Args    json.RawMessage `json:"args,omitempty"`
-		Result  string          `json:"result"`
-		IsError bool            `json:"is_error"`
+		Turn         uint64          `json:"turn"`
+		Name         string          `json:"name"`
+		Args         json.RawMessage `json:"args,omitempty"`
+		Result       string          `json:"result"`
+		IsError      bool            `json:"is_error"`
+		Confirmation string          `json:"confirmation,omitempty"`
+	}
+	settingData struct {
+		Key    string `json:"key"`
+		Old    string `json:"old"`
+		New    string `json:"new"`
+		Actor  string `json:"actor"`
+		How    string `json:"how"`
+		Reason string `json:"reason"`
 	}
 	replyData struct {
 		Turn uint64 `json:"turn"`
@@ -126,9 +137,11 @@ func eventData(data any) any {
 	case core.Insertion:
 		return insertedData{Turn: d.Turn, Text: d.Text, Method: string(d.Method), LatencyMS: ms(d.Latency), InsertMS: ms(d.Took)}
 	case core.FastPathRan:
-		return fastPathData{Turn: d.Turn, Rule: d.Rule, Error: d.Err}
+		return fastPathData{Turn: d.Turn, Rule: d.Rule, Error: d.Err, Reply: d.Reply, Confirmation: d.Confirmation}
 	case core.ToolRan:
-		return toolData{Turn: d.Turn, Name: d.Name, Args: d.Args, Result: d.Result, IsError: d.IsError}
+		return toolData{Turn: d.Turn, Name: d.Name, Args: d.Args, Result: d.Result, IsError: d.IsError, Confirmation: d.Confirmation}
+	case core.SettingChange:
+		return settingData(d)
 	case core.Reply:
 		return replyData(d)
 	case core.Stopped:
