@@ -65,6 +65,10 @@ type Config struct {
 	DictateHotkey, CommandHotkey, StopHotkey string
 	// Mic and Speaker are device IDs; empty means the default.
 	Mic, Speaker string
+	// AGC levels the captured microphone audio before the VAD and wake word
+	// (ADR-0035); AGCMaxGainDB caps its gain (0 means the default).
+	AGC          bool
+	AGCMaxGainDB float64
 	// DictateMode and CommandMode say how the dictation and command hotkeys
 	// work (default HoldToTalk).
 	DictateMode, CommandMode TalkMode
