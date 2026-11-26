@@ -120,7 +120,7 @@ func TestPushToTalkHold(t *testing.T) {
 	if d := in[0].Duration(); d < 60*time.Millisecond || d > 600*time.Millisecond {
 		t.Errorf("transcribed %v of audio, want the speech trimmed", d)
 	}
-	equal(t, "states", r.path(), []core.State{
+	equal(t, "states", r.pathTo(core.Idle), []core.State{
 		core.Listening, core.Transcribing, core.Routing, core.Cleaning, core.Inserting, core.Idle,
 	})
 }
