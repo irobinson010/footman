@@ -15,7 +15,8 @@ form = "{title} {name}"
 title = "Herr"
 fallback = "sir"
 
-# An interim stock voice from the models catalog (S3-02); no audio or weights
+# An interim stock voice from the models catalog (S3-02), picked by the owner
+# on 2026-11-26 (S3-07); no audio or weights
 # live in the pack until trained voices exist (ADR-0020).
 [voice]
 engine = "kokoro"

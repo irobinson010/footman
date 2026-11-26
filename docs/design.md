@@ -284,7 +284,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 - **Dictation formatting (simple tier, [ADR-0032](adr/0032-dictation-commands-and-code-mode.md)):** spoken "new line", "new paragraph", punctuation, "scratch that", "all caps … end caps" and a "literal" escape, from per-language phrase lists. In a terminal, or after "command mode", **code mode** turns "ps space dash aux" into `ps -aux`. Footman never presses Enter in a terminal.
 - **Push-to-talk:** both hold-to-talk and tap-to-start / tap-to-stop. **The wake word stays a top priority**, so everything can be done by voice alone.
 - **Everything is configurable by voice.** Every setting can be changed by voice ("Alfred, turn on quiet mode"), as well as from the web UI and CLI. Footman can also explain where a setting lives and what it does.
-- **Replies:** speech vs. notification-only is a setting, and there's a quiet mode.
+- **Replies:** spoken in the persona's voice **and** shown as a desktop notification by default (`replies.speak`, `replies.notify`). Quiet mode and quiet hours silence the speech but keep the notification ([ADR-0042](adr/0042-persona-replies-spoken-and-shown.md)).
 - **False wakes:** if no clear command follows the wake word, it is dropped silently.
 - **Languages:** English at launch. Spanish and Japanese are planned later, including a language-practice use case. Strings and command phrase lists are per-language from day one.
 
@@ -619,6 +619,7 @@ insert = "auto"                  # auto | type | paste
 
 [replies]
 speak = "when-voice"             # always | when-voice | never
+notify = true                    # also show spoken replies as a notification
 quiet_hours = "22:00-07:00"
 
 [speech]

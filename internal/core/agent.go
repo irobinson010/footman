@@ -106,7 +106,7 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	untrusted := false
 	for range p.cfg.MaxToolRounds {
 		p.setState(id, Thinking)
-		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: p.cfg.System, Messages: msgs, Tools: defs})
+		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: p.Persona().System, Messages: msgs, Tools: defs})
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
@@ -140,7 +140,7 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			return "", err
 		}
 	}
-	return "Sorry, I couldn't finish that.", nil
+	return p.line(LineError, "Sorry, I couldn't finish that."), nil
 }
 
 // collectStreaming reads s to the end like llm.Collect, handing each text
