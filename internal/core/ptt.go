@@ -56,6 +56,13 @@ const (
 	// spotter reports it a little late and the first word after it may
 	// already have started.
 	wakePreRoll = 600 * time.Millisecond
+	// wakeLookback is how far before the end of the wake word the audio the
+	// second stage checks starts, at most (ADR-0041). It covers a slowly
+	// said "hey footman" and the spotter's lateness.
+	wakeLookback = 3 * time.Second
+	// wakeGap is the silence put between a wake word said alone and the
+	// command after it, when they are checked together.
+	wakeGap = 300 * time.Millisecond
 )
 
 // ErrNoSpeech is published (as a Failure) when a push-to-talk recording held
@@ -268,7 +275,7 @@ func (p *Pipeline) handleRecorded(ctx context.Context, r *recording, seg speech.
 		}
 	}
 	defer p.endTurn(id)
-	p.transcribeAndHandle(tctx, id, r.trig, seg, r.endedAt)
+	p.transcribeAndHandle(tctx, id, claim{trig: r.trig, seg: seg}, r.endedAt)
 }
 
 // idleMic is the tray status when no push-to-talk recording is running.

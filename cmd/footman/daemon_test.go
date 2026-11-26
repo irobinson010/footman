@@ -267,6 +267,15 @@ func TestDaemonIntegration(t *testing.T) {
 	if !strings.Contains(d.log.String(), "shutting down") {
 		t.Errorf("log:\n%s", d.log.String())
 	}
+	// Each turn's outcome is in the log, without its text.
+	for _, want := range []string{"turn 1: command -> command via open, ok", "turn 2: dictate -> dictation, ok"} {
+		if !strings.Contains(d.log.String(), want) {
+			t.Errorf("log has no %q:\n%s", want, d.log.String())
+		}
+	}
+	if strings.Contains(d.log.String(), "hello world") {
+		t.Errorf("log has the dictated text:\n%s", d.log.String())
+	}
 	if code, _, errOut := d.cli(t, "status"); code != 1 || !strings.Contains(errOut, "not running") {
 		t.Errorf("status with no daemon = %d %s", code, errOut)
 	}

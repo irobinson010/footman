@@ -1,0 +1,19 @@
+setting	type	file	audio_s	stt_ms	transcript
+boost 3, verify on	noise	aporee_60198_69141_00.wav	4.6	303	
+boost 3, verify on	podcast	at-home-podcast-001-version-4_00.wav	2.1	182	Sometimes I think
+boost 3, verify on	podcast	ghostwriter-to-catch-a-creep-part-3-04-0_00.wav	19.3	1157	Too, right? Like Max Mousewinder went into the computer. He can go through computers, he can go back in time. You know, he can do so much in this series, and it's really cool. So he so, where was I saying? They found it. Catherine from Texas. Yeah. The word nightlight.
+boost 3, verify on	radio	708ad762-d325-4df0-98eb-1b6312363a58_00.wav	12.3	664	Additions just wanted? No, Fred. What about Porsche? Has she turned around yet? No. Porsche is still facing life. In a rut, huh? Say, tell me, Kenny.
+boost 3, verify on	speech	librispeech_dev-other_015.wav	9.1	627	The officers were about to take leave, but Prince Andrew, apparently reluctant to be left alone with his friend, asked them to stay and have tea.
+boost 4, verify on	noise	aporee_60198_69141_00.wav	4.2	249	But it's not the result of sleep itself but the crush is the true.
+boost 4, verify on	noise	aporee_60198_69141_00.wav	4.6	601	
+boost 4, verify on	podcast	at-home-podcast-001-version-4_00.wav	3.7	208	is far more beneficial and the result.
+boost 4, verify on	podcast	at-home-podcast-001-version-4_00.wav	2.1	161	Sometimes I think
+boost 4, verify on	podcast	ghostwriter-to-catch-a-creep-part-3-04-0_00.wav	29.4	1761	You see her purse I mean that you don't see you see her but you you just the only time you see her purpose yeah yeah and he was a bit of a jerk in that one and we'll talk about that later on in the series I don't know when we'll be doing over a barrel it's gonna take a while yeah uh because there's about like 30 episodes in a season and we're you know doing it one by one and it's just we could always micro episodes these but I mean sometimes we do 20 some we technically we try to go between 15 and 20 minutes
+boost 4, verify on	podcast	ghostwriter-to-catch-a-creep-part-3-04-0_00.wav	19.3	1002	Too, right? Like Max Mousewinder went into the computer. He can go through computers, he can go back in time. You know, he can do so much in this series, and it's really cool. So he so, where was I saying? They found it. Catherine from Texas. Yeah. The word nightlight.
+boost 4, verify on	podcast	ghostwriter-who-burned-down-mr-brinkers-_00.wav	9.1	564	They were good friends. But uh Ghost Rider saw the words and swept up uh so he didn't see it. Yeah, so basically Ghost Rider saw her.
+boost 4, verify on	radio	066ba7dc-ce47-4b16-a805-2a8a2051d0b2_00.wav	3.2	214	to Montan for to throw the holy hand.
+boost 4, verify on	radio	43b2fbbf-40de-457c-911d-61d649ba7acd_02.wav	7.3	390	Shenandoah, Ohio. And sent in one of my favorite animal yarns about the man who went to court, told the judge, said, I just have to divorce this woman.
+boost 4, verify on	radio	708ad762-d325-4df0-98eb-1b6312363a58_00.wav	12.3	490	Additions just wanted? No, Fred. What about Porsche? Has she turned around yet? No. Porsche is still facing life. In a rut, huh? Say, tell me, Kenny.
+boost 4, verify on	radio	db7b3649-c176-487b-9170-cee8dd85f464_00.wav	6.8	250	This would have been the normal practice under the age-old doctrines of international law.
+boost 4, verify on	speech	librispeech_dev-other_015.wav	9.1	857	The officers were about to take leave, but Prince Andrew, apparently reluctant to be left alone with his friend, asked them to stay and have tea.
+boost 4, verify on	speech	librispeech_dev-other_026.wav	3.8	174	knowing this, grow insolent toward him, and covet his land and possessions.

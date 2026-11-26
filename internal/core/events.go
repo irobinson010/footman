@@ -191,6 +191,56 @@ type JobEvent struct {
 	Update jobs.Update
 }
 
+// Wake is published when the spotter hears a wake word, before the second
+// stage checks it.
+type Wake struct {
+	Keyword string
+	// At is the stream offset where the wake word ended.
+	At time.Duration
+}
+
+// Reasons the second stage rejects a wake word (ADR-0041).
+const (
+	// WakeNoSpeech: the transcript was empty.
+	WakeNoSpeech = "no_speech"
+	// WakeNoMatch: the transcript did not start with a wake word.
+	WakeNoMatch = "no_wake_word"
+)
+
+// WakeRejection is published when the second stage drops a wake: the
+// transcript of the audio around the wake word did not start with one. The
+// text is not included.
+type WakeRejection struct {
+	Turn   uint64
+	Reason string
+	// Audio is how long the checked audio was, and Took how long
+	// speech-to-text took.
+	Audio, Took time.Duration
+}
+
+// What handled a command, in Outcome.Handler, besides a fast-path rule's
+// name.
+const (
+	// HandlerAI is the AI provider.
+	HandlerAI = "ai"
+	// HandlerNoAI means no fast-path rule matched and there is no AI
+	// provider.
+	HandlerNoAI = "no_ai"
+)
+
+// Outcome is published when a routed turn has been handled, successfully or
+// not. It carries no text, so it can be logged.
+type Outcome struct {
+	Turn    uint64
+	Trigger Trigger
+	Route   RouteKind
+	// Handler is what handled a command: a fast-path rule's name,
+	// HandlerAI or HandlerNoAI. Empty for dictation and RouteNone.
+	Handler string
+	// Err is why it failed, if it did ("context canceled" for a stop).
+	Err string
+}
+
 // Failure is published when handling an utterance fails.
 type Failure struct {
 	Turn  uint64
@@ -210,6 +260,12 @@ var (
 	Replied      = bus.NewTopic[Reply]("pipeline.reply")
 	StopDone     = bus.NewTopic[Stopped]("pipeline.stop")
 	Failed       = bus.NewTopic[Failure]("pipeline.error")
+	// WakeHeard is the spotter firing; WakeRejected the second stage
+	// dropping it (ADR-0041).
+	WakeHeard    = bus.NewTopic[Wake]("pipeline.wake")
+	WakeRejected = bus.NewTopic[WakeRejection]("pipeline.wake_rejected")
+	// TurnDone reports how each routed turn ended, without its text.
+	TurnDone = bus.NewTopic[Outcome]("pipeline.outcome")
 	// MicChanged reports the microphone status, which the tray also shows
 	// (design §29).
 	MicChanged = bus.NewTopic[platform.TrayStatus]("pipeline.mic")

@@ -123,7 +123,9 @@ const sileroWindow = 512
 // KWS defaults (spike S0-08: boost is the sensitivity knob, 2 is the
 // recommended value, and above 4 false wakes appear).
 const (
-	// DefaultBoost is speech.wake.boost.
+	// DefaultBoost is the spotter on its own. The daemon defaults
+	// speech.wake.boost to 3, because it checks each wake with speech-to-text
+	// (speech.wake.verify, ADR-0041).
 	DefaultBoost = 2
 	// DefaultThreshold is speech.wake.threshold.
 	DefaultThreshold = 0.05
