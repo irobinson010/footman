@@ -415,6 +415,9 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		CommandMode:   core.TalkMode(cfg.String("input.command.mode")),
 		Mic:           mic,
 		Insert:        dictation.InsertMode(cfg.String("dictation.insert")),
+		Language:      cfg.String("user.language"),
+		NoCommands:    cfg.String("dictation.commands") == "off",
+		NoTerminal:    !cfg.Bool("dictation.terminal_mode"),
 	}
 }
 
