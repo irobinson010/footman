@@ -80,6 +80,7 @@ var schema = []Key{
 	{Path: "dictation.insert", Type: String, Default: "auto", Enum: []string{"auto", "type", "paste"}, Description: "How text is inserted into the focused app.", VoiceSettable: true, Reload: Live},
 
 	{Path: "replies.speak", Type: String, Default: "when-voice", Enum: []string{"always", "when-voice", "never"}, Description: "When replies are spoken aloud.", VoiceSettable: true, Reload: Live},
+	{Path: "replies.quiet", Type: Bool, Default: false, Description: "Quiet mode: no earcon or acknowledgement sound, and replies are shown rather than spoken. Also togglable with footman quiet on|off.", VoiceSettable: true, Reload: Restart},
 	{Path: "replies.quiet_hours", Type: String, Default: "", Format: "timerange", Description: "Local time range with no spoken replies, like 22:00-07:00. Empty means none.", VoiceSettable: true, Reload: Live},
 
 	{Path: "speech.stt.engine", Type: String, Default: "auto", Description: "Speech-to-text engine (whispercpp, sherpa-parakeet), or \"auto\" to pick by hardware.", Reload: Restart},

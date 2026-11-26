@@ -93,6 +93,7 @@ func Register(s *Server, d Deps) {
 	s.Handle("config.set", m.configSet)
 	s.Handle("config.schema", m.configSchema)
 	s.Handle("system.stop_everything", m.stopEverything)
+	s.Handle("system.set_listening", m.setListening)
 	s.Handle("speech.transcribe", m.speechTranscribe)
 }
 
@@ -112,14 +113,18 @@ type subscription struct {
 
 // StatusResult is the result of status.get.
 type StatusResult struct {
-	Version         string            `json:"version"`
-	API             string            `json:"api"`
-	PID             int               `json:"pid"`
-	StartedAt       time.Time         `json:"started_at"`
-	UptimeSeconds   float64           `json:"uptime_seconds"`
-	State           string            `json:"state"`
-	Muted           bool              `json:"muted"`
-	Microphone      core.MicStatus    `json:"microphone"`
+	Version       string         `json:"version"`
+	API           string         `json:"api"`
+	PID           int            `json:"pid"`
+	StartedAt     time.Time      `json:"started_at"`
+	UptimeSeconds float64        `json:"uptime_seconds"`
+	State         string         `json:"state"`
+	Muted         bool           `json:"muted"`
+	Microphone    core.MicStatus `json:"microphone"`
+	// WakeListening is whether the microphone listens for the wake word;
+	// Quiet is quiet mode.
+	WakeListening   bool              `json:"wake_listening"`
+	Quiet           bool              `json:"quiet"`
 	Jobs            []string          `json:"jobs"`
 	DevFakes        bool              `json:"dev_fakes"`
 	Implementations map[string]string `json:"implementations"`
@@ -200,6 +205,8 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 		State:           p.State().String(),
 		Muted:           p.Muted(),
 		Microphone:      p.Mic(),
+		WakeListening:   p.WakeListening(),
+		Quiet:           p.Quiet(),
 		Jobs:            jobs,
 		DevFakes:        m.d.Info.DevFakes,
 		Implementations: impl,
@@ -601,6 +608,37 @@ func (m *methods) stopEverything(ctx context.Context, c *Conn, params json.RawMe
 			return res, nil
 		}
 	}
+}
+
+// ListeningParams are the params of system.set_listening; a nil field is left
+// as it is.
+type ListeningParams struct {
+	// Wake switches always-on wake-word listening on or off.
+	Wake *bool `json:"wake,omitempty"`
+	// Quiet switches quiet mode (no earcon or acknowledgement sound, replies
+	// shown instead of spoken) on or off.
+	Quiet *bool `json:"quiet,omitempty"`
+}
+
+// ListeningResult is the result of system.set_listening: the settings now.
+type ListeningResult struct {
+	Wake  bool `json:"wake"`
+	Quiet bool `json:"quiet"`
+}
+
+func (m *methods) setListening(ctx context.Context, c *Conn, params json.RawMessage) (any, error) {
+	var p ListeningParams
+	if err := DecodeParams(params, &p); err != nil {
+		return nil, err
+	}
+	pl := m.d.Pipeline
+	if p.Wake != nil {
+		pl.SetWakeListening(*p.Wake)
+	}
+	if p.Quiet != nil {
+		pl.SetQuiet(*p.Quiet)
+	}
+	return ListeningResult{Wake: pl.WakeListening(), Quiet: pl.Quiet()}, nil
 }
 
 // ConfigFile is the daemon's config file and the config last loaded from it.
