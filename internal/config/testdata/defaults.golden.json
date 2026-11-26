@@ -7,6 +7,7 @@
   "dictation.cleanup": "simple",
   "dictation.commands": "simple",
   "dictation.insert": "auto",
+  "dictation.terminal_mode": true,
   "history.retention_days": 30,
   "history.transcripts": true,
   "input.command.key": "Shift+F8",

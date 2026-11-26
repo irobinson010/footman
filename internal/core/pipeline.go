@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/bus"
@@ -88,6 +90,14 @@ type Config struct {
 	Model string
 	// MaxToolRounds caps LLM round trips per command (default 8).
 	MaxToolRounds int
+	// NoCommands turns spoken formatting commands off (config
+	// dictation.commands = off).
+	NoCommands bool
+	// NoTerminal turns off switching to code mode when the focused app is a
+	// terminal (config dictation.terminal_mode).
+	NoTerminal bool
+	// Language picks the phrase lists (default "en").
+	Language string
 	// Cleaner tidies dictation (default dictation.NewCleaner(nil, nil)).
 	Cleaner *dictation.Cleaner
 	// Router routes utterances (default NewRouter(WakeWords, nil, nil)).
@@ -100,8 +110,9 @@ type Config struct {
 // with Run (microphone and hotkeys) or Submit (text), and stop everything with
 // Stop. A Pipeline is safe for concurrent use.
 type Pipeline struct {
-	d   Deps
-	cfg Config
+	d         Deps
+	cfg       Config
+	formatter *dictation.Formatter
 
 	// ctx bounds background jobs; Close cancels it.
 	ctx    context.Context
@@ -120,6 +131,8 @@ type Pipeline struct {
 	mic        micLoop
 	rec        *recording // the push-to-talk recording, if any
 	lastIns    Insertion
+	codeMode   *bool // spoken code mode on/off; nil follows the focused app
+	scratchLen int   // characters of the last insertion "scratch that" can take back
 	lastInsAt  time.Time
 	hotkeyErrs map[string]string // hotkeys that could not be registered
 	jobSeq     int
@@ -166,7 +179,8 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 		cfg.MaxToolRounds = 8
 	}
 	if cfg.Cleaner == nil {
-		cfg.Cleaner = dictation.NewCleaner(nil, nil)
+		// Spoken commands are the formatter's job (ADR-0032).
+		cfg.Cleaner = dictation.NewCleaner(nil, []dictation.DictationCommand{})
 	}
 	if cfg.Router == nil {
 		cfg.Router = NewRouter(cfg.WakeWords, nil, nil)
@@ -175,8 +189,12 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 		cfg.FastRules = DefaultFastRules(nil)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	lang := cfg.Language
+	if lang == "" {
+		lang = "en"
+	}
 	return &Pipeline{
-		d: d, cfg: cfg, ctx: ctx, cancel: cancel,
+		d: d, cfg: cfg, formatter: dictation.NewFormatter(lang), ctx: ctx, cancel: cancel,
 		state: Idle,
 		turns: map[uint64]context.CancelFunc{},
 		jobs:  map[string]jobs.Job{},
@@ -377,14 +395,49 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 
 func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended time.Time) error {
 	p.setState(id, Cleaning)
-	text = p.cfg.Cleaner.Clean(text)
+	in := p.d.Platform.Input()
+	ed, _ := in.(platform.InputEditing)
+	terminal := ed != nil && ed.FocusedTerminal(ctx)
+	p.mu.Lock()
+	code := terminal && !p.cfg.NoTerminal
+	if p.codeMode != nil {
+		code = *p.codeMode
+	}
+	p.mu.Unlock()
+	scratchPrev := false
+	if !code { // code mode drops fillers itself and keeps repeats ("dash dash")
+		text = p.cfg.Cleaner.Clean(text)
+	}
+	if code || !p.cfg.NoCommands {
+		r := p.formatter.Format(text, dictation.FormatState{Terminal: terminal, Code: code})
+		text, scratchPrev = r.Text, r.ScratchPrev
+		p.mu.Lock()
+		if r.Code != code {
+			p.codeMode = &r.Code
+		}
+		p.mu.Unlock()
+	}
+	if terminal {
+		text = strings.NewReplacer("\r", " ", "\n", " ").Replace(text) // never Enter in a terminal
+	}
+	if scratchPrev && ed != nil {
+		p.mu.Lock()
+		n := p.scratchLen
+		p.scratchLen = 0
+		p.mu.Unlock()
+		if n > 0 {
+			if err := ed.Backspace(ctx, n); err != nil {
+				return fmt.Errorf("scratch that: %w", err)
+			}
+		}
+	}
 	if text == "" {
 		return nil
 	}
 	p.setState(id, Inserting)
 	start := time.Now()
 	m := dictation.ChooseInsert(p.cfg.Insert, text, p.d.Layout, p.cfg.TypeMax)
-	if err := dictation.Insert(ctx, p.d.Platform.Input(), m, text); err != nil {
+	if err := dictation.Insert(ctx, in, m, text); err != nil {
 		return fmt.Errorf("insert: %w", err)
 	}
 	ins := Insertion{Turn: id, Text: text, Method: m, Took: time.Since(start)}
@@ -393,6 +446,7 @@ func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended ti
 	}
 	p.mu.Lock()
 	p.lastIns, p.lastInsAt = ins, time.Now()
+	p.scratchLen = utf8.RuneCountInString(text)
 	p.mu.Unlock()
 	bus.Publish(p.d.Bus, Inserted, ins)
 	return nil
