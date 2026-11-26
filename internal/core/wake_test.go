@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -120,7 +121,12 @@ func TestPushToTalkPausesWakeListening(t *testing.T) {
 	ctx, cancel := context.WithCancel(r.ctx())
 	done := make(chan error, 1)
 	go func() { done <- r.p.Run(ctx) }()
-	t.Cleanup(func() { cancel(); _ = <-done })
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
+	})
 	awaitMic := func(want platform.TrayStatus) {
 		t.Helper()
 		await(t, mic, func(s platform.TrayStatus) bool { return s == want })
@@ -162,7 +168,12 @@ func TestSetWakeListening(t *testing.T) {
 	ctx, cancel := context.WithCancel(r.ctx())
 	done := make(chan error, 1)
 	go func() { done <- r.p.Run(ctx) }()
-	t.Cleanup(func() { cancel(); _ = <-done })
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
+	})
 
 	await(t, mic, func(s platform.TrayStatus) bool { return s == platform.WakeListening })
 	r.p.SetWakeListening(false)
