@@ -174,14 +174,14 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 }
 
 // allTools returns the configured tools plus the built-in fast-path actions
-// (open_url, open_app), unless a configured tool already uses the name.
+// (open_url, open_app, quick_action), unless a configured tool already uses the name.
 func (p *Pipeline) allTools() []plugins.Tool {
 	all := append([]plugins.Tool(nil), p.d.Tools...)
 	have := map[string]bool{}
 	for _, t := range all {
 		have[t.Spec().Name] = true
 	}
-	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}} {
+	for _, t := range []plugins.Tool{openURLTool{p}, openAppTool{p}, quickActionTool{p}} {
 		if !have[t.Spec().Name] {
 			all = append(all, t)
 		}
@@ -242,4 +242,39 @@ func (t openAppTool) Run(ctx context.Context, args json.RawMessage) (plugins.Res
 		return plugins.Result{}, err
 	}
 	return plugins.Result{Text: "started " + a.App}, nil
+}
+
+// quickActionTool exposes the volume and media fast-path rules to the AI, for
+// commands the fast path didn't recognize as said ("turn it down a bit").
+type quickActionTool struct{ p *Pipeline }
+
+func (quickActionTool) Spec() plugins.ToolSpec {
+	return plugins.ToolSpec{
+		Name: "quick_action",
+		Description: "Change the volume or control music and video playback. Pass one of: " +
+			"\"volume up\", \"volume down\", \"mute\", \"unmute\", \"set volume to N percent\", " +
+			"\"play\", \"pause\", \"next\", \"previous\".",
+		Schema: json.RawMessage(`{"type":"object","properties":{` +
+			`"action":{"type":"string","description":"The action, such as \"volume down\" or \"pause\"."}},"required":["action"]}`),
+		Permission: plugins.Act,
+	}
+}
+
+func (t quickActionTool) Run(ctx context.Context, args json.RawMessage) (plugins.Result, error) {
+	var a struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || a.Action == "" {
+		return plugins.Result{Text: "action is required", IsError: true}, nil
+	}
+	for _, rule := range []FastRule{VolumeRule(), MediaRule()} {
+		if run, ok := rule.Match(a.Action); ok {
+			reply, err := run(ctx, t.p)
+			if err != nil {
+				return plugins.Result{}, err
+			}
+			return plugins.Result{Text: reply}, nil
+		}
+	}
+	return plugins.Result{Text: "unknown action: " + a.Action, IsError: true}, nil
 }
