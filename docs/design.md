@@ -604,8 +604,8 @@ title = "Master"
 quips = "often"
 
 [input]
-dictate = { key = "Super+Space", mode = "hold" }        # hold | toggle
-command = { key = "Super+Shift+Space", mode = "hold" }
+dictate = { key = "F8", mode = "hold" }                  # hold | toggle
+command = { key = "Shift+F8", mode = "hold" }
 wake_word = true
 microphone = "default"
 

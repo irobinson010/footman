@@ -34,3 +34,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0028](0028-setup-models-benchmark-and-idle-unload.md) | Setup fetches models and benchmarks; speech models unload when idle | Accepted |
 | [0029](0029-linux-input-implementation.md) | Linux input: app identity, hotkey binding, clipboard handling and layout check | Accepted |
 | [0030](0030-push-to-talk-and-service.md) | Push-to-talk, the KDE hotkey path and the systemd user service | Accepted |
+| [0031](0031-uninstall-desktop-grants-and-test-session-guard.md) | Uninstall undoes desktop grants; tests never reach the real session | Accepted |
