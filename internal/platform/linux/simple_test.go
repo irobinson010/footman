@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,5 +144,52 @@ func TestClipboard(t *testing.T) {
 	c.run = none
 	if _, err := c.ReadText(ctx); !errors.Is(err, platform.ErrUnsupported) {
 		t.Errorf("no wl-paste: %v", err)
+	}
+}
+
+func TestLauncherFuzzyApps(t *testing.T) {
+	data := t.TempDir()
+	writeFile(t, filepath.Join(data, "applications", "org.mozilla.firefox.desktop"),
+		"[Desktop Entry]\nName=Firefox Web Browser\nGenericName=Web Browser\nKeywords=internet;www;\n")
+	writeFile(t, filepath.Join(data, "applications", "code.desktop"), "[Desktop Entry]\nName=Visual Studio Code\nGenericName=Text Editor\n")
+	l := &Launcher{dataDirs: func() []string { return []string{data} }}
+	for app, want := range map[string]string{
+		"firefox": "org.mozilla.firefox.desktop", "browser": "org.mozilla.firefox.desktop",
+		"internet": "org.mozilla.firefox.desktop", "firefax": "org.mozilla.firefox.desktop",
+		"studio": "code.desktop", "text editor": "code.desktop",
+	} {
+		if got := filepath.Base(l.findDesktopFile(app)); got != want {
+			t.Errorf("findDesktopFile(%q) = %q, want %q", app, got, want)
+		}
+	}
+	if got := l.findDesktopFile("zzzzz"); got != "" {
+		t.Errorf("findDesktopFile(zzzzz) = %q", got)
+	}
+}
+
+func TestVolume(t *testing.T) {
+	run, calls := recorder(runResult{}, nil)
+	p := newPlatform(nil, run)
+	ctx := context.Background()
+	_ = p.ChangeVolume(ctx, -10)
+	_ = p.ChangeVolume(ctx, 10)
+	_ = p.SetVolume(ctx, 250)
+	_ = p.SetMute(ctx, true)
+	_ = p.SetMute(ctx, false)
+	var got []string
+	for _, c := range *calls {
+		got = append(got, c.Name+" "+strings.Join(c.Args, " "))
+	}
+	want := []string{
+		"pactl set-sink-volume @DEFAULT_SINK@ -10%", "pactl set-sink-volume @DEFAULT_SINK@ +10%",
+		"pactl set-sink-volume @DEFAULT_SINK@ 100%",
+		"pactl set-sink-mute @DEFAULT_SINK@ 1", "pactl set-sink-mute @DEFAULT_SINK@ 0",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("pactl calls\n got %q\nwant %q", got, want)
+	}
+	missing, _ := recorder(runResult{}, errNoTool)
+	if err := newPlatform(nil, missing).SetMute(ctx, true); !errors.Is(err, platform.ErrUnsupported) {
+		t.Errorf("no pactl: %v", err)
 	}
 }

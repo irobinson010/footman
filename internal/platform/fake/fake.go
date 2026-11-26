@@ -13,8 +13,12 @@
 package fake
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
@@ -38,6 +42,11 @@ type Platform struct {
 	service   *Service
 	secrets   *Secrets
 	paths     *Paths
+
+	mu       sync.Mutex
+	controls []string
+	// ControlErr, if set, is returned by the volume and media methods.
+	ControlErr error
 }
 
 // New builds a Platform from cfg (key "root": the directory under which Paths
@@ -88,3 +97,47 @@ func (p *Platform) Secrets() platform.Secrets { return p.secrets }
 
 // Paths implements platform.Platform; the value is a *Paths.
 func (p *Platform) Paths() platform.Paths { return p.paths }
+
+var _ platform.VolumeControl = (*Platform)(nil)
+var _ platform.MediaControl = (*Platform)(nil)
+
+// ChangeVolume implements platform.VolumeControl.
+func (p *Platform) ChangeVolume(_ context.Context, delta int) error {
+	return p.record(fmt.Sprintf("volume %+d", delta))
+}
+
+// SetVolume implements platform.VolumeControl.
+func (p *Platform) SetVolume(_ context.Context, percent int) error {
+	return p.record(fmt.Sprintf("volume =%d", percent))
+}
+
+// SetMute implements platform.VolumeControl.
+func (p *Platform) SetMute(_ context.Context, muted bool) error {
+	if muted {
+		return p.record("mute")
+	}
+	return p.record("unmute")
+}
+
+// Media implements platform.MediaControl.
+func (p *Platform) Media(_ context.Context, cmd platform.MediaCommand) error {
+	return p.record("media " + string(cmd))
+}
+
+func (p *Platform) record(s string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ControlErr != nil {
+		return p.ControlErr
+	}
+	p.controls = append(p.controls, s)
+	return nil
+}
+
+// Controls returns the volume and media calls so far, in order, such as
+// "volume +10", "volume =40", "mute", "unmute" and "media pause".
+func (p *Platform) Controls() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.controls)
+}
