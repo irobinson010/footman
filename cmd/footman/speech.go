@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/irobinson010/footman/internal/config"
@@ -81,6 +82,22 @@ func vadOptions(name string, dirs speechDirs, minSilence float64) registry.Confi
 	return nil
 }
 
+// wakeOptions are the options for the wake-word engine named name: the
+// listening personas' wake words and "hey footman", with the sensitivity from
+// speech.wake.*.
+func wakeOptions(name string, dirs speechDirs, cfg *config.Config) registry.Config {
+	if name != sherpa.KWSName {
+		return nil
+	}
+	keywords := append(slices.Clone(cfg.Strings("personas.listening")), "hey footman")
+	return registry.Map{
+		"models_dir": dirs.models,
+		"keywords":   keywords,
+		"boost":      cfg.Float("speech.wake.boost"),
+		"threshold":  cfg.Float("speech.wake.threshold"),
+	}
+}
+
 // engineInfo is what the native engines report about themselves.
 type engineInfo interface{ Info() string }
 
@@ -92,11 +109,11 @@ type shaderCached interface {
 
 // logSpeech logs what the speech engines loaded, and records the shader
 // cache in the install receipt so uninstall removes it (ADR-0023).
-func logSpeech(logf func(string, ...any), dataDir string, stt, vad any) {
+func logSpeech(logf func(string, ...any), dataDir string, stt, vad, wake any) {
 	for _, e := range []struct {
 		area string
 		v    any
-	}{{"speech-to-text", stt}, {"VAD", vad}} {
+	}{{"speech-to-text", stt}, {"VAD", vad}, {"wake word", wake}} {
 		if i, ok := e.v.(engineInfo); ok {
 			logf("%s: %s", e.area, i.Info())
 		}

@@ -123,6 +123,8 @@ type WakeWord struct {
 	mu sync.Mutex
 	// Keyword is reported in each event (default "footman").
 	Keyword string `json:"keyword"`
+	// Kind is reported in each event (default a wake word).
+	Kind speech.WakeKind `json:"kind"`
 	// At lists the frame indices after which the wake word fires.
 	At []int `json:"at"`
 }
@@ -151,7 +153,7 @@ func (w *WakeWord) Listen(ctx context.Context, frames <-chan speech.Frame) <-cha
 	for _, i := range w.At {
 		at[i] = true
 	}
-	kw := w.Keyword
+	kw, kind := w.Keyword, w.Kind
 	w.mu.Unlock()
 
 	out := make(chan speech.WakeEvent)
@@ -172,7 +174,7 @@ func (w *WakeWord) Listen(ctx context.Context, frames <-chan speech.Frame) <-cha
 				continue
 			}
 			select {
-			case out <- speech.WakeEvent{Keyword: kw, At: f.Offset + f.Duration(), Score: 1}:
+			case out <- speech.WakeEvent{Kind: kind, Keyword: kw, At: f.Offset + f.Duration(), Score: 1}:
 			case <-ctx.Done():
 				return
 			}
