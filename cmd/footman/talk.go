@@ -252,26 +252,19 @@ func newPersonaWiring(dataDir string, logf func(string, ...any)) *personaWiring 
 	}
 }
 
-// OnChange subscribes f to persona changes; it is called (synchronously,
-// from apply) with the current persona at once and after every change. The
-// clip bank (S3-03) re-renders its clips from here.
+// OnChange subscribes f to the persona: it is called (synchronously, from
+// apply) at every apply, that is at start and on every config reload. The
+// clip bank (S3-03) is pointed at the persona from here. Subscribe before
+// the first apply.
 func (w *personaWiring) OnChange(f func(PersonaChange)) {
 	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.subs = append(w.subs, f)
-	cur := w.cur
-	w.mu.Unlock()
-	if cur.pack != nil {
-		f(w.change(cur, nil))
-	}
 }
 
 func (w *personaWiring) change(lp loadedPersona, cfg *config.Config) PersonaChange {
-	c := PersonaChange{Pack: lp.pack, Config: cfg}
-	if cfg != nil {
-		c.Address = lp.pack.Address(cfg)
-		_, c.Voice = ttsChoice(cfg, lp)
-	}
-	return c
+	_, v := ttsChoice(cfg, lp)
+	return PersonaChange{Pack: lp.pack, Config: cfg, Address: lp.pack.Address(cfg), Voice: v}
 }
 
 // load reads the default persona from cfg without applying it (for wiring
