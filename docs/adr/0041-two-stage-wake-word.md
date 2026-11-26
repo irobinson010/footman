@@ -1,0 +1,26 @@
+# 0041. Two-stage wake word: a sensitive spotter checked by speech-to-text
+
+- Status: Accepted
+- Date: 2026-11-26
+- Amends: 0033, 0034
+
+## Context
+In the owner's Sprint 2 test (#94) the wake word had to be said several times, slowly, before it fired. The spotter (ADR-0033, boost 2) is tuned for few false wakes, so it misses natural speech. Making it more sensitive on its own costs false wakes: on the 8.3 h false-wake corpus (#95) boost 3 gives 0.48 per hour and boost 4 gives 1.93 per hour (AGC off; 0.60 and 1.69 with AGC on), against a target below 1. The speech-to-text engine is already loaded and transcribes the command anyway, so it can check each wake.
+
+## Decision
+- **Second stage.** With `speech.wake.verify` on (the default), a wake from the spotter is confirmed by speech-to-text before anything happens. The audio sent starts at the beginning of the VAD segment that holds the wake word (at most 3 s before the spotter reported it), not 600 ms before its end, so it includes the wake word. The turn goes ahead only if the transcript starts with a wake word (`Router.MatchWake`); the wake word is removed and the rest is routed as before.
+- **The match is loose, for how speech-to-text spells names.** Letters are compared without spaces and punctuation ("Hey, Foot man", "Hayfootman"); up to 3 letters in 10 may differ ("Ashferd", "Hey fuman"), or the consonants may sound the same, Soundex-style ("Alford", "Esfort"); a first word that is the last 4 or more letters of a wake word counts ("ford"), as `stripWake` already did. Up to two fillers ("um", "okay") may come before it; any other word may not, so "the Alfred Hitchcock film" is talk about Alfred, not to him. The closest match wins, so "Hey Foot man" loses all three words. The last word of a phrase alone counts when it has 4 or more letters ("Ashford" for "hey ashford", "Footman" for "hey footman"), because speech-to-text sometimes drops "hey". The words are the live list the router strips (ADR-0042: the listening and default personas' pack words, `speech.wake.extra`, "hey footman" and "footman"), so a persona or extra word changed while running is checked at once.
+- **A wake word said alone** ("Alfred." pause "open YouTube") is kept and checked together with the next segment, with 300 ms of silence between them. The spotter can report the wake word after the VAD has ended its segment, so the last unclaimed segment (cut to its last 3 s) is kept in memory until the next segment or wake; it is never transcribed unless a wake follows.
+- **Rejections are silent.** A rejected wake publishes `pipeline.wake_rejected` with the reason (`no_wake_word` or `no_speech`), the audio length and the speech-to-text time, never the text, and nothing else: no transcript event, no history, no reply. The journal logs it the same way.
+- **Nothing is transcribed unless the spotter fired** (ADR-0034's rule). The second stage only ever sees audio around a spotter hit.
+- **The default boost is now 3** (`speech.wake.boost`). The sherpa engine's own default stays 2, since it has no second stage.
+- **Each turn's outcome is logged** (`pipeline.outcome`, and a journal line such as `turn 4: wake -> command via open, ok` or `turn 5: wake -> command via ai, failed: ...`): the trigger, the route, what handled a command (a fast-path rule, `ai` or `no_ai`) and the error, never the text. `pipeline.wake` reports each spotter hit with its keyword.
+- **Wake expiry also runs in stream time**: a segment that starts more than `WakeWindow` after the wake word is not a command. Live, stream time and wall-clock time agree; for audio fed faster than real time (the harness) they do not.
+
+## Consequences
+Measured with `TestWakeVerify` (spikes/false-wake/REPORT.md), the real pipeline with Parakeet on the CPU:
+- **False wakes on the 8.3 h corpus: 0 per hour** at boost 3 and at boost 4 with the check, against 0.60 and 1.45 per hour without it (0.24 at the old boost 2). Every spotter hit was rejected.
+- **Detection at a natural pace** (120 new synthetic clips, wake word and command in one breath): 98 of 120 before (boost 2, no check), 101 with the new defaults, 102 at boost 4. The check fixes "Hey Footman" turns that used to reach speech-to-text as silence because the spotter reported late (35 to 40 of 40). "Ashford" is the weak word: the spotter fires on about 25 of 40 at any boost, so boost is not its fix; keyword variants or a bigger spotter model are follow-ups. The #74 clips still pass.
+- **Cost per wake:** the wake word is transcribed too, about 0.4 s more audio and about 12 ms more with Parakeet on the CPU (25 ms with a longer command). A rejected wake costs one transcription that was not made before (1 to 2 per hour at boost 3).
+
+Boost 3 rather than 4: both measure 0 false wakes with the check, and 4 detects one clip more, but every spotter hit still plays the earcon (when one is set) and opens the break-glass spotter (ADR-0017, ADR-0033), which still stops at once without the check; boost 4 does that three times as often (1.7 per hour on the corpus) and leaves no room above it. Boost 4 is the next step if the owner still has to repeat the wake word. With the check off, boost 3 alone gives 0.60 false wakes per hour on the corpus, still under the target. Real rooms and the owner's own voice still need a live test.

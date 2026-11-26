@@ -89,6 +89,11 @@ type Config struct {
 	// WakeWindow is how long after the wake word a command may start before
 	// the wake is dropped (default DefaultWakeWindow).
 	WakeWindow time.Duration
+	// VerifyWake turns on the second stage of the wake word (ADR-0041): the
+	// audio is transcribed from just before the wake word, and the turn is
+	// dropped unless the transcript starts with a wake word (Router.MatchWake).
+	// The daemon sets it from speech.wake.verify.
+	VerifyWake bool
 	// Quiet is quiet mode: no earcon or acknowledgement sound, and replies
 	// are shown rather than spoken. See SetQuiet.
 	Quiet bool
@@ -162,6 +167,15 @@ type Pipeline struct {
 	armed      Trigger
 	armedAt    time.Duration // stream offset the wake word ended at, if armedTimed
 	armedTimed bool
+	// armedHead is the audio of a wake word said on its own, kept for the
+	// second stage to check together with the command that follows
+	// (VerifyWake).
+	armedHead speech.Audio
+	// recent is the last segment nothing claimed, cut to its last
+	// wakeLookback, in case the spotter reports a wake word after the VAD
+	// has ended its segment (VerifyWake). It is never transcribed unless a
+	// wake word follows.
+	recent     speech.Segment
 	muted      bool
 	wakeOff    bool          // wake listening switched off (SetWakeListening)
 	quiet      bool          // quiet mode
@@ -310,6 +324,11 @@ func (p *Pipeline) arm(trig Trigger, at time.Duration, timed bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.armed, p.armedAt, p.armedTimed = trig, at, timed
+	p.armedHead = speech.Audio{}
+	if timed && p.cfg.VerifyWake && p.recent.End > at-wakeLookback {
+		p.armedHead = trimFrom(p.recent, at-wakeLookback).Audio
+	}
+	p.recent = speech.Segment{}
 	if p.busy == 0 {
 		p.setStateLocked(Listening, 0)
 	}
@@ -322,10 +341,25 @@ func (p *Pipeline) disarm() {
 	if p.armed == 0 {
 		return
 	}
-	p.armed, p.armedTimed = 0, false
+	p.clearArmLocked()
 	if p.busy == 0 && p.rec == nil {
 		p.setStateLocked(Idle, 0)
 	}
+}
+
+// clearArmLocked forgets the armed trigger. p.mu must be held.
+func (p *Pipeline) clearArmLocked() {
+	p.armed, p.armedTimed = 0, false
+	p.armedHead = speech.Audio{}
+}
+
+// claim is a segment handed to the armed trigger.
+type claim struct {
+	trig Trigger
+	seg  speech.Segment
+	// verify means seg starts before the wake word and the transcript must
+	// begin with one (ADR-0041).
+	verify bool
 }
 
 // claimSegment hands seg to the armed trigger. For a wake word it first cuts
@@ -335,31 +369,79 @@ func (p *Pipeline) disarm() {
 // than MinCommand left after it (the wake word itself, said alone), is not
 // claimed and the wake stays armed for the next one. ok is false then, or
 // when nothing is armed.
-func (p *Pipeline) claimSegment(seg speech.Segment) (trig Trigger, out speech.Segment, ok bool) {
+//
+// With VerifyWake the cut starts earlier, up to wakeLookback before the end
+// of the wake word (at the start of the segment if that is later), so the
+// second stage can hear the wake word itself. A wake word said alone is kept
+// and put in front of the next segment, with a short gap.
+func (p *Pipeline) claimSegment(seg speech.Segment) (c claim, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.armed == 0 {
-		return 0, seg, false
+		if p.cfg.VerifyWake {
+			p.recent = trimFrom(seg, seg.End-wakeLookback)
+		}
+		return claim{}, false
 	}
 	if p.armedTimed {
-		cut := p.armedAt - wakePreRoll
+		verify := p.cfg.VerifyWake
 		if seg.End <= p.armedAt {
-			return 0, seg, false
+			if verify && seg.End > p.armedAt-wakeLookback {
+				// The spotter reports late, so a wake word said alone can
+				// be a segment that ended before it did.
+				p.armedHead = trimFrom(seg, p.armedAt-wakeLookback).Audio
+			}
+			return claim{}, false
 		}
-		if from := audio.Speech.Samples(cut - seg.Start); from > 0 {
-			seg.Audio.Samples = seg.Audio.Samples[min(from, len(seg.Audio.Samples)):]
-			seg.Start = max(seg.Start, cut)
+		if seg.Start-p.armedAt > p.cfg.WakeWindow {
+			// Expired in stream time; the timer in listen does the same in
+			// wall-clock time, which runs faster than a fed-in file.
+			p.clearArmLocked()
+			if p.busy == 0 && p.rec == nil {
+				p.setStateLocked(Idle, 0)
+			}
+			return claim{}, false
 		}
-		if seg.Audio.Duration() < max(p.cfg.MinCommand, time.Millisecond) {
-			return 0, seg, false
+		cut := p.armedAt - wakePreRoll
+		if seg.End-max(cut, seg.Start) < max(p.cfg.MinCommand, time.Millisecond) {
+			if verify && seg.Start <= p.armedAt {
+				p.armedHead = trimFrom(seg, p.armedAt-wakeLookback).Audio
+			}
+			return claim{}, false
 		}
-		if n := audio.Speech.Samples(p.cfg.MaxCommand); len(seg.Audio.Samples) > n {
+		limit := p.cfg.MaxCommand
+		if verify {
+			cut = p.armedAt - wakeLookback
+			limit += wakeLookback
+		}
+		// A segment that started well before the wake word was reported
+		// holds it; one that did not needs the wake word kept from before.
+		needHead := seg.Start >= p.armedAt-wakePreRoll
+		seg = trimFrom(seg, cut)
+		if n := audio.Speech.Samples(limit); len(seg.Audio.Samples) > n {
 			seg.Audio.Samples = seg.Audio.Samples[:n]
 		}
+		if verify && needHead && len(p.armedHead.Samples) > 0 {
+			joined := make([]float32, 0, len(p.armedHead.Samples)+audio.Speech.Samples(wakeGap)+len(seg.Audio.Samples))
+			joined = append(joined, p.armedHead.Samples...)
+			joined = append(joined, make([]float32, audio.Speech.Samples(wakeGap))...)
+			seg.Audio.Samples = append(joined, seg.Audio.Samples...)
+		}
+		c = claim{trig: p.armed, seg: seg, verify: verify}
+	} else {
+		c = claim{trig: p.armed, seg: seg}
 	}
-	trig = p.armed
-	p.armed, p.armedTimed = 0, false
-	return trig, seg, true
+	p.clearArmLocked()
+	return c, true
+}
+
+// trimFrom drops the audio of seg before the stream offset from.
+func trimFrom(seg speech.Segment, from time.Duration) speech.Segment {
+	if n := audio.Speech.Samples(from - seg.Start); n > 0 {
+		seg.Audio.Samples = seg.Audio.Samples[min(n, len(seg.Audio.Samples)):]
+		seg.Start = from
+	}
+	return seg
 }
 
 // beginTurn claims the pipeline for a new utterance. It returns 0 if another
@@ -439,37 +521,58 @@ func (p *Pipeline) Submit(ctx context.Context, u Utterance) error {
 // handleSegment handles one utterance of captured speech.
 // ended is when the VAD handed over the segment, the first moment the end of
 // speech is known.
-func (p *Pipeline) handleSegment(ctx context.Context, trig Trigger, seg speech.Segment, ended time.Time) {
+func (p *Pipeline) handleSegment(ctx context.Context, c claim, ended time.Time) {
 	id, tctx := p.beginTurn(ctx)
 	if id == 0 {
 		// Busy: only the break-glass stop can get through (ADR-0017).
-		if trig == TriggerWake {
-			if t, err := p.d.STT.Transcribe(ctx, seg.Audio); err == nil && p.cfg.Router.BreakGlass(trig, t.Text) {
+		if c.trig == TriggerWake {
+			t, err := p.d.STT.Transcribe(ctx, c.seg.Audio)
+			text, ok := t.Text, err == nil
+			if ok && c.verify {
+				text, ok = p.cfg.Router.MatchWake(text)
+			}
+			if ok && p.cfg.Router.BreakGlass(c.trig, text) {
 				p.stop(StopVoice)
 			}
 		}
 		return
 	}
 	defer p.endTurn(id)
-	p.transcribeAndHandle(tctx, id, trig, seg, ended)
+	p.transcribeAndHandle(tctx, id, c, ended)
 }
 
-// transcribeAndHandle transcribes seg for turn id and handles the text.
-// ended is when the speech ended, if known.
-func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, trig Trigger, seg speech.Segment, ended time.Time) {
+// transcribeAndHandle transcribes the claimed audio for turn id and handles
+// the text. ended is when the speech ended, if known. With c.verify, a
+// transcript that does not start with a wake word is dropped (ADR-0041): it
+// is reported on WakeRejected, without its text, and not on Transcribed.
+func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, c claim, ended time.Time) {
 	p.setState(id, Transcribing)
 	start := time.Now()
-	t, err := p.d.STT.Transcribe(ctx, seg.Audio)
+	t, err := p.d.STT.Transcribe(ctx, c.seg.Audio)
 	if err != nil {
 		_ = p.fail(id, fmt.Errorf("transcribe: %w", err))
 		return
 	}
-	bus.Publish(p.d.Bus, Transcribed, Transcript{Turn: id, Trigger: trig, Text: t.Text, Audio: seg.Audio.Duration(), Took: time.Since(start)})
-	if p.cfg.Router.BreakGlass(trig, t.Text) {
+	took := time.Since(start)
+	text := t.Text
+	if c.verify {
+		rest, ok := p.cfg.Router.MatchWake(text)
+		if !ok {
+			reason := WakeNoMatch
+			if len(dictation.NormWords(text)) == 0 {
+				reason = WakeNoSpeech
+			}
+			bus.Publish(p.d.Bus, WakeRejected, WakeRejection{Turn: id, Reason: reason, Audio: c.seg.Audio.Duration(), Took: took})
+			return
+		}
+		text = rest
+	}
+	bus.Publish(p.d.Bus, Transcribed, Transcript{Turn: id, Trigger: c.trig, Text: t.Text, Audio: c.seg.Audio.Duration(), Took: took})
+	if p.cfg.Router.BreakGlass(c.trig, text) {
 		p.stop(StopVoice)
 		return
 	}
-	_ = p.handle(ctx, id, Utterance{Trigger: trig, Text: t.Text, Ended: ended})
+	_ = p.handle(ctx, id, Utterance{Trigger: c.trig, Text: text, Ended: ended})
 }
 
 // handle routes a transcribed utterance and acts on it.
@@ -481,12 +584,17 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 		ctx = context.WithValue(ctx, typedKey{}, true)
 	}
 	var err error
+	out := Outcome{Turn: id, Trigger: u.Trigger, Route: r.Kind}
 	switch r.Kind {
 	case RouteDictation:
 		err = p.dictate(ctx, id, r.Text, u.Ended)
 	case RouteCommand:
-		err = p.command(ctx, id, r.Text, u.Ended)
+		out.Handler, err = p.command(ctx, id, r.Text, u.Ended)
 	}
+	if err != nil {
+		out.Err = err.Error()
+	}
+	bus.Publish(p.d.Bus, TurnDone, out)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return p.fail(id, err)
 	}
@@ -552,7 +660,9 @@ func (p *Pipeline) dictate(ctx context.Context, id uint64, text string, ended ti
 	return nil
 }
 
-func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended time.Time) error {
+// command acts on a command and says what handled it: a fast-path rule's
+// name, HandlerAI, or HandlerNoAI.
+func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended time.Time) (string, error) {
 	p.setState(id, Acknowledging)
 	ack := p.playAck(ctx, id, ended)
 	typed, _ := ctx.Value(typedKey{}).(bool)
@@ -561,7 +671,7 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended ti
 		sp = p.newSpeaker(ctx, id)
 		ctx = withSpeaker(ctx, sp)
 	}
-	reply, err := p.act(ctx, id, text)
+	reply, handler, err := p.act(ctx, id, text)
 	<-ack // don't talk over the acknowledgement
 	if err == nil && reply == "" {
 		// It worked and there is nothing else to say.
@@ -576,20 +686,21 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended ti
 			if rerr := p.replyShown(ctx, id, l, l+"\n"+err.Error()); rerr != nil {
 				err = errors.Join(err, rerr)
 			}
-			return err
+			return handler, err
 		}
 	}
 	if err != nil || reply == "" {
 		if sp != nil {
 			sp.Abort()
 		}
-		return err
+		return handler, err
 	}
-	return p.reply(ctx, id, reply)
+	return handler, p.reply(ctx, id, reply)
 }
 
-// act runs the fast path or the AI and returns what to say back.
-func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, error) {
+// act runs the fast path or the AI and returns what to say back, and what
+// handled the command (see command).
+func (p *Pipeline) act(ctx context.Context, id uint64, text string) (reply, handler string, err error) {
 	match := stripFillers(text)
 	for _, rule := range p.cfg.FastRules {
 		run, ok := rule.Match(match)
@@ -605,9 +716,9 @@ func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, err
 		if err != nil {
 			bus.Publish(p.d.Bus, FastPathDone, FastPathRan{Turn: id, Rule: rule.Name, Err: "refused: " + err.Error(), Confirmation: how})
 			if cerr := ctx.Err(); cerr != nil {
-				return "", cerr
+				return "", rule.Name, cerr
 			}
-			return "I can't do that: " + err.Error() + ".", nil
+			return "I can't do that: " + err.Error() + ".", rule.Name, nil
 		}
 		reply, err := run(ctx, p)
 		ev := FastPathRan{Turn: id, Rule: rule.Name, Reply: reply, Confirmation: how}
@@ -616,14 +727,15 @@ func (p *Pipeline) act(ctx context.Context, id uint64, text string) (string, err
 		}
 		bus.Publish(p.d.Bus, FastPathDone, ev)
 		if err != nil {
-			return "", fmt.Errorf("fast path %s: %w", rule.Name, err)
+			return "", rule.Name, fmt.Errorf("fast path %s: %w", rule.Name, err)
 		}
-		return reply, nil
+		return reply, rule.Name, nil
 	}
 	if p.d.LLM == nil {
-		return "Sorry, I can't do that without an AI provider.", nil
+		return "Sorry, I can't do that without an AI provider.", HandlerNoAI, nil
 	}
-	return p.converse(ctx, id, text)
+	reply, err = p.converse(ctx, id, text)
+	return reply, HandlerAI, err
 }
 
 // AckSource supplies acknowledgement clips. Ack returns a random clip that
@@ -735,7 +847,7 @@ func (p *Pipeline) stop(src StopSource) {
 	// update, so a later stop never reports a job this one already cancelled.
 	clear(p.jobs)
 	p.busy = 0
-	p.armed = 0
+	p.clearArmLocked()
 	if p.rec != nil {
 		p.rec.cancel() // the audio so far is discarded
 		p.rec = nil
@@ -803,7 +915,7 @@ func (p *Pipeline) SetWakeListening(on bool) {
 		p.notifyLocked()
 		return
 	}
-	p.armed, p.armedTimed = 0, false
+	p.clearArmLocked()
 	p.pauseWakeLocked()
 	if p.busy == 0 && p.rec == nil {
 		p.setStateLocked(Idle, 0)
