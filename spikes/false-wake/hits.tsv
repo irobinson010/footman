@@ -1,0 +1,6 @@
+setting	type	file	at_s	kind	keyword
+b2_t0.05	noise	aporee_60198_69141_00.wav	739.1	wake	alfred
+b2_t0.05	speech	librispeech_dev-other_015.wav	1.8	wake	alfred
+b2_t0.1	noise	aporee_60198_69141_00.wav	739.1	wake	alfred
+b2_t0.1	speech	librispeech_dev-other_015.wav	1.8	wake	alfred
+b2_t0.2	speech	librispeech_dev-other_015.wav	1.8	wake	alfred
