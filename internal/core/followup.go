@@ -254,7 +254,7 @@ func (p *Pipeline) claimFollowUpLocked(seg speech.Segment) (claim, bool) {
 // no to a pending confirmation, which is why the utterance is busy.
 func (p *Pipeline) handleBusySegment(ctx context.Context, c claim) {
 	id, pending := p.pendingConfirmation()
-	if !(c.trig == TriggerWake || (c.trig == TriggerFollowUp && pending)) {
+	if c.trig != TriggerWake && (c.trig != TriggerFollowUp || !pending) {
 		return
 	}
 	t, err := p.d.STT.Transcribe(ctx, c.seg.Audio)

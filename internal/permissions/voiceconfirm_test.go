@@ -140,9 +140,8 @@ func newVRig(t *testing.T, level plugins.Permission, toml string) *vrig {
 	return r
 }
 
-func (r *vrig) audio() *pfake.Audio       { return r.plat.Audio().(*pfake.Audio) }
-func (r *vrig) notes() *pfake.Notifier    { return r.plat.Notifier().(*pfake.Notifier) }
-func (r *vrig) launcher() *pfake.Launcher { return r.plat.Launcher().(*pfake.Launcher) }
+func (r *vrig) audio() *pfake.Audio    { return r.plat.Audio().(*pfake.Audio) }
+func (r *vrig) notes() *pfake.Notifier { return r.plat.Notifier().(*pfake.Notifier) }
 
 func vawait[T any](t *testing.T, sub *bus.Subscription[T], ok func(T) bool) T {
 	t.Helper()
@@ -198,7 +197,7 @@ func (r *vrig) askRaw() {
 	go func() { done <- r.p.Run(ctx) }()
 	r.t.Cleanup(func() {
 		cancel()
-		<-done
+		_ = <-done
 	})
 }
 
