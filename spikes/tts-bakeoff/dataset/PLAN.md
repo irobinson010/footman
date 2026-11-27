@@ -85,7 +85,7 @@ Notes: the digit lines ("6:30", "1995", phone numbers) test number reading, and 
 
 - Audio: about 1.9 h, 2,015 lines.
 - Render: RTF 0.43 (IndexTTS) to 0.52 (VoxCPM2) means about 50-60 minutes, plus 1-3 minutes of container start, plus a second pass for dropped lines (about 5%): about 1.2 hours in total.
-- Verify: `base.en` on CPU runs far faster than real time, and the ECAPA embedding is cheap, so about 15-25 minutes on the 7900X.
+- Verify: `base.en` on CPU runs far faster than real time, and the ECAPA embedding is cheap, so about 15-25 minutes on the 12-core desktop CPU.
 - VRAM: VoxCPM2 8.8 GB estimate (14.6 GB peak measured in the bake-off), IndexTTS 12.7 GB peak. Neither fits beside Troupe's LLM on 16 GB, so schedule it when Troupe's queue is empty.
 - Disk: 24 kHz mono 16-bit WAV is about 5.5 GB for 1.9 h; 48 kHz from VoxCPM2 about 11 GB. Keep it out of git.
 

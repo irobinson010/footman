@@ -1,5 +1,5 @@
-PRETTY_NAME="Ubuntu 26.04.1 LTS"
+PRETTY_NAME="Ubuntu 24.04.1 LTS"
 NAME="Ubuntu"
-VERSION_ID="26.04"
+VERSION_ID="24.04"
 # a comment
 ID=ubuntu

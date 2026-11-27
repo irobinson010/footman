@@ -36,7 +36,7 @@ GPU tasks (S0-07, S0-09, S0-10) run one at a time and are coordinated with Troup
 | [S0-04](https://github.com/irobinson010/footman/issues/4) | Store: SQLite and migrations | B — state | S0-01 | no |
 | [S0-05](https://github.com/irobinson010/footman/issues/5) | Event bus and pipeline state machine (walking skeleton) | A — core | S0-02, S0-03 | no |
 | [S0-06](https://github.com/irobinson010/footman/issues/6) | Spike: global hotkeys and typing at the cursor on KDE Wayland | C — platform | none | yes (test in real apps) |
-| [S0-07](https://github.com/irobinson010/footman/issues/7) | Spike: speech-to-text latency across engines and hardware | D — speech | none | yes (run on the ZenBook) |
+| [S0-07](https://github.com/irobinson010/footman/issues/7) | Spike: speech-to-text latency across engines and hardware | D — speech | none | yes (run on the laptop) |
 | [S0-08](https://github.com/irobinson010/footman/issues/8) | Spike: wake word, VAD and break-glass phrase | D — speech | none | yes (room testing) |
 | [S0-09](https://github.com/irobinson010/footman/issues/9) | Spike: TTS bake-off part 1 — Ashford dataset via Troupe | E — voice | none | yes (approve the voice) |
 | [S0-10](https://github.com/irobinson010/footman/issues/10) | Spike: TTS bake-off part 2 — train and judge small models | E — voice | S0-09 | yes (blind listening) |
@@ -46,5 +46,5 @@ GPU tasks (S0-07, S0-09, S0-10) run one at a time and are coordinated with Troup
 | [S0-14](https://github.com/irobinson010/footman/issues/14) | Sprint 0 wrap-up | wrap-up | all | yes (sign-off) |
 
 ## Test hardware
-- **Workstation:** Ryzen 9 7900X, 64 GB RAM, RTX 4080 16 GB, Kubuntu (KDE Wayland).
-- **ASUS ZenBook (Windows):** Intel Core Ultra 7 155H (16 cores / 22 threads, Arc integrated GPU, Intel AI Boost NPU). This is the integrated-GPU and low-power reference.
+- **Workstation:** 12-core desktop CPU, 16 GB NVIDIA GPU, Kubuntu (KDE Wayland).
+- **Windows laptop:** Intel Core Ultra (16 cores / 22 threads, Arc integrated GPU, Intel AI Boost NPU). This is the integrated-GPU and low-power reference.

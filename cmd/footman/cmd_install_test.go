@@ -53,7 +53,7 @@ func runCmd(args ...string) (code int, out, errs string) {
 func TestSetupThenUninstall(t *testing.T) {
 	home, p := installEnv(t, "sk-test-key\n")
 
-	code, out, errs := runCmd("setup", "--name", "Ian", "--provider", "claude", "--api-key-stdin")
+	code, out, errs := runCmd("setup", "--name", "Alex", "--provider", "claude", "--api-key-stdin")
 	if code != 0 {
 		t.Fatalf("setup = %d: %s %s", code, out, errs)
 	}

@@ -87,7 +87,7 @@ func (o TTSOptions) withDefaults(engine string) TTSOptions {
 	if o.FirstWords == 0 {
 		o.FirstWords = 4
 	}
-	// Kokoro on a 7900X: 8 threads is the fastest; more is slower (S3-02).
+	// Kokoro on a 12-core desktop CPU: 8 threads is the fastest; more is slower (S3-02).
 	o.Common = o.Common.withDefaults(max(1, min(8, runtime.NumCPU()/2)))
 	return o
 }

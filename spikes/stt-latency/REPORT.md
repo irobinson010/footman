@@ -1,9 +1,9 @@
 # S0-07: speech-to-text latency across engines and hardware
 
-Status: workstation measured on 2026-11-25. The ZenBook (Intel Core Ultra 7 155H) run is pending and will be appended.
+Status: workstation measured on 2026-11-25. The laptop (Intel Core Ultra) run is pending and will be appended.
 
 ## Setup
-- **Workstation:** Ryzen 9 7900X (12 cores), RTX 4080 16 GB, Kubuntu 26.04, NVIDIA driver with CUDA 13.2, CUDA toolkit 12.4 for builds.
+- **Workstation:** 12-core desktop CPU, 16 GB NVIDIA GPU, Kubuntu (KDE Plasma), NVIDIA driver with CUDA 13.2, CUDA toolkit 12.4 for builds.
 - **Clips:** six LibriSpeech test-clean clips (about 5, 10 and 30 s, two each).
 - **Timing:** three timed runs after a warm-up; the median is reported.
 - **GPU state:** Troupe's LLM and director containers held about 5.4 GB of VRAM but were idle.

@@ -57,7 +57,7 @@ ADR numbers are reserved to avoid collisions: 0036 persona packs (S3-01), 0037 i
 
 **Interim voices** (owner, 2026-11-26): Ashford `bm_george`, Klaus `bm_lewis`, Pettigrew `bm_fable`, Lucy `bf_emma`, all Kokoro `kokoro-en`.
 
-**Agent run, 2026-11-26** (`TestTalkLatency`, `FOOTMAN_TALK_RUNS=10`): 7900X, CPU only, load average 17–21 from other work; real Kokoro (`bm_george`) and Parakeet int8 on the CPU, the fake platform (nothing played) and the fake AI (answers at once). The commands are spoken by Kokoro (`am_michael`) and transcribed for each run; the first run is a warm-up and not counted. Medians, with min–max:
+**Agent run, 2026-11-26** (`TestTalkLatency`, `FOOTMAN_TALK_RUNS=10`): 12-core desktop CPU, CPU only, load average 17–21 from other work; real Kokoro (`bm_george`) and Parakeet int8 on the CPU, the fake platform (nothing played) and the fake AI (answers at once). The commands are spoken by Kokoro (`am_michael`) and transcribed for each run; the first run is a warm-up and not counted. Medians, with min–max:
 
 | Command | Speech-to-text | End of speech → first ack sample | End of speech → first reply audio |
 |---|---|---|---|

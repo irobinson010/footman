@@ -1,4 +1,4 @@
-# id	engine	sha256	dest	url   (tab separated; read by fetch-models.sh and the ZenBook script)
+# id	engine	sha256	dest	url   (tab separated; read by fetch-models.sh and the laptop script)
 # sherpa-onnx tarballs: sha256 computed from the downloaded release assets (GitHub publishes none for most).
 # ggml files: sha256 is the Hugging Face LFS object id.
 whisper-tiny.en	sherpa	2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd	sherpa-onnx-whisper-tiny.en	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2

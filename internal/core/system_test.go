@@ -16,24 +16,24 @@ import (
 )
 
 var testFacts = platform.SystemFacts{
-	OS: "Linux", Distro: "Ubuntu 26.04 LTS", Kernel: "7.0.0-1-generic",
+	OS: "Linux", Distro: "Ubuntu 24.04 LTS", Kernel: "6.8.0-1-generic",
 	Desktop: "KDE", Session: "wayland", Shell: "bash",
-	CPU: "AMD Ryzen 9 7900X 12-Core Processor", Cores: 12, Threads: 24,
-	MemoryBytes: 64 << 30, GPUs: []string{"NVIDIA GeForce RTX 4080", "AMD Raphael"},
-	Locale: "en_US.UTF-8", TimeZone: "America/New_York", Arch: "linux/amd64",
+	CPU: "AMD Ryzen 9 5900X 12-Core Processor", Cores: 12, Threads: 24,
+	MemoryBytes: 64 << 30, GPUs: []string{"NVIDIA GeForce RTX 4060 Ti", "AMD Raphael"},
+	Locale: "en_US.UTF-8", TimeZone: "America/Chicago", Arch: "linux/amd64",
 }
 
 func TestSystemBlock(t *testing.T) {
 	got := core.SystemBlock(testFacts)
 	want := `This computer (the one you run on; answer for it, not for other operating systems):
-- Operating system: Ubuntu 26.04 LTS (Linux kernel 7.0.0-1-generic)
+- Operating system: Ubuntu 24.04 LTS (Linux kernel 6.8.0-1-generic)
 - Desktop: KDE on Wayland
 - Shell: bash
-- CPU: AMD Ryzen 9 7900X 12-Core Processor (12 cores, 24 threads)
+- CPU: AMD Ryzen 9 5900X 12-Core Processor (12 cores, 24 threads)
 - Memory: 64.0 GiB RAM
-- Graphics: NVIDIA GeForce RTX 4080; AMD Raphael
+- Graphics: NVIDIA GeForce RTX 4060 Ti; AMD Raphael
 - Locale: en_US.UTF-8
-- Time zone: America/New_York
+- Time zone: America/Chicago
 - Footman runs on: linux/amd64`
 	if got != want {
 		t.Errorf("SystemBlock =\n%s\nwant\n%s", got, want)
@@ -116,7 +116,7 @@ func TestSystemStatusTool(t *testing.T) {
 		TopMemoryByName: []platform.Process{{Name: "Isolated Web Co", Count: 12, RSSBytes: 5 << 30}},
 		TopCPU:          []platform.Process{{Name: "kwin_wayland", PID: 1200, CPU: 7.5}},
 		Disks:           []platform.Disk{{Mount: "/", FSType: "ext4", TotalBytes: 1 << 40, FreeBytes: 300 << 30}},
-		GPUs:            []platform.GPUStatus{{Name: "NVIDIA GeForce RTX 4080", MemUsedBytes: 2 << 30, MemTotalBytes: 16 << 30, UtilizationPercent: 5, TemperatureC: 41}},
+		GPUs:            []platform.GPUStatus{{Name: "NVIDIA GeForce RTX 4060 Ti", MemUsedBytes: 2 << 30, MemTotalBytes: 16 << 30, UtilizationPercent: 5, TemperatureC: 41}},
 	}
 	r.ai.Queue(
 		lfake.Reply{ToolCalls: []llm.ToolCall{{ID: "s1", Name: core.SystemStatusTool, Args: json.RawMessage(`{}`)}}},
@@ -148,7 +148,7 @@ func TestSystemStatusTool(t *testing.T) {
 		"1. Isolated Web Co (12 processes) 5.0 GiB",
 		"1. kwin_wayland (pid 1200) 7.5%",
 		"- / (ext4): 300.0 GiB free of 1024.0 GiB",
-		"GPU NVIDIA GeForce RTX 4080: 2.0 GiB of 16.0 GiB memory used, 5% busy, 41°C",
+		"GPU NVIDIA GeForce RTX 4060 Ti: 2.0 GiB of 16.0 GiB memory used, 5% busy, 41°C",
 	} {
 		if !strings.Contains(res.Text, want) {
 			t.Errorf("status lacks %q:\n%s", want, res.Text)

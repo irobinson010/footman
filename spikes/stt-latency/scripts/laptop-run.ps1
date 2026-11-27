@@ -1,4 +1,4 @@
-# Footman S0-07 STT latency run for Windows (the ZenBook). Shipped inside the zip
+# Footman S0-07 STT latency run for Windows (the laptop). Shipped inside the zip
 # as run.ps1; start it with run.cmd. Nothing is installed: downloads go to
 # %LOCALAPPDATA%\footman-spike and results to .\results\.
 #
@@ -55,14 +55,14 @@ foreach ($m in $lock | Where-Object { $ids -contains $_.Id }) {
     }
 }
 
-$out = 'results\zenbook.jsonl'
+$out = 'results\laptop.jsonl'
 Remove-Item -ErrorAction SilentlyContinue $out
 .\stt-bench.exe -detect | Out-File -Encoding utf8 results\detect.json
 
 Write-Host '[3/4] benchmarks (about 2 minutes per row; leave the laptop plugged in and idle)'
 function Bench($label, [string[]]$benchArgs) {
     Write-Host "--- $label"
-    & .\stt-bench.exe @benchArgs -threads $Threads -runs $Runs -label zenbook -out $out
+    & .\stt-bench.exe @benchArgs -threads $Threads -runs $Runs -label laptop -out $out
     if ($LASTEXITCODE -ne 0) { Write-Host "    skipped (exit $LASTEXITCODE); carrying on" }
 }
 foreach ($id in $ids) {
@@ -76,7 +76,7 @@ foreach ($id in $ids) {
 }
 
 Write-Host '[4/4] summary'
-.\stt-bench.exe -summarize $out -md results\zenbook.md
-Compress-Archive -Force -Path results\zenbook.jsonl, results\zenbook.md, results\detect.json -DestinationPath zenbook-results.zip
+.\stt-bench.exe -summarize $out -md results\laptop.md
+Compress-Archive -Force -Path results\laptop.jsonl, results\laptop.md, results\detect.json -DestinationPath laptop-results.zip
 Write-Host ''
-Write-Host "Done. Send back: $PSScriptRoot\zenbook-results.zip"
+Write-Host "Done. Send back: $PSScriptRoot\laptop-results.zip"

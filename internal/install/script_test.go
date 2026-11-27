@@ -50,7 +50,7 @@ func TestInstallScript(t *testing.T) {
 
 	t.Run("installs and runs setup", func(t *testing.T) {
 		dir := t.TempDir()
-		out, err := run(t, dir, "--", "--non-interactive", "--name", "Ian")
+		out, err := run(t, dir, "--", "--non-interactive", "--name", "Alex")
 		if err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
@@ -58,7 +58,7 @@ func TestInstallScript(t *testing.T) {
 		if st, err := os.Stat(bin); err != nil || st.Mode()&0o111 == 0 {
 			t.Errorf("binary not installed and executable: %v", err)
 		}
-		if b, _ := os.ReadFile(filepath.Join(dir, "bin", "args")); strings.TrimSpace(string(b)) != "setup --non-interactive --name Ian" {
+		if b, _ := os.ReadFile(filepath.Join(dir, "bin", "args")); strings.TrimSpace(string(b)) != "setup --non-interactive --name Alex" {
 			t.Errorf("setup args = %q", b)
 		}
 		// Uninstall mode hands off to footman uninstall.

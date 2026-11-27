@@ -160,7 +160,7 @@ func (e *env) daemonInstalls() {
 }
 
 func fullSetup() install.SetupOptions {
-	return install.SetupOptions{Name: "Ian", Persona: "alfred", Provider: "claude", APIKey: "sk-secret-123", Hotkey: "F9"}
+	return install.SetupOptions{Name: "Alex", Persona: "alfred", Provider: "claude", APIKey: "sk-secret-123", Hotkey: "F9"}
 }
 
 func TestSetupRecordsEverything(t *testing.T) {
@@ -172,7 +172,7 @@ func TestSetupRecordsEverything(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k, want := range map[string]string{
-		"user.name": "Ian", "personas.default": "alfred", "ai.provider": "claude", "input.dictate.key": "F9",
+		"user.name": "Alex", "personas.default": "alfred", "ai.provider": "claude", "input.dictate.key": "F9",
 	} {
 		if got := cfg.String(k); got != want {
 			t.Errorf("%s = %q, want %q", k, got, want)
@@ -303,7 +303,7 @@ func TestSetupRerunKeepsUserEditsAndDoesNotDuplicate(t *testing.T) {
 
 	in := e.p.Input().(*fake.Input)
 	boundBefore := len(in.Bound())
-	e.setup(install.SetupOptions{Name: "Ian R"})
+	e.setup(install.SetupOptions{Name: "Alex R"})
 	// Running setup again rebinds the configured key (design §9).
 	if got := in.Bound()[boundBefore:]; len(got) == 0 || got[0] != "F9" {
 		t.Errorf("rerun bound %v, want F9 first", got)
@@ -321,7 +321,7 @@ func TestSetupRerunKeepsUserEditsAndDoesNotDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.String("user.name") != "Ian R" || cfg.String("input.dictate.key") != "F9" {
+	if cfg.String("user.name") != "Alex R" || cfg.String("input.dictate.key") != "F9" {
 		t.Errorf("name=%q hotkey=%q", cfg.String("user.name"), cfg.String("input.dictate.key"))
 	}
 }
@@ -612,12 +612,12 @@ func TestPlanListing(t *testing.T) {
 func TestPrompter(t *testing.T) {
 	t.Run("setup", func(t *testing.T) {
 		var out bytes.Buffer
-		p := install.NewPrompter(strings.NewReader("Ian\n\nopenai\nF9\n"), &out, func() (string, error) { return "sk-x", nil })
+		p := install.NewPrompter(strings.NewReader("Alex\n\nopenai\nF9\n"), &out, func() (string, error) { return "sk-x", nil })
 		o := install.SetupOptions{}
 		if err := p.AskSetup(&o); err != nil {
 			t.Fatal(err)
 		}
-		want := install.SetupOptions{Name: "Ian", Persona: "ashford", Provider: "openai", APIKey: "sk-x", Hotkey: "F9"}
+		want := install.SetupOptions{Name: "Alex", Persona: "ashford", Provider: "openai", APIKey: "sk-x", Hotkey: "F9"}
 		if !reflect.DeepEqual(o, want) { // SetupOptions has func fields
 			t.Errorf("got %+v, want %+v", o, want)
 		}

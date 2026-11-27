@@ -14,13 +14,13 @@ Issue: [#6](https://github.com/irobinson010/footman/issues/6). Status: **automat
 
 ## Environment
 
-Kubuntu, Plasma/KWin **6.6.6**, xdg-desktop-portal **1.21.1**, xdg-desktop-portal-kde **6.6.6**, libei **1.5.0** (runtime only, no headers), kernel 7.0, Go 1.26.
+Kubuntu, Plasma/KWin **6.6.6**, xdg-desktop-portal **1.21.1**, xdg-desktop-portal-kde **6.6.6**, libei **1.5.0** (runtime only, no headers), a current kernel, Go 1.26.
 Test apps: Konsole 25.12.3, Qt 6.10.2 `QPlainTextEdit` (stands in for Kate/KDE apps), GTK 4.22 `TextView`, Firefox 158 (snap), Brave 156 (Chromium), Electron 38.8 (stands in for VS Code / Teams / Slack / Discord), each on native Wayland and, where noted, on Xwayland.
 
 Already on the machine: `wl-copy`/`wl-paste`, `kwin_wayland`, `wayland-info`, `busctl`. **Not installed:** `wtype`, `ydotool`, `dotool`, VS Code, Teams, Chrome.
 
 Things worth knowing about this particular machine:
-- `/dev/uinput` already has an ACL `user:ian:rw` because the `steam-input` and `solaar` udev rules tag it `uaccess`. So uinput tools would work here without root. **A stock install would need root or a udev rule.**
+- `/dev/uinput` already has an ACL `user:me:rw` because the `steam-input` and `solaar` udev rules tag it `uaccess`. So uinput tools would work here without root. **A stock install would need root or a udev rule.**
 - The user is not in the `input` group, so evdev cannot be read.
 
 ## How it was tested (and what was not)

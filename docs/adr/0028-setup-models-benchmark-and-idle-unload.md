@@ -29,5 +29,5 @@ The benchmark compares the paths the daemon would actually run (turbo on Vulkan 
 - The first dictation after setup is fast, and a weak iGPU no longer makes dictation slower than the CPU would.
 - `speech.unload_after = "1s"` is the local-AI off switch for memory-tight machines; `0s` turns unloading off.
 - Re-running setup after a hardware change re-measures; deleting the written `accelerator` line lets the choice be made again.
-- The ZenBook and Intel Arc results (#7) are not in yet; when they arrive, ADR-0024's table may change, and the benchmark already protects against a wrong default.
+- The laptop and Intel Arc results (#7) are not in yet; when they arrive, ADR-0024's table may change, and the benchmark already protects against a wrong default.
 - Windows and macOS keep their own packaging follow-ups.

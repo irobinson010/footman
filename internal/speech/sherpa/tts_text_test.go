@@ -32,7 +32,7 @@ func TestNormalizeText(t *testing.T) {
 		{"On 2026-11-26.", "On November twenty-sixth, twenty twenty-six."},
 		{"Rock & roll.", "Rock and roll."},
 		{"See https://www.example.com/a/b?c=1 now.", "See example dot com now."},
-		{"Mail ian@example.org.", "Mail ian at example dot org."},
+		{"Mail alex@example.org.", "Mail alex at example dot org."},
 		{"An RTX4080.", "An RTX four thousand and eighty."},
 		{"Version 2.0.3.", "Version two point zero point three."},
 		{"Half: 1/2, a quarter: 1/4, 2/3.", "Half: one half, a quarter: one quarter, two thirds."},

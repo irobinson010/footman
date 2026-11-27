@@ -105,7 +105,7 @@ func TestRenderAndCache(t *testing.T) {
 	p := pack(t, nil)
 
 	b := clipbank.New(clipbank.Options{Dir: dir, TTS: f})
-	b.Set(target(p, "Master Ian"))
+	b.Set(target(p, "Master Alex"))
 	wait(t, b)
 	if err := b.Render(context.Background()); err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestRenderAndCache(t *testing.T) {
 	// A new bank (a restart) finds everything on disk: no TTS calls.
 	f2 := tts(t)
 	b2 := clipbank.New(clipbank.Options{Dir: dir, TTS: f2})
-	b2.Set(target(p, "Master Ian"))
+	b2.Set(target(p, "Master Alex"))
 	wait(t, b2)
 	if len(f2.Spoken()) != 0 {
 		t.Errorf("cache miss: rendered %v", spoken(f2))
@@ -143,7 +143,7 @@ func TestAddressChangeRerendersOnlyAddressLines(t *testing.T) {
 	f := tts(t)
 	p := pack(t, nil)
 	b := clipbank.New(clipbank.Options{Dir: dir, TTS: f})
-	b.Set(target(p, "Master Ian"))
+	b.Set(target(p, "Master Alex"))
 	wait(t, b)
 	before := len(f.Spoken())
 
@@ -215,9 +215,9 @@ func TestFallbackWhileRendering(t *testing.T) {
 	b0.Set(target(p, "sir"))
 	wait(t, b0)
 
-	slow := &slowTTS{TTS: tts(t), release: make(chan struct{}), block: "Ian"}
+	slow := &slowTTS{TTS: tts(t), release: make(chan struct{}), block: "Alex"}
 	b := clipbank.New(clipbank.Options{Dir: dir, TTS: slow})
-	b.Set(target(p, "Master Ian"))
+	b.Set(target(p, "Master Alex"))
 	defer b.Close()
 	// Static lines are cached; the personalized ones are still rendering, and
 	// the bank never plays them: every pick is a static line.
@@ -239,7 +239,7 @@ func TestFallbackWhileRendering(t *testing.T) {
 	}
 	for i := 0; i < 50; i++ {
 		_, text, ok := b.Pick(persona.Ack)
-		if !ok || strings.Contains(text, "Ian") {
+		if !ok || strings.Contains(text, "Alex") {
 			t.Fatalf("pick %d = %q, %v while the personalized clips render", i, text, ok)
 		}
 	}
@@ -254,7 +254,7 @@ func TestFallbackWhileRendering(t *testing.T) {
 	seen := false
 	for i := 0; i < 200 && !seen; i++ {
 		_, text, _ := b.Pick(persona.Ack)
-		seen = strings.Contains(text, "Master Ian")
+		seen = strings.Contains(text, "Master Alex")
 	}
 	if !seen {
 		t.Error("the personalized ack was never picked once rendered")

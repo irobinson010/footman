@@ -126,7 +126,7 @@ func TestHistoryJobsMemoryKV(t *testing.T) {
 func TestActionLogAppendOnly(t *testing.T) {
 	ctx := context.Background()
 	s, _ := open(t)
-	id, err := s.AppendAction(ctx, ActionEntry{Actor: "ian", Action: "send", Tool: "mail", Args: `{"k":"[redacted]"}`, Result: "ok", Confirmation: "voice", Reason: "asked"})
+	id, err := s.AppendAction(ctx, ActionEntry{Actor: "alex", Action: "send", Tool: "mail", Args: `{"k":"[redacted]"}`, Result: "ok", Confirmation: "voice", Reason: "asked"})
 	if err != nil || id == 0 {
 		t.Fatal(id, err)
 	}

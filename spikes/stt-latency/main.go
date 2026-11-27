@@ -20,7 +20,7 @@ import (
 // line stands alone.
 type Record struct {
 	Time      string    `json:"time"`
-	Label     string    `json:"label"` // machine label, e.g. workstation, zenbook
+	Label     string    `json:"label"` // machine label, e.g. workstation, laptop
 	OS        string    `json:"os"`
 	CPU       string    `json:"cpu"`
 	Engine    string    `json:"engine"`

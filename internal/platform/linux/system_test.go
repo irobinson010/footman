@@ -55,26 +55,26 @@ func testSys(t *testing.T, env map[string]string, cmds map[string]string) *sysIn
 	return s
 }
 
-const lspciOut = `00:00.0 "Host bridge" "Advanced Micro Devices, Inc. [AMD]" "Device 14d8" -p00 "ASUSTeK Computer Inc." "Device 8877"
-01:00.0 "VGA compatible controller" "NVIDIA Corporation" "AD103 [GeForce RTX 4080]" -ra1 -p00 "ASUSTeK Computer Inc." "Device 88a1"
-01:00.1 "Audio device" "NVIDIA Corporation" "AD103 High Definition Audio Controller" -ra1 -p00 "ASUSTeK Computer Inc." "Device 88a1"
-13:00.0 "VGA compatible controller" "Advanced Micro Devices, Inc. [AMD/ATI]" "Raphael" -rc2 -p00 "ASUSTeK Computer Inc." "Device 8877"
+const lspciOut = `00:00.0 "Host bridge" "Advanced Micro Devices, Inc. [AMD]" "Device 14d8" -p00 "Example Mainboard Vendor" "Device 8877"
+01:00.0 "VGA compatible controller" "NVIDIA Corporation" "AD103 [GeForce RTX 4060 Ti]" -ra1 -p00 "Example Mainboard Vendor" "Device 88a1"
+01:00.1 "Audio device" "NVIDIA Corporation" "AD103 High Definition Audio Controller" -ra1 -p00 "Example Mainboard Vendor" "Device 88a1"
+13:00.0 "VGA compatible controller" "Advanced Micro Devices, Inc. [AMD/ATI]" "Raphael" -rc2 -p00 "Example Mainboard Vendor" "Device 8877"
 `
 
 func TestFacts(t *testing.T) {
 	s := testSys(t, map[string]string{
 		"XDG_CURRENT_DESKTOP": "KDE", "XDG_SESSION_TYPE": "wayland",
-		"SHELL": "/usr/bin/zsh", "LANG": "en_GB.UTF-8",
+		"SHELL": "/usr/bin/zsh", "LANG": "en_US.UTF-8",
 		"USER": "secret-user", "HOSTNAME": "secret-host",
 	}, map[string]string{"lspci": lspciOut})
 	f := s.facts(t.Context())
 	want := platform.SystemFacts{
-		OS: "Linux", Distro: "Ubuntu 26.04.1 LTS", Kernel: "7.0.0-38-generic",
+		OS: "Linux", Distro: "Ubuntu 24.04.1 LTS", Kernel: "6.8.0-1-generic",
 		Desktop: "KDE", Session: "wayland", Shell: "zsh",
-		CPU: "AMD Ryzen 9 7900X 12-Core Processor", Cores: 2, Threads: 4,
+		CPU: "AMD Ryzen 9 5900X 12-Core Processor", Cores: 2, Threads: 4,
 		MemoryBytes: 65536000 * 1024,
-		GPUs:        []string{"NVIDIA GeForce RTX 4080", "AMD Raphael"},
-		Locale:      "en_GB.UTF-8", TimeZone: "Europe/London", Arch: f.Arch,
+		GPUs:        []string{"NVIDIA GeForce RTX 4060 Ti", "AMD Raphael"},
+		Locale:      "en_US.UTF-8", TimeZone: "Europe/Berlin", Arch: f.Arch,
 	}
 	if f.Arch == "" {
 		t.Error("no Arch")
@@ -97,7 +97,7 @@ func factsEqual(a, b platform.SystemFacts) bool { return reflect.DeepEqual(a, b)
 func TestFactsFallbacks(t *testing.T) {
 	s := testSys(t, map[string]string{"DISPLAY": ":0", "TZ": ":America/Chicago", "LC_ALL": "C", "LANG": "de_DE.UTF-8"}, nil)
 	f := s.facts(t.Context())
-	if !slices.Equal(f.GPUs, []string{"NVIDIA GeForce RTX 4080"}) {
+	if !slices.Equal(f.GPUs, []string{"NVIDIA GeForce RTX 4060 Ti"}) {
 		t.Errorf("GPUs = %q", f.GPUs)
 	}
 	if f.Shell != "" && os.Getuid() != 0 {
@@ -124,7 +124,7 @@ func TestShellFromPasswd(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	s := testSys(t, nil, map[string]string{
-		"nvidia-smi": "NVIDIA GeForce RTX 4080, 2048, 16376, 7, 41\n",
+		"nvidia-smi": "NVIDIA GeForce RTX 4060 Ti, 2048, 16376, 7, 41\n",
 	})
 	st, err := s.status(t.Context(), 10)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestStatus(t *testing.T) {
 	if !slices.Equal(st.Batteries, []platform.Battery{{Name: "BAT0", Percent: 81, Status: "Discharging"}}) {
 		t.Errorf("batteries = %+v", st.Batteries)
 	}
-	if !slices.Equal(st.GPUs, []platform.GPUStatus{{Name: "NVIDIA GeForce RTX 4080", MemUsedBytes: 2048 << 20, MemTotalBytes: 16376 << 20, UtilizationPercent: 7, TemperatureC: 41}}) {
+	if !slices.Equal(st.GPUs, []platform.GPUStatus{{Name: "NVIDIA GeForce RTX 4060 Ti", MemUsedBytes: 2048 << 20, MemTotalBytes: 16376 << 20, UtilizationPercent: 7, TemperatureC: 41}}) {
 		t.Errorf("GPUs = %+v", st.GPUs)
 	}
 }
