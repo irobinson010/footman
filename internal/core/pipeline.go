@@ -492,7 +492,7 @@ func (p *Pipeline) claimLocked(seg speech.Segment) (c claim, ok bool) {
 }
 
 // maxLate is how many segments wait while a wake-word command is handled.
-const maxLate = 8
+const maxLate = 32
 
 // releaseLate forgets the segments held for a command that is over.
 func (p *Pipeline) releaseLate() {

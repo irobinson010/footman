@@ -42,7 +42,7 @@ func dictRig(t *testing.T, edit func(*core.Deps, *core.Config)) *drig {
 	r := newRig(t, func(d *core.Deps, c *core.Config) {
 		c.WakeWords = []string{"alfred"}
 		c.Dictation = core.DictationConfig{NotesDir: notes, IdleTimeout: time.Minute}
-		c.FocusTimeout, c.FocusSettle, c.FocusPoll = 200*time.Millisecond, -1, time.Millisecond
+		c.FocusTimeout, c.FocusSettle, c.FocusPoll = 5*time.Second, -1, time.Millisecond
 		c.Now = func() time.Time { return time.Date(2026, 11, 27, 14, 30, 12, 0, time.UTC) }
 		c.StopCue = core.FixedAck(audio.Clip{Format: audio.Speech, Samples: []float32{0.2, 0.2, 0.2, 0.2}})
 		if edit != nil {
@@ -240,7 +240,9 @@ func TestDictationIdleTimeout(t *testing.T) {
 	go func() { done <- r.p.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		_ = <-done // the error is the cancellation
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
 	})
 	await(t, status, func(s core.DictationStatus) bool { return s.Active })
 	st := await(t, status, func(s core.DictationStatus) bool { return !s.Active })
@@ -276,7 +278,9 @@ func TestDictationBreakGlass(t *testing.T) {
 	go func() { done <- r.p.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		_ = <-done // the error is the cancellation
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
 	})
 	if st := await(t, status, func(s core.DictationStatus) bool { return !s.Active }); st.Reason != core.EndStopped {
 		t.Errorf("ended for %q, want stopped", st.Reason)
@@ -416,7 +420,7 @@ func TestDictationNewNote(t *testing.T) {
 
 // An editor that never takes focus: nothing is typed, and the user is told.
 func TestDictationNewNoteFocusTimeout(t *testing.T) {
-	r := dictRig(t, nil)
+	r := dictRig(t, func(_ *core.Deps, c *core.Config) { c.FocusTimeout = 50 * time.Millisecond })
 	r.submit(core.TriggerWake, "Alfred write in a new note")
 	if r.p.Dictation().Active {
 		t.Error("dictating into a window that never took focus")
