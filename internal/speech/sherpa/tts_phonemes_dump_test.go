@@ -20,6 +20,9 @@ import (
 // FOOTMAN_PHONEMES_MODELS is the models folder (default: testModelsDir's
 // search); FOOTMAN_PHONEMES_EXTRA is a lexicon tried first, like the lexicon.txt
 // shipped beside the voice; FOOTMAN_PHONEMES_KEEP=1 keeps only rows with verdict "keep".
+// FOOTMAN_PHONEMES_FAMILY=kokoro phonemizes for the Kokoro model folder
+// kokoro-multi-lang-v1_0 instead (misaki alphabet, British lexicon, as the
+// engine does for a "b" speaker); FOOTMAN_PHONEMES_EXTRA is ignored there.
 func TestDumpPiperPhonemes(t *testing.T) {
 	in, out := os.Getenv("FOOTMAN_PHONEMES_IN"), os.Getenv("FOOTMAN_PHONEMES_OUT")
 	if in == "" || out == "" {
@@ -33,12 +36,23 @@ func TestDumpPiperPhonemes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "vits-piper-en_US-norman-medium", "tokens.txt"))
+	kokoro := os.Getenv("FOOTMAN_PHONEMES_FAMILY") == "kokoro"
+	model := "vits-piper-en_US-norman-medium"
+	if kokoro {
+		model = "kokoro-multi-lang-v1_0"
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, model, "tokens.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var primary []lexicon
-	if extra := os.Getenv("FOOTMAN_PHONEMES_EXTRA"); extra != "" {
+	if kokoro {
+		l, err := loadLexicon(filepath.Join(dir, model, "lexicon-gb-en.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		primary = append(primary, l)
+	} else if extra := os.Getenv("FOOTMAN_PHONEMES_EXTRA"); extra != "" {
 		l, err := loadLexicon(extra)
 		if err != nil {
 			t.Fatal(err)
@@ -46,6 +60,9 @@ func TestDumpPiperPhonemes(t *testing.T) {
 		primary = append(primary, l)
 	}
 	g := newG2P(false, american, primary, fallback, parseTokens(string(raw)))
+	if kokoro {
+		g = newG2P(true, british, primary, fallback, parseTokens(string(raw)))
+	}
 	var spelled []string
 	g.onSpell = func(w string) { spelled = append(spelled, w) }
 
