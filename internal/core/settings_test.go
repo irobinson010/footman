@@ -121,6 +121,31 @@ func TestQuietModeByVoice(t *testing.T) {
 	}
 }
 
+// "turn off web search" applies at once (a tightening); "turn on web search"
+// needs a click; "set my location to Raleigh" applies at once.
+func TestWebSearchAndLocationByVoice(t *testing.T) {
+	sr := settingsRig(t)
+	r, st := sr.rig, sr.st
+	r.submit(core.TriggerWake, "turn off web search")
+	if st.cur.Bool("ai.web_search") {
+		t.Fatal("ai.web_search is still on after turning it off by voice")
+	}
+	r.submit(core.TriggerWake, "turn on web search")
+	if st.cur.Bool("ai.web_search") {
+		t.Fatal("turning web search back on by voice needed no click")
+	}
+	if len(sr.conf.requests()) != 1 {
+		t.Errorf("click requests = %d, want 1", len(sr.conf.requests()))
+	}
+	r.submit(core.TriggerWake, "set my location to Raleigh")
+	if got := st.cur.String("user.location"); got != "Raleigh" {
+		t.Errorf("user.location = %q, want Raleigh", got)
+	}
+	if len(r.ai.Requests()) != 0 {
+		t.Error("went to the AI")
+	}
+}
+
 func TestSettingsRulePhrases(t *testing.T) {
 	s := &core.Settings{Store: &fileStore{cur: config.Defaults()}}
 	rule := core.SettingsRule(s)

@@ -36,6 +36,14 @@ type Message struct {
 	ToolCallID string
 	// IsError marks a ToolResult message whose tool failed.
 	IsError bool
+	// Raw is the provider's own form of an Assistant message, kept when
+	// Text and ToolCalls cannot carry it: a reply that used a server-side
+	// tool such as web search holds blocks (the search, its encrypted
+	// results, text with citations) that must go back unchanged on the next
+	// call. The provider that produced it replays Raw instead of Text and
+	// ToolCalls. It is opaque to everyone else and empty for ordinary
+	// replies.
+	Raw json.RawMessage
 }
 
 // ToolCall is the model asking to run a tool.
@@ -73,6 +81,10 @@ type Request struct {
 	Tools []ToolDef
 	// MaxTokens caps the reply length; 0 means the provider default.
 	MaxTokens int
+	// WebSearch offers the model the provider's own web search, which runs
+	// on the provider's side (ADR-0044). Providers whose Caps.WebSearch is
+	// false ignore it.
+	WebSearch bool
 }
 
 // EventKind says what a streamed Event carries.
@@ -99,6 +111,9 @@ const (
 	StopToolUse StopReason = "tool_use"
 	// StopMaxTokens means the reply hit Request.MaxTokens.
 	StopMaxTokens StopReason = "max_tokens"
+	// StopPause means the provider paused a long server-side tool turn
+	// (such as a web search). Send the reply back unchanged to continue it.
+	StopPause StopReason = "pause"
 )
 
 // Usage counts tokens for cost tracking and budgets.
@@ -109,6 +124,8 @@ type Usage struct {
 	OutputTokens int
 	// CacheReadTokens were served from the provider's prompt cache.
 	CacheReadTokens int
+	// WebSearches is how many web searches the provider ran for the call.
+	WebSearches int
 }
 
 // Event is one item of a streamed reply.
@@ -123,6 +140,13 @@ type Event struct {
 	Stop StopReason
 	// Usage is the token count for the whole call (Done).
 	Usage Usage
+	// Raw is the assistant message to replay, or nil when Text and
+	// ToolCalls are enough (Done). See Message.Raw.
+	Raw json.RawMessage
+	// Untrusted is true when the reply drew on content from outside, such
+	// as web search results (Done). The core then treats the task as
+	// holding untrusted content (ADR-0015, ADR-0044).
+	Untrusted bool
 }
 
 // Stream is a reply being generated. It is pull-based: the caller calls Recv
@@ -149,6 +173,9 @@ type Caps struct {
 	Local bool
 	// ContextTokens is the context window size, or 0 if unknown.
 	ContextTokens int
+	// WebSearch means the provider can search the web for the model
+	// (Request.WebSearch), on its own side.
+	WebSearch bool
 }
 
 // Provider is a language model service.
@@ -172,6 +199,9 @@ type Reply struct {
 	Stop StopReason
 	// Usage is the token count.
 	Usage Usage
+	// Untrusted is true when the reply drew on content from outside; see
+	// Event.Untrusted.
+	Untrusted bool
 }
 
 // Collect reads s to the end, closes it, and returns the assembled reply. It
@@ -196,7 +226,8 @@ func Collect(s Stream) (Reply, error) {
 		case ToolCallEvent:
 			r.Message.ToolCalls = append(r.Message.ToolCalls, e.ToolCall)
 		case Done:
-			r.Stop, r.Usage = e.Stop, e.Usage
+			r.Stop, r.Usage, r.Untrusted = e.Stop, e.Usage, e.Untrusted
+			r.Message.Raw = e.Raw
 		}
 	}
 }

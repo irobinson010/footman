@@ -82,6 +82,8 @@ func Tightens(path string, old, new any) bool {
 		return rankUp(permLevels, old, new)
 	case "ai.mode":
 		return rankUp([]string{"cloud", "local-first", "offline"}, old, new)
+	case "ai.web_search":
+		return old != false && new == false
 	case "permissions.action_log":
 		return old != true && new == true
 	case "memory.enabled":

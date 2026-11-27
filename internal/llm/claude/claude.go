@@ -1,6 +1,7 @@
 // Package claude implements llm.Provider for Anthropic's Claude with the
-// official Go SDK. It streams replies, supports tool use and puts prompt
-// cache breakpoints on the system prompt and the tool definitions.
+// official Go SDK. It streams replies, supports tool use, offers Anthropic's
+// server-side web search (ADR-0044) and puts prompt cache breakpoints on the
+// system prompt and the tool definitions.
 //
 // The API key is never read from config: the caller passes a function that
 // resolves it from the keychain reference (ai.providers.claude.api_key).
@@ -14,10 +15,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"github.com/irobinson010/footman/internal/llm"
 )
@@ -28,6 +31,10 @@ const Name = "claude"
 // DefaultModel is used when neither the request nor the options name a model:
 // the fast model for command handling.
 const DefaultModel = anthropic.ModelClaudeHaiku5_5
+
+// maxWebSearches caps the web searches the model may run for one request,
+// to bound cost and latency. A spoken factual answer needs one or two.
+const maxWebSearches = 3
 
 const (
 	defaultMaxTokens = 1024
@@ -72,7 +79,7 @@ func New(o Options) *Provider {
 
 // Capabilities implements llm.Provider.
 func (p *Provider) Capabilities() llm.Caps {
-	return llm.Caps{Tools: true, Vision: true, Caching: true, ContextTokens: 200000}
+	return llm.Caps{Tools: true, Vision: true, Caching: true, WebSearch: true, ContextTokens: 200000}
 }
 
 // Chat implements llm.Provider.
@@ -120,7 +127,7 @@ func (p *Provider) params(req llm.Request) (anthropic.MessageNewParams, error) {
 			CacheControl: anthropic.NewCacheControlEphemeralParam(),
 		}}
 	}
-	for i, t := range req.Tools {
+	for _, t := range req.Tools {
 		tp := anthropic.ToolParam{Name: t.Name, Description: anthropic.String(t.Description)}
 		if len(t.Schema) > 0 {
 			var s struct {
@@ -132,11 +139,19 @@ func (p *Provider) params(req llm.Request) (anthropic.MessageNewParams, error) {
 			}
 			tp.InputSchema = anthropic.ToolInputSchemaParam{Properties: s.Properties, Required: s.Required}
 		}
-		// One breakpoint on the last tool caches all the tool definitions.
-		if i == len(req.Tools)-1 {
-			tp.CacheControl = anthropic.NewCacheControlEphemeralParam()
-		}
 		params.Tools = append(params.Tools, anthropic.ToolUnionParam{OfTool: &tp})
+	}
+	if req.WebSearch {
+		params.Tools = append(params.Tools, webSearchTool())
+	}
+	// One breakpoint on the last tool caches all the tool definitions.
+	if n := len(params.Tools); n > 0 {
+		switch last := params.Tools[n-1]; {
+		case last.OfWebSearchTool20260209 != nil:
+			last.OfWebSearchTool20260209.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		case last.OfTool != nil:
+			last.OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
 	}
 	msgs, err := messages(req.Messages)
 	if err != nil {
@@ -144,6 +159,19 @@ func (p *Provider) params(req llm.Request) (anthropic.MessageNewParams, error) {
 	}
 	params.Messages = msgs
 	return params, nil
+}
+
+// webSearchTool is Anthropic's server-side web search: the API runs the
+// searches and hands the model the results, so there is nothing to execute
+// here. The 20260209 version defaults to dynamic filtering, which runs the
+// search from inside code execution; a spoken answer does not need it (it adds
+// latency, and its blocks nest), so the tool is called directly. Failed
+// searches count against max_uses.
+func webSearchTool() anthropic.ToolUnionParam {
+	return anthropic.ToolUnionParam{OfWebSearchTool20260209: &anthropic.WebSearchTool20260209Param{
+		MaxUses:        anthropic.Int(maxWebSearches),
+		AllowedCallers: []string{"direct"},
+	}}
 }
 
 // messages converts the conversation. Consecutive tool results are merged
@@ -165,6 +193,19 @@ func messages(in []llm.Message) ([]anthropic.MessageParam, error) {
 		case llm.User:
 			out = append(out, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Text)))
 		case llm.Assistant:
+			if len(m.Raw) > 0 {
+				// A reply that used a server tool goes back exactly as it
+				// came, with its encrypted search results and citations.
+				raw, err := json.Marshal(struct {
+					Role    string          `json:"role"`
+					Content json.RawMessage `json:"content"`
+				}{"assistant", m.Raw})
+				if err != nil {
+					return nil, fmt.Errorf("claude: assistant message: %w", err)
+				}
+				out = append(out, param.Override[anthropic.MessageParam](json.RawMessage(raw)))
+				continue
+			}
 			var blocks []anthropic.ContentBlockParamUnion
 			if m.Text != "" {
 				blocks = append(blocks, anthropic.NewTextBlock(m.Text))
@@ -207,6 +248,10 @@ type stream struct {
 	}
 	cancel  context.CancelFunc
 	blocks  map[int64]*toolBlock
+	acc     anthropic.Message // the whole reply, for replaying server-tool blocks
+	server  bool              // the reply used a server tool (web search)
+	outside bool              // the reply holds content from outside (search results)
+	last    string            // the last text sent, to keep words apart across blocks
 	pending []llm.Event
 	usage   llm.Usage
 	stop    llm.StopReason
@@ -229,11 +274,16 @@ func (s *stream) Recv() (llm.Event, error) {
 			}
 			return llm.Event{}, io.ErrUnexpectedEOF
 		}
-		s.handle(s.s.Current())
+		if err := s.handle(s.s.Current()); err != nil {
+			return llm.Event{}, fmt.Errorf("claude: %w", err)
+		}
 	}
 }
 
-func (s *stream) handle(ev anthropic.MessageStreamEventUnion) {
+func (s *stream) handle(ev anthropic.MessageStreamEventUnion) error {
+	if err := s.acc.Accumulate(ev); err != nil {
+		return err
+	}
 	switch ev.Type {
 	case "message_start":
 		u := ev.Message.Usage
@@ -241,13 +291,25 @@ func (s *stream) handle(ev anthropic.MessageStreamEventUnion) {
 		s.usage.CacheReadTokens = int(u.CacheReadInputTokens)
 		s.usage.OutputTokens = int(u.OutputTokens)
 	case "content_block_start":
-		if ev.ContentBlock.Type == "tool_use" {
+		switch ev.ContentBlock.Type {
+		case "tool_use":
 			s.blocks[ev.Index] = &toolBlock{id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
+		case "server_tool_use":
+			s.server = true
+			if s.last != "" && !strings.HasSuffix(s.last, " ") {
+				// "I'll look that up." and what follows the search are
+				// separate blocks; keep their words apart.
+				s.pending = append(s.pending, llm.Event{Kind: llm.TextDelta, Text: " "})
+				s.last = " "
+			}
+		case "web_search_tool_result":
+			s.server, s.outside = true, true
 		}
 	case "content_block_delta":
 		switch ev.Delta.Type {
 		case "text_delta":
 			if ev.Delta.Text != "" {
+				s.last = ev.Delta.Text
 				s.pending = append(s.pending, llm.Event{Kind: llm.TextDelta, Text: ev.Delta.Text})
 			}
 		case "input_json_delta":
@@ -269,11 +331,16 @@ func (s *stream) handle(ev anthropic.MessageStreamEventUnion) {
 		if u.OutputTokens > 0 {
 			s.usage.OutputTokens = int(u.OutputTokens)
 		}
+		if u.ServerToolUse.WebSearchRequests > 0 {
+			s.usage.WebSearches = int(u.ServerToolUse.WebSearchRequests)
+		}
 		switch ev.Delta.StopReason {
 		case anthropic.StopReasonToolUse:
 			s.stop = llm.StopToolUse
 		case anthropic.StopReasonMaxTokens:
 			s.stop = llm.StopMaxTokens
+		case anthropic.StopReasonPauseTurn:
+			s.stop = llm.StopPause
 		default:
 			s.stop = llm.StopEnd
 		}
@@ -282,8 +349,25 @@ func (s *stream) handle(ev anthropic.MessageStreamEventUnion) {
 			s.stop = llm.StopEnd
 		}
 		s.done = true
-		s.pending = append(s.pending, llm.Event{Kind: llm.Done, Stop: s.stop, Usage: s.usage})
+		done := llm.Event{Kind: llm.Done, Stop: s.stop, Usage: s.usage, Untrusted: s.outside}
+		if s.server {
+			done.Raw = s.replay()
+		}
+		s.pending = append(s.pending, done)
 	}
+	return nil
+}
+
+// replay is the reply's content blocks as the API sent them (with the
+// streamed deltas applied), for sending back unchanged on the next call.
+func (s *stream) replay() json.RawMessage {
+	var m struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(s.acc.RawJSON()), &m); err != nil || len(m.Content) == 0 {
+		return nil
+	}
+	return m.Content
 }
 
 func (s *stream) Close() error {

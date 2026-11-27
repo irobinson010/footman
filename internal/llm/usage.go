@@ -29,6 +29,7 @@ func (t *Tracker) Record(model string, u Usage) {
 	tot.InputTokens += u.InputTokens
 	tot.OutputTokens += u.OutputTokens
 	tot.CacheReadTokens += u.CacheReadTokens
+	tot.WebSearches += u.WebSearches
 	t.totals[model] = tot
 	hook := t.hook
 	t.mu.Unlock()

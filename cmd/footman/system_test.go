@@ -36,6 +36,30 @@ func TestSystemContextFollowsPolicy(t *testing.T) {
 	}
 }
 
+// user.location reaches the AI's system block when set, follows the same
+// context policy as the rest of it, and is absent when empty.
+func TestSystemContextCarriesLocation(t *testing.T) {
+	facts := platform.SystemFacts{OS: "Linux", Distro: "Ubuntu 24.04 LTS"}
+	for _, tc := range []struct {
+		name, toml string
+		want       bool
+	}{
+		{"set", "[user]\nlocation = \"Raleigh\"\n", true},
+		{"unset", ``, false},
+		{"set but system context off", "[user]\nlocation = \"Raleigh\"\n[context]\ncloud = []\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(tc.toml))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(systemContext(cfg, facts), "Raleigh"); got != tc.want {
+				t.Errorf("location in context = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMachineFacts(t *testing.T) {
 	p, err := pfake.New(registry.Map{"root": t.TempDir()})
 	if err != nil {

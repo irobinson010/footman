@@ -7,6 +7,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -35,6 +36,14 @@ type Reply struct {
 	ToolCalls []llm.ToolCall
 	// Err, if set, is returned by Chat instead of a stream.
 	Err error
+	// Raw is replayed with the reply (llm.Event.Raw), as for a reply that
+	// used a server-side web search.
+	Raw json.RawMessage
+	// WebResults marks the reply as drawing on web search results
+	// (llm.Event.Untrusted) and counts one search in its usage.
+	WebResults bool
+	// Pause ends the reply with llm.StopPause.
+	Pause bool
 }
 
 // Provider returns queued replies in order, one per Chat call, and records
@@ -120,8 +129,14 @@ func (p *Provider) Chat(ctx context.Context, req llm.Request) (llm.Stream, error
 	if len(r.ToolCalls) > 0 {
 		stop = llm.StopToolUse
 	}
+	if r.Pause {
+		stop = llm.StopPause
+	}
 	usage := llm.Usage{InputTokens: len(req.Messages), OutputTokens: len(events)}
-	events = append(events, llm.Event{Kind: llm.Done, Stop: stop, Usage: usage})
+	if r.WebResults {
+		usage.WebSearches = 1
+	}
+	events = append(events, llm.Event{Kind: llm.Done, Stop: stop, Usage: usage, Raw: r.Raw, Untrusted: r.WebResults})
 	return &stream{ctx: ctx, events: events}, nil
 }
 

@@ -68,7 +68,7 @@ func TestSystemContextInPrompt(t *testing.T) {
 	if len(reqs) != 2 {
 		t.Fatalf("AI called %d times, want 2", len(reqs))
 	}
-	if want := "PERSONA\n\n" + block; reqs[0].System != want {
+	if want := "PERSONA\n\n" + block + "\n\n" + core.WebRules(false); reqs[0].System != want {
 		t.Errorf("system prompt = %q, want %q", reqs[0].System, want)
 	}
 	if reqs[1].System != reqs[0].System {
@@ -90,7 +90,7 @@ func TestSystemContextInPrompt(t *testing.T) {
 	r.submit(core.TriggerWake, "Footman, hello")
 	reqs = r.ai.Requests()
 	last := reqs[len(reqs)-1]
-	if last.System != "PERSONA" {
+	if last.System != "PERSONA\n\n"+core.WebRules(false) {
 		t.Errorf("system prompt with system off = %q", last.System)
 	}
 	if got := last.Messages[0].Text; got != "hello" {

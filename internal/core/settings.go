@@ -249,6 +249,8 @@ var aliases = map[string]string{
 	"wake word boost":     "speech.wake.boost",
 	"quiet hours":         "replies.quiet_hours",
 	"my name":             "user.name",
+	"location":            "user.location",
+	"web search":          "ai.web_search",
 	"name":                "user.name",
 	"action log":          "permissions.action_log",
 	"read actions":        "permissions.read",

@@ -103,23 +103,35 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	if p.d.Worker != nil {
 		defs = append(defs, startTaskDef)
 	}
-	system, withSystem := p.systemPrompt()
+	web, webHow := p.webSearching(ctx)
+	system, withSystem := p.systemPrompt(web)
 	msgs := []llm.Message{{Role: llm.User, Text: p.userTurn(text, withSystem)}}
 	untrusted := false
 	for range p.cfg.MaxToolRounds {
 		p.setState(id, Thinking)
-		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: system, Messages: msgs, Tools: defs})
+		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: system, Messages: msgs, Tools: defs, WebSearch: web})
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
 		sp := speakerFrom(ctx)
-		msg, err := collectStreaming(s, sp)
+		r, err := collectStreaming(s, sp)
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
-		r := llm.Reply{Message: msg}
 		msgs = append(msgs, r.Message)
+		if r.Untrusted {
+			// Search results are web content (ADR-0015, ADR-0044): from
+			// here on, outward and destructive actions need confirmation,
+			// whatever the config says.
+			untrusted = true
+		}
+		if r.Usage.WebSearches > 0 {
+			bus.Publish(p.d.Bus, ToolCalled, ToolRan{Turn: id, Name: WebSearchTool, Result: fmt.Sprintf("%d web searches", r.Usage.WebSearches), Confirmation: webHow})
+		}
 		if len(r.Message.ToolCalls) == 0 {
+			if r.Stop == llm.StopPause {
+				continue // a long server-side search paused; send it back to go on
+			}
 			if sp != nil {
 				sp.streamedFinal = true
 			}
@@ -147,18 +159,18 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 
 // collectStreaming reads s to the end like llm.Collect, handing each text
 // delta to sp (if any) as it arrives so speech starts before the reply ends.
-func collectStreaming(s llm.Stream, sp *speaker) (llm.Message, error) {
+func collectStreaming(s llm.Stream, sp *speaker) (llm.Reply, error) {
 	defer func() { _ = s.Close() }()
-	m := llm.Message{Role: llm.Assistant}
+	r := llm.Reply{Message: llm.Message{Role: llm.Assistant}}
 	var text strings.Builder
 	for {
 		e, err := s.Recv()
 		if errors.Is(err, io.EOF) {
-			m.Text = text.String()
-			return m, nil
+			r.Message.Text = text.String()
+			return r, nil
 		}
 		if err != nil {
-			return m, err
+			return r, err
 		}
 		switch e.Kind {
 		case llm.TextDelta:
@@ -167,7 +179,10 @@ func collectStreaming(s llm.Stream, sp *speaker) (llm.Message, error) {
 				sp.Feed(e.Text)
 			}
 		case llm.ToolCallEvent:
-			m.ToolCalls = append(m.ToolCalls, e.ToolCall)
+			r.Message.ToolCalls = append(r.Message.ToolCalls, e.ToolCall)
+		case llm.Done:
+			r.Stop, r.Usage, r.Untrusted = e.Stop, e.Usage, e.Untrusted
+			r.Message.Raw = e.Raw
 		}
 	}
 }

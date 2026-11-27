@@ -192,6 +192,7 @@ type Pipeline struct {
 	jobs       map[string]jobs.Job
 	persona    Persona // voice, system prompt and lines (SetPersona)
 	system     string  // facts about the computer for the AI, or "" (SetSystemContext)
+	webSearch  bool    // offer the AI web search, when the provider has it (SetWebSearch)
 }
 
 // New builds a pipeline in the Idle state.

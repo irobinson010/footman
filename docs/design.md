@@ -599,6 +599,7 @@ version = 1
 [user]
 name = "Alex"
 language = "en"
+location = "Raleigh"             # optional, free text: for "what's the weather" (ADR-0044)
 
 [personas]
 default = "ashford"
@@ -632,6 +633,7 @@ vad = { min_silence = 0.5 }      # seconds of silence that end an utterance
 [ai]
 mode = "cloud"                   # cloud | local-first | offline
 provider = "claude"
+web_search = true                # let the AI search the web for current facts, if the provider can (ADR-0044)
 [ai.providers.claude]
 api_key = "keychain:claude"
 model = "claude-haiku-5-5"

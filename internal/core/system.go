@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,7 +20,13 @@ import (
 
 // SystemBlock renders facts as the system-prompt block. It is stable: the
 // same facts give the same text.
-func SystemBlock(f platform.SystemFacts) string {
+func SystemBlock(f platform.SystemFacts) string { return SystemBlockAt(f, "") }
+
+// SystemBlockAt is SystemBlock with the place the user said they are in
+// (config user.location), if any, so "what's the weather" needs no question.
+// The location is shown on one line, cut to 100 characters, and is never
+// worked out from the network.
+func SystemBlockAt(f platform.SystemFacts, location string) string {
 	var b strings.Builder
 	b.WriteString("This computer (the one you run on; answer for it, not for other operating systems):")
 	line := func(label, v string) {
@@ -63,6 +70,7 @@ func SystemBlock(f platform.SystemFacts) string {
 	line("Graphics", strings.Join(f.GPUs, "; "))
 	line("Locale", f.Locale)
 	line("Time zone", f.TimeZone)
+	line("User's location (they told you; use it for weather and other local questions)", oneLine(location, 100))
 	line("Footman runs on", f.Arch)
 	return b.String()
 }
@@ -87,18 +95,16 @@ func (p *Pipeline) SetSystemContext(block string) {
 	p.system = block
 }
 
-// systemPrompt is the persona's prompt followed by the system block, if on.
-// Nothing in it changes between requests, so providers can cache it.
-func (p *Pipeline) systemPrompt() (prompt string, withSystem bool) {
+// systemPrompt is the persona's prompt followed by the system block, if on,
+// and the rules for web answers (ADR-0044): how to use web search when web is
+// true, or that there is no web access. Nothing in it changes between
+// requests (unless config does), so providers can cache it.
+func (p *Pipeline) systemPrompt(web bool) (prompt string, withSystem bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.system == "" {
-		return p.persona.System, false
-	}
-	if p.persona.System == "" {
-		return p.system, true
-	}
-	return p.persona.System + "\n\n" + p.system, true
+	parts := []string{p.persona.System, p.system, WebRules(web)}
+	parts = slices.DeleteFunc(parts, func(s string) bool { return s == "" })
+	return strings.Join(parts, "\n\n"), p.system != ""
 }
 
 // userTurn is the first user message: the request, preceded by the local
@@ -226,4 +232,13 @@ func uptime(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
 	return fmt.Sprintf("%dm", m)
+}
+
+// oneLine collapses s to a single line of at most max characters.
+func oneLine(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > max {
+		s = string(r[:max])
+	}
+	return s
 }

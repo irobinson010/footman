@@ -35,6 +35,12 @@ func TestVoiceChangeTightenLoosen(t *testing.T) {
 		{"ai.mode", "cloud", "offline", VoiceAllowed},
 		{"ai.mode", "offline", "cloud", VoiceNeedsClick},
 		{"ai.mode", "offline", "local-first", VoiceNeedsClick},
+		// ai.web_search: off tightens by voice, on needs a click.
+		{"ai.web_search", true, false, VoiceAllowed},
+		{"ai.web_search", false, true, VoiceNeedsClick},
+		{"ai.web_search", true, true, VoiceAllowed},
+		// user.location is plain text the user may say.
+		{"user.location", "", "Raleigh", VoiceAllowed},
 		// Context: removing items tightens, adding loosens.
 		{"context.cloud", list("clipboard", "selection"), list("selection"), VoiceAllowed},
 		{"context.cloud", list("clipboard"), list(), VoiceAllowed},

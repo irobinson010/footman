@@ -45,11 +45,12 @@ func machineFacts(ctx context.Context, plat platform.Platform, logf func(string,
 	return platform.BasicFacts()
 }
 
-// systemContext is the pipeline's system block for cfg: the facts when the
-// AI's context policy includes "system", else "".
+// systemContext is the pipeline's system block for cfg: the facts, and
+// user.location when set, while the AI's context policy includes "system",
+// else "".
 func systemContext(cfg *config.Config, facts platform.SystemFacts) string {
 	if !config.ContextAllows(cfg.Strings(aiContextKey(cfg)), "system") {
 		return ""
 	}
-	return core.SystemBlock(facts)
+	return core.SystemBlockAt(facts, cfg.String("user.location"))
 }

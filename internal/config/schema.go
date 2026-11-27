@@ -62,6 +62,8 @@ var schema = []Key{
 	{Path: "user.name", Type: String, Default: "", Description: "What the assistant calls you.", VoiceSettable: true, Reload: Live},
 	{Path: "user.language", Type: String, Default: "en", Description: "Language code for speech and replies.", VoiceSettable: true, Reload: Live},
 
+	{Path: "user.location", Type: String, Default: "", Description: "Where you are, in your own words, such as \"Raleigh\" or \"Lyon, France\". Given to the AI, when set, so \"what's the weather\" needs no question. Never worked out from your network; sent to the AI provider like other context.", VoiceSettable: true, Reload: Live},
+
 	{Path: "personas.default", Type: String, Default: "ashford", Description: "Persona used when none is addressed by name.", VoiceSettable: true, Reload: Live},
 	{Path: "personas.listening", Type: StringList, Default: []string{"ashford"}, Description: "Personas that listen at once; more than one means several personas.", VoiceSettable: true, Reload: Live},
 	{Path: "personas.overrides.*.title", Type: String, Description: "How this persona addresses you.", VoiceSettable: true, Reload: Live},
@@ -100,6 +102,7 @@ var schema = []Key{
 
 	{Path: "ai.mode", Type: String, Default: "cloud", Enum: []string{"cloud", "local-first", "offline"}, Description: "Where AI requests may go.", VoiceSettable: true, Reload: Live, Sensitive: true},
 	{Path: "ai.provider", Type: String, Default: "claude", Description: "Name of the provider (under ai.providers) to use.", VoiceSettable: true, Reload: Live},
+	{Path: "ai.web_search", Type: Bool, Default: true, Description: "Let the AI search the web to answer questions about current things (weather, prices, scores, opening hours, news), when its provider can. Search queries go to the provider. Turning it off by voice is always allowed; turning it on needs a click.", VoiceSettable: true, Reload: Live, Sensitive: true},
 	{Path: "ai.providers.*.api_key", Type: Secret, Description: "Keychain reference such as keychain:claude. Never the key itself.", Reload: Live},
 	{Path: "ai.providers.*.model", Type: String, Description: "Model name.", Reload: Live},
 	{Path: "ai.providers.*.url", Type: String, Description: "Base URL for self-hosted providers.", Reload: Live},

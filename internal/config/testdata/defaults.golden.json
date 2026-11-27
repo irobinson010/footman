@@ -1,6 +1,7 @@
 {
   "ai.mode": "cloud",
   "ai.provider": "claude",
+  "ai.web_search": true,
   "audio.agc": true,
   "audio.agc_max_gain_db": 24,
   "audio.prefer_echo_cancel": false,
@@ -53,6 +54,7 @@
   "speech.wake.threshold": 0.05,
   "speech.wake.verify": true,
   "user.language": "en",
+  "user.location": "",
   "user.name": "",
   "version": 1,
   "web.listen": "127.0.0.1:7878"

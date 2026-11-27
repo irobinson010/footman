@@ -234,6 +234,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	// given while context.cloud (or .local) includes "system".
 	facts := machineFacts(ctx, deps.Platform, logf)
 	p.SetSystemContext(systemContext(cfg, facts))
+	p.SetWebSearch(cfg.Bool("ai.web_search"))
 
 	var bg sync.WaitGroup
 	defer bg.Wait()
@@ -327,6 +328,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			p.SetReplyNotify(c.Bool("replies.notify"))
 			personas.apply(c)
 			p.SetSystemContext(systemContext(c, facts))
+			p.SetWebSearch(c.Bool("ai.web_search"))
 			// Changes made through config.set or by voice are already in
 			// old, so only hand edits show up here.
 			permissions.PublishConfigChanges(b, old, c, core.ActorOwner, permissions.HowAuto, "config file edited")
