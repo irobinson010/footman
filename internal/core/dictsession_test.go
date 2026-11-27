@@ -240,7 +240,7 @@ func TestDictationIdleTimeout(t *testing.T) {
 	go func() { done <- r.p.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		_ = <-done // the error is the cancellation
 	})
 	await(t, status, func(s core.DictationStatus) bool { return s.Active })
 	st := await(t, status, func(s core.DictationStatus) bool { return !s.Active })
@@ -276,7 +276,7 @@ func TestDictationBreakGlass(t *testing.T) {
 	go func() { done <- r.p.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		_ = <-done // the error is the cancellation
 	})
 	if st := await(t, status, func(s core.DictationStatus) bool { return !s.Active }); st.Reason != core.EndStopped {
 		t.Errorf("ended for %q, want stopped", st.Reason)

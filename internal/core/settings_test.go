@@ -390,7 +390,7 @@ func TestSettingsTools(t *testing.T) {
 // The dictation stop phrases can be set by voice (ADR-0045).
 func TestDictationStopPhrasesByVoice(t *testing.T) {
 	sr := settingsRig(t)
-	sr.rig.submit(core.TriggerWake, "set dictation stop phrases to finish dictation, we are done")
+	sr.submit(core.TriggerWake, "set dictation stop phrases to finish dictation, we are done")
 	got := sr.st.cur.Strings("dictation.stop_phrases")
 	if len(got) != 2 || got[0] != "finish dictation" || got[1] != "we are done" {
 		t.Errorf("stop phrases = %v, want [finish dictation, we are done]", got)
