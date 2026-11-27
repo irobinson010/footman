@@ -437,12 +437,20 @@ func TestFastRulesDeclareAct(t *testing.T) {
 			t.Errorf("rule %s permission = %v, want act", rule.Name, rule.Permission)
 		}
 	}
-	rule := core.DefaultFastRules(map[string]string{"Docs": "https://go.dev"})[0]
-	if _, ok := rule.Match("open docs"); !ok {
+	var open core.FastRule
+	for _, rule := range core.DefaultFastRules(map[string]string{"Docs": "https://go.dev"}) {
+		if rule.Name == "open" {
+			open = rule
+		}
+	}
+	if _, ok := open.Match("open docs"); !ok {
 		t.Error("user alias not matched")
 	}
 	for _, text := range []string{"volume", "pause the meeting now", "set the table", "volume 150", "next week"} {
-		for _, rule := range core.DefaultFastRules(nil)[1:] {
+		for _, rule := range core.DefaultFastRules(nil) {
+			if rule.Name == "open" {
+				continue
+			}
 			if _, ok := rule.Match(text); ok {
 				t.Errorf("rule %s matched %q", rule.Name, text)
 			}

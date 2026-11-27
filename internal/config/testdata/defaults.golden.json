@@ -14,7 +14,14 @@
   ],
   "dictation.cleanup": "simple",
   "dictation.commands": "simple",
+  "dictation.idle_timeout": "60s",
   "dictation.insert": "auto",
+  "dictation.notes_dir": "~/Documents/Footman notes",
+  "dictation.stop_phrases": [
+    "stop dictation",
+    "end dictation",
+    "that's all"
+  ],
   "dictation.terminal_mode": true,
   "history.retention_days": 30,
   "history.transcripts": true,

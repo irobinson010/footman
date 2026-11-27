@@ -280,10 +280,11 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 
 | Area | Simple | Smart (later) |
 |---|---|---|
-| Dictation vs. command | Wake word followed by "dictate" or "write" is dictation; anything else is a command. Separate hotkeys for each. | A small, fast AI classifies the intent. |
+| Dictation vs. command | Wake word followed by "dictate" or "write" and some text is dictation; "write" alone, "take a note" and the like start a hands-free dictation session ([ADR-0045](adr/0045-voice-started-dictation.md)); anything else is a command. Separate hotkeys for each. | A small, fast AI classifies the intent. |
 | Mid-dictation commands ("new paragraph", "scratch that", "all caps") | Fixed phrase list. | Understood from context. |
 
 - **Dictation formatting (simple tier, [ADR-0032](adr/0032-dictation-commands-and-code-mode.md)):** spoken "new line", "new paragraph", punctuation, "scratch that", "all caps … end caps" and a "literal" escape, from per-language phrase lists. In a terminal, or after "command mode", **code mode** turns "ps space dash aux" into `ps -aux`. Footman never presses Enter in a terminal.
+- **Voice-started dictation ([ADR-0045](adr/0045-voice-started-dictation.md)):** "Alfred, write" (or "dictate", "take a note", "start dictation") starts a session in which every utterance is typed into the focused app with no wake word, until "stop dictation", "end dictation", "that's all", "Alfred, stop" or `dictation.idle_timeout` (60 s). Whole-utterance commands move and edit through key presses: "go to the end/start", "end/start of line", "select all", "undo", "redo", "press enter/tab/escape", "save". "Write in a new note/document" creates a timestamped file in `dictation.notes_dir`, opens it in the default editor and dictates into it; "open <file> and write" finds a file by name and, if several match, reads out the top three to pick by number. Terminals keep the ADR-0032 rule: no Enter, not even "press enter".
 - **Push-to-talk:** both hold-to-talk and tap-to-start / tap-to-stop. **The wake word stays a top priority**, so everything can be done by voice alone.
 - **Everything is configurable by voice.** Every setting can be changed by voice ("Alfred, turn on quiet mode"), as well as from the web UI and CLI. Footman can also explain where a setting lives and what it does.
 - **Replies:** spoken in the persona's voice **and** shown as a desktop notification by default (`replies.speak`, `replies.notify`). Quiet mode and quiet hours silence the speech but keep the notification ([ADR-0042](adr/0042-persona-replies-spoken-and-shown.md)).
@@ -624,6 +625,9 @@ microphone = "default"
 cleanup = "simple"               # off | simple | smart
 commands = "simple"              # off | simple | smart
 insert = "auto"                  # auto | type | paste
+stop_phrases = ["stop dictation", "end dictation", "that's all"]   # end a voice-started session (ADR-0045)
+idle_timeout = "60s"             # a voice-started session ends after this much silence; 0s = never
+notes_dir = "~/Documents/Footman notes"   # new notes and documents ("write in a new note")
 
 [replies]
 speak = "when-voice"             # always | when-voice | never

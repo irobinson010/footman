@@ -23,6 +23,7 @@ type Input struct {
 	setupBinary string
 	prepared    int
 	backspaces  []int
+	keys        []string
 	resets      []string
 	// Err, if set, is returned by Type, Paste, SetupInput, BindHotkeys and
 	// PrepareInsert.
@@ -36,6 +37,7 @@ type Input struct {
 var _ platform.InputSetup = (*Input)(nil)
 var _ platform.InputReset = (*Input)(nil)
 var _ platform.InputEditing = (*Input)(nil)
+var _ platform.InputKeys = (*Input)(nil)
 
 type hotkeySub struct {
 	mu     sync.Mutex // held while sending, and to close ch
@@ -116,6 +118,27 @@ func (in *Input) Backspace(ctx context.Context, n int) error {
 	defer in.mu.Unlock()
 	in.backspaces = append(in.backspaces, n)
 	return in.Err
+}
+
+// Key implements platform.InputKeys by recording combo.
+func (in *Input) Key(ctx context.Context, combo string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.Err != nil {
+		return in.Err
+	}
+	in.keys = append(in.keys, combo)
+	return nil
+}
+
+// Keys returns the key combinations pressed with Key, in order.
+func (in *Input) Keys() []string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return slices.Clone(in.keys)
 }
 
 // Backspaces returns the BackSpace counts requested, in order.

@@ -119,6 +119,13 @@ type (
 	micData struct {
 		Mic string `json:"mic"`
 	}
+	dictationData struct {
+		Active  bool   `json:"active"`
+		Phase   string `json:"phase,omitempty"`
+		Message string `json:"message"`
+		Target  string `json:"target,omitempty"`
+		Reason  string `json:"reason,omitempty"`
+	}
 	jobData struct {
 		ID      string    `json:"id"`
 		Prompt  string    `json:"prompt"`
@@ -177,6 +184,8 @@ func eventData(data any) any {
 		return outcomeData{Turn: d.Turn, Trigger: d.Trigger.String(), Route: d.Route.String(), Handler: d.Handler, Error: d.Err}
 	case platform.TrayStatus:
 		return micData{Mic: micName(d)}
+	case core.DictationStatus:
+		return dictationData(d)
 	case core.JobEvent:
 		return jobData{ID: d.ID, Prompt: d.Prompt, Status: d.Update.Status.String(), Message: d.Update.Message, At: d.Update.At}
 	}

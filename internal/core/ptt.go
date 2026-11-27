@@ -285,5 +285,8 @@ func (p *Pipeline) idleMic() platform.TrayStatus {
 	if p.mic.pttOnly || p.wakeOff || p.muted || !p.mic.started || p.mic.ended {
 		return platform.MicOff
 	}
+	if p.sess != nil {
+		return platform.Recording // a dictation session keeps the microphone open
+	}
 	return platform.WakeListening
 }

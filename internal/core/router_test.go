@@ -15,7 +15,15 @@ func TestRouter(t *testing.T) {
 	}{
 		{core.TriggerWake, "Alfred, dictate hello world", core.Route{Kind: core.RouteDictation, Text: "hello world"}},
 		{core.TriggerWake, "Write: dear Sam", core.Route{Kind: core.RouteDictation, Text: "dear Sam"}},
-		{core.TriggerWake, "dictate", core.Route{Kind: core.RouteNone}},
+		// A bare "dictate" or "write" starts a dictation session, a command
+		// the fast path handles (ADR-0045); more words after it are still a
+		// one-shot dictation.
+		{core.TriggerWake, "dictate", core.Route{Kind: core.RouteCommand, Text: "dictate"}},
+		{core.TriggerWake, "Alfred, write.", core.Route{Kind: core.RouteCommand, Text: "write."}},
+		{core.TriggerWake, "Alfred take a note", core.Route{Kind: core.RouteCommand, Text: "take a note"}},
+		{core.TriggerWake, "Alfred write in a new note", core.Route{Kind: core.RouteCommand, Text: "write in a new note"}},
+		{core.TriggerWake, "Alfred open meeting notes and write", core.Route{Kind: core.RouteCommand, Text: "open meeting notes and write"}},
+		{core.TriggerWake, "Alfred write a new note to Sam", core.Route{Kind: core.RouteDictation, Text: "a new note to Sam"}},
 		{core.TriggerWake, "Alfred, open YouTube", core.Route{Kind: core.RouteCommand, Text: "open YouTube"}},
 		{core.TriggerWake, "fred, open YouTube", core.Route{Kind: core.RouteCommand, Text: "open YouTube"}},
 		{core.TriggerWake, "Lfred open YouTube", core.Route{Kind: core.RouteCommand, Text: "open YouTube"}},

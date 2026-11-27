@@ -325,6 +325,11 @@ func (r *Router) Route(t Trigger, text string) Route {
 		return route(RouteCommand, tokens)
 	}
 	tokens = r.stripWake(tokens)
+	// "write" alone, "take a note", "open notes and write": these start a
+	// dictation session, a command (ADR-0045), not a one-shot dictation.
+	if _, ok := matchStart(dictation.NormWords(strings.Join(tokens, " "))); ok {
+		return route(RouteCommand, tokens)
+	}
 	if rest, ok := stripPrefix(tokens, r.dictate); ok {
 		return route(RouteDictation, rest)
 	}

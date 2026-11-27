@@ -209,7 +209,7 @@ func DefaultFastRules(sites map[string]string) []FastRule {
 	for k, v := range sites {
 		all[dictation.Norm(k)] = v
 	}
-	return []FastRule{OpenRule(all), VolumeRule(), MediaRule()}
+	return []FastRule{DictationRule(), OpenRule(all), VolumeRule(), MediaRule()}
 }
 
 // fillers are words people start a command with that change nothing, as in

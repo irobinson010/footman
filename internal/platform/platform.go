@@ -84,6 +84,28 @@ type InputEditing interface {
 	Backspace(ctx context.Context, n int) error
 }
 
+// Key names for InputKeys.Key, joined by "+" with modifiers first, such as
+// "Ctrl+End" or "Ctrl+Shift+Z". Case does not matter.
+const (
+	KeyEnter  = "Enter"
+	KeyTab    = "Tab"
+	KeyEscape = "Escape"
+	KeyHome   = "Home"
+	KeyEnd    = "End"
+)
+
+// InputKeys is an optional extension of Input for voice-started dictation
+// (ADR-0045): it presses a key combination, so the user can move around and
+// edit by voice. Callers check for it with a type assertion and say so when
+// an Input lacks it.
+type InputKeys interface {
+	// Key presses combo: zero or more modifiers (Ctrl, Shift, Alt) and one
+	// key, joined by "+". The keys are Enter, Tab, Escape, Home, End, Up,
+	// Down, Left, Right, Backspace, Delete, and a single letter or digit.
+	// An unknown name returns an error without pressing anything.
+	Key(ctx context.Context, combo string) error
+}
+
 // InputSetup is an optional extension of Input for desktops that need a
 // one-time setup step. Setup checks for it with a type assertion.
 type InputSetup interface {

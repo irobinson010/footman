@@ -54,6 +54,13 @@ type Deps struct {
 	Layout dictation.Layout
 	// Gate decides whether a tool call may run (default DefaultGate).
 	Gate Gate
+	// Finder finds files by spoken name for "open <file> and write". Nil
+	// means that phrase says it cannot search.
+	Finder FileFinder
+	// Editor does text-aware editing in a dictation session (replace and
+	// insert-after, ADR-0045). Nil means dictation.NoEditor, which supports
+	// nothing.
+	Editor dictation.TextEditor
 }
 
 // Config is the pipeline's behaviour. The zero value is usable.
@@ -144,6 +151,17 @@ type Config struct {
 	Router *Router
 	// FastRules are tried before the LLM (default DefaultFastRules(nil)).
 	FastRules []FastRule
+	// Dictation is the voice-started dictation session's settings (config
+	// dictation.notes_dir, stop_phrases and idle_timeout); see SetDictation.
+	Dictation DictationConfig
+	// FocusTimeout, FocusSettle and FocusPoll time how a new note's window
+	// is waited for (defaults DefaultFocusTimeout, DefaultFocusSettle and
+	// DefaultFocusPoll). A negative FocusSettle means no pause.
+	FocusTimeout, FocusSettle, FocusPoll time.Duration
+	// StopCue is a short sound played when a dictation session ends, from
+	// the clip bank. Nil means none. (The start of a session is already
+	// marked by the acknowledgement clip.)
+	StopCue AckSource
 }
 
 // Pipeline is the voice pipeline state machine. Create one with New, drive it
@@ -187,6 +205,13 @@ type Pipeline struct {
 	codeMode   *bool // spoken code mode on/off; nil follows the focused app
 	scratchLen int   // characters of the last insertion "scratch that" can take back
 	lastInsAt  time.Time
+	sess       *dictSession // the voice-started dictation session, if any
+	// holding is true from a wake-word command being claimed until its turn
+	// is over; segments that end meanwhile wait in late, in case the command
+	// starts a dictation session that should hear them (ADR-0045). They are
+	// kept in memory and never transcribed otherwise.
+	holding    bool
+	late       []speech.Segment
 	hotkeyErrs map[string]string // hotkeys that could not be registered
 	jobSeq     int
 	jobs       map[string]jobs.Job
@@ -239,6 +264,17 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	}
 	if cfg.MaxToolRounds <= 0 {
 		cfg.MaxToolRounds = 8
+	}
+	if cfg.FocusTimeout <= 0 {
+		cfg.FocusTimeout = DefaultFocusTimeout
+	}
+	if cfg.FocusSettle == 0 {
+		cfg.FocusSettle = DefaultFocusSettle
+	} else if cfg.FocusSettle < 0 {
+		cfg.FocusSettle = 0
+	}
+	if cfg.FocusPoll <= 0 {
+		cfg.FocusPoll = DefaultFocusPoll
 	}
 	if cfg.Cleaner == nil {
 		// Spoken commands are the formatter's job (ADR-0032).
@@ -379,6 +415,23 @@ type claim struct {
 func (p *Pipeline) claimSegment(seg speech.Segment) (c claim, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// One locked step, so a session that starts meanwhile cannot miss it
+	// (ADR-0045): a running session takes every segment, and a segment no
+	// one claimed while a wake-word command is being handled is kept for the
+	// session that command may start.
+	if s := p.sess; s != nil {
+		s.push(seg)
+		return claim{}, false
+	}
+	c, ok = p.claimLocked(seg)
+	if !ok && p.holding && len(p.late) < maxLate {
+		p.late = append(p.late, seg)
+	}
+	return c, ok
+}
+
+// claimLocked is claimSegment with p.mu held.
+func (p *Pipeline) claimLocked(seg speech.Segment) (c claim, ok bool) {
 	if p.armed == 0 {
 		if p.cfg.VerifyWake {
 			p.recent = trimFrom(seg, seg.End-wakeLookback)
@@ -434,7 +487,18 @@ func (p *Pipeline) claimSegment(seg speech.Segment) (c claim, ok bool) {
 		c = claim{trig: p.armed, seg: seg}
 	}
 	p.clearArmLocked()
+	p.holding, p.late = true, nil
 	return c, true
+}
+
+// maxLate is how many segments wait while a wake-word command is handled.
+const maxLate = 8
+
+// releaseLate forgets the segments held for a command that is over.
+func (p *Pipeline) releaseLate() {
+	p.mu.Lock()
+	p.holding, p.late = false, nil
+	p.mu.Unlock()
 }
 
 // trimFrom drops the audio of seg before the stream offset from.
@@ -524,6 +588,7 @@ func (p *Pipeline) Submit(ctx context.Context, u Utterance) error {
 // ended is when the VAD handed over the segment, the first moment the end of
 // speech is known.
 func (p *Pipeline) handleSegment(ctx context.Context, c claim, ended time.Time) {
+	defer p.releaseLate()
 	id, tctx := p.beginTurn(ctx)
 	if id == 0 {
 		// Busy: only the break-glass stop can get through (ADR-0017).
@@ -668,6 +733,8 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended ti
 	p.setState(id, Acknowledging)
 	ack := p.playAck(ctx, id, ended)
 	typed, _ := ctx.Value(typedKey{}).(bool)
+	silent := new(bool)
+	ctx = context.WithValue(ctx, silentKey{}, silent)
 	var sp *speaker
 	if p.shouldSpeak(typed) {
 		sp = p.newSpeaker(ctx, id)
@@ -675,7 +742,7 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended ti
 	}
 	reply, handler, err := p.act(ctx, id, text)
 	<-ack // don't talk over the acknowledgement
-	if err == nil && reply == "" {
+	if err == nil && reply == "" && !*silent {
 		// It worked and there is nothing else to say.
 		if reply = p.line(LineDone, ""); sp != nil {
 			sp.streamedFinal = false
@@ -855,6 +922,9 @@ func (p *Pipeline) stop(src StopSource) {
 		p.rec = nil
 	}
 	p.muted = true
+	if p.sess != nil {
+		p.sess.end(EndStopped)
+	}
 	p.pauseWakeLocked()
 	p.setStateLocked(Idle, 0)
 	p.mu.Unlock()
@@ -918,6 +988,9 @@ func (p *Pipeline) SetWakeListening(on bool) {
 		return
 	}
 	p.clearArmLocked()
+	if p.sess != nil {
+		p.sess.end(EndListening) // it could not hear anything now
+	}
 	p.pauseWakeLocked()
 	if p.busy == 0 && p.rec == nil {
 		p.setStateLocked(Idle, 0)

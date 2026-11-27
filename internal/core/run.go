@@ -121,6 +121,9 @@ func (p *Pipeline) microphone(ctx context.Context) error {
 		hotkeys.Wait()
 		recs.Wait()
 	}()
+	// A dictation session cannot outlive the microphone, but first types
+	// what was already heard.
+	defer func() { p.closeSession(EndMicrophone, ctx.Err() == nil) }()
 	if combos := nonEmpty(p.cfg.DictateHotkey, p.cfg.CommandHotkey, p.cfg.StopHotkey); len(combos) > 0 {
 		chans, err := p.registerHotkeys(hctx, combos)
 		if err != nil {
@@ -265,7 +268,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 	if err != nil {
 		return false, err
 	}
-	p.setMic(platform.WakeListening)
+	p.setMic(p.idleMic())
 	frames = p.level(mctx, frames)
 
 	var wakes <-chan speech.WakeEvent
@@ -295,6 +298,9 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				// utterance to be transcribed.
 				p.stop(StopVoice)
 				continue
+			}
+			if p.dictating() {
+				continue // a dictation session needs no wake word (ADR-0045)
 			}
 			bus.Publish(p.d.Bus, WakeHeard, Wake{Keyword: w.Keyword, At: w.At})
 			p.arm(TriggerWake, w.At, true)

@@ -48,8 +48,8 @@ var english = &Lang{
 	Commands: map[string]Cmd{
 		"new line": CmdNewLine, "newline": CmdNewLine,
 		"new paragraph": CmdNewParagraph,
-		"scratch that":  CmdScratch,
-		"all caps":      CmdCapsOn, "end caps": CmdCapsOff,
+		"scratch that":  CmdScratch, "delete that": CmdScratch,
+		"all caps": CmdCapsOn, "end caps": CmdCapsOff,
 		"literal":      CmdLiteral,
 		"command mode": CmdCodeMode, "code mode": CmdCodeMode,
 		"normal mode": CmdTextMode, "text mode": CmdTextMode,

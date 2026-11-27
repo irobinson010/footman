@@ -10,19 +10,23 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/irobinson010/footman/internal/api"
+	"github.com/irobinson010/footman/internal/audio"
 	"github.com/irobinson010/footman/internal/bus"
 	"github.com/irobinson010/footman/internal/config"
 	"github.com/irobinson010/footman/internal/core"
 	"github.com/irobinson010/footman/internal/dictation"
+	"github.com/irobinson010/footman/internal/filefind"
 	"github.com/irobinson010/footman/internal/install"
 	"github.com/irobinson010/footman/internal/jobs"
 	"github.com/irobinson010/footman/internal/llm"
 	"github.com/irobinson010/footman/internal/llm/claude"
 	"github.com/irobinson010/footman/internal/permissions"
+	"github.com/irobinson010/footman/internal/persona"
 	"github.com/irobinson010/footman/internal/persona/clipbank"
 	"github.com/irobinson010/footman/internal/platform"
 	"github.com/irobinson010/footman/internal/registry"
@@ -176,6 +180,10 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	defer broker.Close()
 	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: speakingConfirmer{broker}}
 	deps.Gate = gate
+	// "open <file> and write" searches the home folder (ADR-0045).
+	if home, err := os.UserHomeDir(); err == nil && deps.Finder == nil {
+		deps.Finder = filefind.New(home)
+	}
 	// Settings by voice: tightening applies at once, loosening asks the
 	// broker for a click.
 	settings := &core.Settings{Store: cfgFile, Bus: b, Confirm: broker}
@@ -215,6 +223,8 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		logf("could not record the clip cache in the install receipt: %v", err)
 	}
 	pcfg.Ack = bank
+	// The persona's "done" line is the cue when a dictation session ends.
+	pcfg.StopCue = bankLine{bank, persona.Done}
 	p, err := core.New(deps, pcfg)
 	if err != nil {
 		return err
@@ -326,6 +336,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			cfgFile.Replace(c)
 			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
 			p.SetReplyNotify(c.Bool("replies.notify"))
+			p.SetDictation(dictationConfig(c))
 			personas.apply(c)
 			p.SetSystemContext(systemContext(c, facts))
 			p.SetWebSearch(c.Bool("ai.web_search"))
@@ -566,7 +577,41 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		Speak:         cfg.String("replies.speak"),
 		Notify:        cfg.Bool("replies.notify"),
 		QuietHours:    cfg.String("replies.quiet_hours"),
+		Dictation:     dictationConfig(cfg),
 	}
+}
+
+// dictationConfig maps the dictation.* keys for voice-started dictation
+// (ADR-0045): a leading tilde in the notes folder is the home folder, and an
+// idle timeout of 0s means never.
+func dictationConfig(cfg *config.Config) core.DictationConfig {
+	dc := core.DictationConfig{
+		NotesDir:    cfg.String("dictation.notes_dir"),
+		StopPhrases: cfg.Strings("dictation.stop_phrases"),
+	}
+	if rest, ok := strings.CutPrefix(dc.NotesDir, "~"); ok && (rest == "" || rest[0] == '/') {
+		if home, err := os.UserHomeDir(); err == nil {
+			dc.NotesDir = filepath.Join(home, rest)
+		}
+	}
+	if d, err := time.ParseDuration(cfg.String("dictation.idle_timeout")); err == nil {
+		dc.IdleTimeout = d
+		if d == 0 {
+			dc.IdleTimeout = -1
+		}
+	}
+	return dc
+}
+
+// bankLine is a clip bank's lines of one kind as a core.AckSource.
+type bankLine struct {
+	bank *clipbank.Bank
+	kind persona.Kind
+}
+
+func (b bankLine) Ack() (audio.Clip, bool) {
+	c, _, ok := b.bank.Pick(b.kind)
+	return c, ok
 }
 
 // clipsDir is where the clip bank caches its clips: <cache>/clips (in tests

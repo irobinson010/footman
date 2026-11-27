@@ -146,6 +146,16 @@ type StatusResult struct {
 	Hotkeys []HotkeyInfo `json:"hotkeys"`
 	// LastDictation is the most recent dictation, if any.
 	LastDictation *LastDictation `json:"last_dictation,omitempty"`
+	// Dictation is the voice-started dictation session, while one runs
+	// (ADR-0045).
+	Dictation *DictationInfo `json:"dictation,omitempty"`
+}
+
+// DictationInfo is a running voice-started dictation session.
+type DictationInfo struct {
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
 }
 
 // ModelsStatus is the state of the speech models that unload when idle.
@@ -203,9 +213,14 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 	if ins, at, ok := p.LastInsertion(); ok {
 		last = &LastDictation{At: at, Chars: len([]rune(ins.Text)), Method: string(ins.Method), LatencyMS: ms(ins.Latency)}
 	}
+	var dict *DictationInfo
+	if d := p.Dictation(); d.Active {
+		dict = &DictationInfo{Phase: d.Phase, Message: d.Message, Target: d.Target}
+	}
 	return StatusResult{
 		Hotkeys:         hotkeys,
 		LastDictation:   last,
+		Dictation:       dict,
 		Models:          models,
 		Version:         m.d.Info.Version,
 		API:             APIVersion,

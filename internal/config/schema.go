@@ -82,6 +82,9 @@ var schema = []Key{
 	{Path: "dictation.cleanup", Type: String, Default: "simple", Enum: onOff, Description: "Transcript cleanup level.", VoiceSettable: true, Reload: Live},
 	{Path: "dictation.commands", Type: String, Default: "simple", Enum: onOff, Description: "Spoken editing commands such as \"new line\".", VoiceSettable: true, Reload: Live},
 	{Path: "dictation.terminal_mode", Type: Bool, Default: true, Description: "Switch dictation to code mode (symbols, no capitals, never Enter) when the focused app is a terminal.", VoiceSettable: true, Reload: Live},
+	{Path: "dictation.stop_phrases", Type: StringList, Default: []string{"stop dictation", "end dictation", "that's all"}, Description: "Phrases that end a voice-started dictation session (\"<wake word>, write\"). They count only as the whole utterance, so \"stop dictation errors\" is typed. \"<wake word>, stop\" and the break-glass stop always end it too (ADR-0045).", VoiceSettable: true, Reload: Live},
+	{Path: "dictation.idle_timeout", Type: String, Default: "60s", Format: "duration", Description: "End a voice-started dictation session after this much silence. 0s never ends it (ADR-0045).", Reload: Live},
+	{Path: "dictation.notes_dir", Type: String, Default: "~/Documents/Footman notes", Description: "Folder for new notes and documents (\"<wake word>, write in a new note\"), which are opened in your default editor. A leading ~ is your home folder.", Reload: Live},
 	{Path: "dictation.insert", Type: String, Default: "auto", Enum: []string{"auto", "type", "paste"}, Description: "How text is inserted into the focused app.", VoiceSettable: true, Reload: Live},
 
 	{Path: "replies.speak", Type: String, Default: "when-voice", Enum: []string{"always", "when-voice", "never"}, Description: "When replies are spoken aloud.", VoiceSettable: true, Reload: Live},
