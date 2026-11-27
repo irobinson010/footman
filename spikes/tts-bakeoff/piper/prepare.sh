@@ -12,9 +12,9 @@
 # Prerequisites: the venv from setup.sh, ffmpeg, Go.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
-ROOT=${ROOT:-/home/ian/PersonalProjects/footman-data/ashford-piper-train}
-DATA=${DATASET:-/home/ian/PersonalProjects/footman-data/ashford-dataset/out/voxcpm2}
-MODELS=${MODELS:-/home/ian/PersonalProjects/footman-data/models}
+ROOT=${ROOT:-$HOME/PersonalProjects/footman-data/ashford-piper-train}
+DATA=${DATASET:-$HOME/PersonalProjects/footman-data/ashford-dataset/out/voxcpm2}
+MODELS=${MODELS:-$HOME/PersonalProjects/footman-data/models}
 mkdir -p "$ROOT/data/wav22"
 
 # 1. Kept lines only, resampled from 24 kHz to Piper's 22.05 kHz.

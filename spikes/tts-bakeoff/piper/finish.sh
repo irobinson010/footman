@@ -13,8 +13,8 @@
 # CPU numbers are only clean when training is not running.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
-ROOT=${ROOT:-/home/ian/PersonalProjects/footman-data/ashford-piper-train}
-MODELS=${MODELS:-/home/ian/PersonalProjects/footman-data/models}
+ROOT=${ROOT:-$HOME/PersonalProjects/footman-data/ashford-piper-train}
+MODELS=${MODELS:-$HOME/PersonalProjects/footman-data/models}
 RUN=$1 CKPT=$2 TAG=$3
 OUT=$ROOT/models/ashford-piper-$TAG
 THREADS=${FOOTMAN_TTS_THREADS:-8}

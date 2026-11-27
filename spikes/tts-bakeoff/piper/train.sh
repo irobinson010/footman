@@ -11,7 +11,7 @@
 #
 # ROOT holds the venv, the piper1-gpl source, and data/ (see prepare.sh).
 set -euo pipefail
-ROOT=${ROOT:-/home/ian/PersonalProjects/footman-data/ashford-piper-train}
+ROOT=${ROOT:-$HOME/PersonalProjects/footman-data/ashford-piper-train}
 RUN=$1 BASE=$2 EPOCHS=$3
 shift 3
 OUT=$ROOT/runs/$RUN

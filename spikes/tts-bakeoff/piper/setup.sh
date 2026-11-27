@@ -8,7 +8,7 @@
 # source needs to import), gets the piper1-gpl training source and builds its
 # monotonic-align extension, and downloads the base checkpoints.
 set -euo pipefail
-ROOT=${ROOT:-/home/ian/PersonalProjects/footman-data/ashford-piper-train}
+ROOT=${ROOT:-$HOME/PersonalProjects/footman-data/ashford-piper-train}
 mkdir -p "$ROOT/base/northern_english_male" "$ROOT/base/john"
 cd "$ROOT"
 uv venv --python 3.12 .venv
