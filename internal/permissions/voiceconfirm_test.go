@@ -3,6 +3,7 @@ package permissions_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -197,7 +198,9 @@ func (r *vrig) askRaw() {
 	go func() { done <- r.p.Run(ctx) }()
 	r.t.Cleanup(func() {
 		cancel()
-		_ = <-done
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			r.t.Errorf("Run: %v", err)
+		}
 	})
 }
 
