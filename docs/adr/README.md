@@ -48,3 +48,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0042](0042-persona-replies-spoken-and-shown.md) | The persona talks back: wiring, live reload, replies spoken and shown | Accepted |
 | [0043](0043-system-context-and-status-tool.md) | The AI knows the machine: "system" context item on by default, read-only system_status tool | Accepted |
 | [0044](0044-web-answers.md) | Web answers: provider-side web search, `ai.web_search` and `user.location` | Accepted |
+| [0046](0046-hands-free-accessibility-layer.md) | Hands-free control: the accessibility layer (AT-SPI2, clicks, windows, keys, safety) | Proposed |

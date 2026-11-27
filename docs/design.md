@@ -36,7 +36,8 @@ Each user picks a **persona**, which sets the wake word, voice, personality, and
 | License | **Apache-2.0**. |
 | Repo | **Public from day one** (free unlimited GitHub runners), at `github.com/irobinson010/footman`. |
 | Web UI | Plain HTML, CSS, and JS, embedded in the binary. No framework or build step. |
-| Built-in tools | Launcher, settings, system info, and timers are compiled in; everything else is a plugin. |
+| Built-in tools | Compiled in: dictation, the accessibility layer, keys, window and app control, launcher, files, settings, system info, timers and web answers. Integrations with outside services and apps are plugins. The table in §34 decides each capability (ADR-0046). |
+| Hands-free control | Text-aware editing, clicking by name or number, scrolling, windows and key chords through the platform's accessibility API (AT-SPI2 on Linux; UI Automation and AXUIElement later), with fallbacks for apps that expose nothing. Reading the screen is sensitive: off by default for the AI, never for password fields, always untrusted (ADR-0046, §34). |
 | Personas | The repo ships **original** personas. Users build their own (Alfred, Jarvis, …) locally with the provided tools. See §8. |
 | Linux input | Setup binds hotkeys through the GlobalShortcuts portal; on KDE the daemon registers them with KGlobalAccel, because KDE's portal asks again for every new session (ADR-0030). Typing as RemoteDesktop portal keysyms; paste through a data-control clipboard plus portal-sent Ctrl+V, or Ctrl+Shift+V in terminals, with the clipboard restored afterwards (ADR-0022, ADR-0029). See §9. |
 | Push-to-talk | Hold the key to talk (release ends the utterance) or tap to talk (end of speech ends it). The microphone is open only while a key records, unless the wake word is on (ADR-0030). |
@@ -292,7 +293,7 @@ Diagrams go in `docs/diagrams/`, with PDF exports committed (tool *TBD*).
 ## 18. Privacy, providers, and memory
 
 - **Offline mode** is fully supported: Ollama plus local speech. A **local-first** mode is also supported, where it stays local unless you explicitly ask it to use the cloud ("ask the cloud model…").
-- **Context sharing** (window title, clipboard, selection) is off by default and enabled per item. The exception is **`system`**: coarse facts about the machine (OS, desktop, hardware, locale, time zone) and the current time, on by default so answers fit this computer; no names, paths or content ([ADR-0043](adr/0043-system-context-and-status-tool.md)). The AI can also look at what the machine is doing now with the read-only `system_status` tool (process names only, never command lines). There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
+- **Context sharing** (window title, clipboard, selection, and `screen`: text and element names read through the accessibility layer, ADR-0046) is off by default and enabled per item. The exception is **`system`**: coarse facts about the machine (OS, desktop, hardware, locale, time zone) and the current time, on by default so answers fit this computer; no names, paths or content ([ADR-0043](adr/0043-system-context-and-status-tool.md)). The AI can also look at what the machine is doing now with the read-only `system_status` tool (process names only, never command lines). There are two separate policies: what the **local** AI may see (can be "everything") and what **cloud** AI providers may see (a specific allow list).
 - **Memory** is opt-in, and can be viewed, edited, and deleted from the web UI **and by voice** ("what do you remember about me?", "forget that").
 - **Cost guardrails:** a monthly cap per provider. Footman warns as you approach it, then **asks when to remind you next**, so you don't get constant alerts.
 
@@ -365,7 +366,7 @@ footman/
 
 - **One pattern everywhere:** each swappable area is `area/` (the interface) plus one subpackage per implementation plus `fake/`. Implementations register by name in the area's `registry.Registry`, and config picks one (ADR-0021).
 - **The public surface is the protocols, not Go packages.** Plugins talk over the plugin protocol, and clients talk over the local API. Only `sdk/` is a public Go package. Everything else stays in `internal/`, so it can be refactored freely.
-- **Built-in tools** (launcher, settings, system info, timers) are compiled in, behind the same `Tool` interface as external plugins.
+- **Built-in tools** (launcher, settings, system info, timers, and the base capabilities listed in §34) are compiled in, behind the same `Tool` interface as external plugins. The hands-free layer is `internal/platform/*/accessibility` (the OS backend), `internal/textedit` (pure Go) and `internal/handsfree` (grammar and tools), ADR-0046.
 - **Hardware acceleration is chosen at runtime, not at build time.** Each local speech engine reports the accelerators it supports. The daemon detects the hardware at start and picks the best option by the ADR-0024 table (`speech.stt.engine = "auto"`); the user can override engine, model and accelerator in config. Setup runs a short benchmark of the GPU against the CPU and picks the CPU if the GPU is slower (ADR-0028). whisper.cpp is built with its GPU backends as plugins, so one binary loads CPU, Vulkan or CUDA at run time (ADR-0027):
 
   | Hardware | Accelerator path |
@@ -404,6 +405,11 @@ Each phase has **exit criteria**, so it's clear when it's done.
 - Wake word with ready-made models, the simple router, fast-path commands, and settings by voice.
 - The AI provider interface with Claude, a basic persona (style, address form), TTS (the bake-off winner) with the clip bank, the permission gate, and the action log.
 - *Exit:* "Alfred, open YouTube" works hands-free with spoken acknowledgement in under 300 ms; false wakes are under 1 per hour of normal room noise.
+
+**Phase 2b: Hands-free control** (planned as "Sprint 4: hands-free", ADR-0046, [`sprints/sprint-04.md`](sprints/sprint-04.md))
+- The accessibility layer: find, select, replace and insert text by voice; click by name or number; scroll; switch windows and apps; press key chords; fallbacks for apps without accessibility; files by name.
+- The plugin host (ADR-0005) starts in parallel, because it needs no desktop, and is the prerequisite for every plugin in §34.
+- *Exit:* the acceptance run in the sprint plan passes on the owner's desktop by voice alone, with no mouse or keyboard.
 
 **Phase 3: Assistant and jobs**
 - The tool loop and job manager, with Claude Code and Codex workers.
@@ -711,7 +717,7 @@ token = "keychain:plugin.troupe.token"
 A click is a desktop notification action or a web UI button (later, a paired phone).
 
 ### Untrusted content rule
-Anything that enters the AI's context from outside (web pages, messages, emails, file contents, plugin output) is **untrusted data**. Once untrusted content is in the current task's context, **every outward or destructive action in that task needs confirmation**, whatever the config says. The confirmation shows exactly what will be sent or deleted. This blocks the common "the email told the AI to forward your files" attack without tracking content in detail.
+Anything that enters the AI's context from outside (web pages, messages, emails, file contents, plugin output) is **untrusted data**. Once untrusted content is in the current task's context, **every outward or destructive action in that task needs confirmation**, whatever the config says. The confirmation shows exactly what will be sent or deleted. This blocks the common "the email told the AI to forward your files" attack without tracking content in detail. Tools that drive the screen (click, press keys, replace text) are treated the same way: once untrusted content is in the task, they need confirmation too, because a page that says "click Send" is an outward action in disguise (ADR-0046).
 
 ### Local API
 - **Unix socket** with user-only file permissions (0600), in a directory only the user can enter (0700). A socket client is treated as the owner at the keyboard, with the same trust as editing `config.toml`: it may change security-sensitive settings, since voice and the AI never reach the socket directly (ADR-0025).
@@ -804,3 +810,57 @@ Work is tracked as **sprints = GitHub milestones** (Sprint 0–10; phases map on
 - [ ] Trademark search for "Footman" before public launch.
 
 
+## 34. Base vs plugin (ADR-0046)
+
+The owner's goal is to use the computer by voice alone, with the keyboard and mouse still there. Principle 1 says "small core, everything else is a plugin". This section says where the line is, capability by capability, so it is not decided again in each issue.
+
+**A capability is base (compiled in, behind the `Tool` interface, §24) when any of these is true:**
+1. It is how the owner drives the computer with no hands: dictation, editing, clicking, keys, windows, launching. Without it Footman is not usable alone.
+2. It needs a privileged desktop session that Footman already holds (the RemoteDesktop portal, the accessibility bus, KWin). A sandboxed plugin should not get those, and a plugin cannot be faster than a function call on the fast path (§5, under 100 ms).
+3. It must work offline, with no account, for every user.
+
+**It is a plugin when** it talks to one outside service or app with its own credentials and network hosts, only some users want it, or it brings heavy dependencies. Plugins run as separate sandboxed processes and need approval at install (§19, §26, §29).
+
+| Capability | Decision | Why |
+|---|---|---|
+| Dictation (hold, tap, voice-started, stop word, formatting) | **Base** | The first job (§1); needs the input portals (ADR-0022, 0032, 0045). |
+| Accessibility layer: read, find, select, replace and insert text; click by name or number; scroll | **Base** | The hands-free core; needs the accessibility bus, which is privileged and sensitive (ADR-0046). Plugins do not get it. |
+| Keys and chords ("press control T"), key navigation | **Base** | Uses the RemoteDesktop keyboard session Footman already owns (ADR-0029). |
+| Window and app control (switch, close, desktops) | **Base** | KWin scripting behind `platform.Windows`; fast path. |
+| Launcher (open app, site, file) | **Base** | Done (`Launcher`); the most used command. |
+| Files: open by name, recent files, find by name | **Base** | Needed to "open a file and start writing"; local and offline; names only, content never read into the AI. Searching inside files is a plugin. |
+| System info and status | **Base** | Done (ADR-0043); local, read-only. |
+| Timers and reminders | **Base** | Local, no network, fast path. |
+| Settings by voice, permissions, action log, confirmations | **Base** | Security-critical; cannot depend on a plugin (§29). |
+| Clipboard and selection ("copy that", "paste", what is selected) | **Base** | Part of the editing fallbacks (ADR-0046 section 7); `Platform.Clipboard`. |
+| Volume and media transport (play, pause, next) | **Base** | Done through the platform (volume, MPRIS). Streaming-service integrations are plugins. |
+| Web answers (current-information questions) | **Base** | A core assistant ability with one default backend, Claude's web search (ADR-0044). Other backends are plugins behind the same seam. |
+| Job manager and workers (Claude Code, Codex) | **Base** | Core to the assistant job (§19). |
+| Memory, personas, cost guardrails | **Base** | Core state (§18, §27). |
+| Local-model web search (SearXNG, Brave Search API) | **Plugin** | Needs a service and keys; only for offline and local-first users (#127). |
+| Email (IMAP, Gmail, Microsoft Graph) | **Plugin** | One service per account, secrets, outward actions; per-user choice. |
+| Calendar (CalDAV, Google, Graph) | **Plugin** | Same: service, credentials, per-user choice. |
+| Messaging (Teams, Slack, Discord, SMS) | **Plugin** | Outward, untrusted input, one service each. |
+| Stocks, finance and other data APIs | **Plugin** | Network APIs with keys and rate limits; only some users. |
+| Smart home (Home Assistant and others) | **Plugin** | Local network devices and tokens; only some users. |
+| Media services (Spotify, Plex, YouTube Music) | **Plugin** | Accounts and service APIs. |
+| Troupe (queue and watch renders) | **Plugin** | The owner's own server; also the reference plugin (P-04). |
+| Developer integrations (GitHub, CI status) | **Plugin** | Service APIs and tokens. |
+| Terminal remote control (tmux) | **Plugin** | Powerful (runs commands), so it needs its own permission and sandbox; the accessibility layer never edits terminals. |
+| Browser automation in Footman's own profile (CDP, §7) | **Plugin** | Heavy dependency; separate from the owner's real browser, which the accessibility layer handles. |
+| Content search inside files | **Plugin** | Heavy indexing, optional. |
+| Screen vision (screenshot plus a vision model) | **Deferred** | Last-resort fallback for apps with no accessibility; sends pixels to a model, so off by default behind the `screen` context item. Decide after the accessibility spike (#112). |
+| Voice and wake-word training kits | **Optional kit** | Python, offline, not a runtime plugin (§22, §23). |
+
+The accessibility layer is the largest base item and the one with the most risk, so it is also where the safety rules live: password fields are never read, the AI sees screen text only with the `screen` context item, and everything read from the screen is untrusted (ADR-0046 section 9).
+
+### Phased plan
+
+| Phase | Work | Needs the owner's desktop |
+|---|---|---|
+| **A. Hands-free base** (Sprint 4, [`sprints/sprint-04.md`](sprints/sprint-04.md), epic #111) | `textedit`, the `platform.Accessibility` interface and fake, safety groundwork, the grammar and tools on the fake, the Linux AT-SPI backend, clicks by name, the number overlay, follow-up window, key chords, windows, scrolling, fallbacks, files, the AI tools, enablement | The AT-SPI probe (#112), the backend and overlay checks, window control, the acceptance run (#129) |
+| **B. Plugin host** (prerequisite for every plugin row; starts in parallel with A, no desktop needed) | P-01 host core and manifest (#130), P-02 permissions, install and sandbox (#131), P-03 MCP and `footman/*` adapters (#132), P-04 SDK, docs and the Troupe reference plugin (#134) | Only the Troupe check |
+| **C. First plugins** | SearXNG search (#127), calendar, email (#135, tracking); then smart home, media, finance and the rest as wanted | Accounts and keys |
+| **D. Other platforms** (Sprint 10) | Windows UI Automation (#136), macOS AXUIElement (#137), plus their windows, keys and launcher | The owner's Windows laptop and a Mac |
+
+Phase B does not wait for A: the host needs no desktop and is independent of the accessibility layer. A plugin cannot get the accessibility layer until the host has a `screen` permission (ADR-0046 section 9.9), which is a later decision.
