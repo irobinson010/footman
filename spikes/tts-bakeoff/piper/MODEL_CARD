@@ -1,0 +1,18 @@
+# Model card for ashford (Footman, S0-10)
+
+* Language: en_GB-accented English; phonemes: espeak-style en-us IPA made by Footman's own G2P
+* Speakers: 1
+* Quality: medium (VITS, Piper architecture)
+* Samplerate: 22,050Hz
+
+## Dataset
+
+* 1,908 lines (1.6 h) of synthetic speech: VoxCPM2 cloning an ElevenLabs Voice Design voice (S0-09, ADR-0020).
+* Text: CMU ARCTIC prompts (Gutenberg, public domain), Harvard sentences, self-written CC0 lines.
+* Personal use only for now (ADR-0019): the clean-chain requirement applies before this voice ships.
+
+## Training
+
+Fine-tuned with piper1-gpl (GPL-3.0 training code, not part of Footman) from BASE.
+Phonemes come from Footman's text front end and lexicon-en-us (espeak-ng IPA); lexicon.txt (espeak-ng output, GPL data) lists words that lexicon lacks.
+Default inference settings: noise_scale 0.667, length_scale 1.0, noise_w 0.8.

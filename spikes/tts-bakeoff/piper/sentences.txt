@@ -1,0 +1,11 @@
+# Test sentences for the Ashford voice (S0-10). None is in the training script.
+Very good, sir. The kettle is on.
+Good morning. It is seven forty-five, and the weather in Manchester is rather grey.
+I have tidied the study, filed the three reports you left on the desk, and booked the 7:45 train to London for Thursday the 3rd.
+The fare came to £42.50, and Dr. Pettigrew has confirmed the meeting.
+Shall I read your messages, or would you prefer a few minutes of quiet first?
+I am afraid the printer has declined to cooperate again, but I have taken the liberty of ordering a replacement.
+Certainly. Would you like the lights lowered as well?
+Your calendar shows a call at half past two with the team in Berlin; I have prepared the notes you asked for.
+One moment, please. I shall see what I can find.
+Whatever you decide, sir, I shall see that it is done properly and without any fuss.
