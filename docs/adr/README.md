@@ -50,3 +50,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0044](0044-web-answers.md) | Web answers: provider-side web search, `ai.web_search` and `user.location` | Accepted |
 | [0045](0045-voice-started-dictation.md) | Voice-started dictation: sessions, stop phrases, navigation keys, notes and files | Accepted |
 | [0046](0046-hands-free-accessibility-layer.md) | Hands-free control: the accessibility layer (AT-SPI2, clicks, windows, keys, safety) | Accepted |
+| [0047](0047-followup-listening-and-voice-confirmation.md) | Follow-up listening and voice confirmation | Accepted |

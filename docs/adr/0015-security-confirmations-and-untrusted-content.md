@@ -11,3 +11,6 @@ Voice can come from anyone or from played-back audio, and the AI reads untrusted
 
 ## Consequences
 Some extra clicks, in exchange for strong protection against spoofing and prompt injection.
+
+## Amendment (ADR-0047)
+Rule (3) now covers **Act** actions too: once untrusted content is in a task, every tool call except a Read one needs confirmation. A spoken yes can answer an Act or Outward confirmation; a Destructive one, and security-sensitive changes (rule 1), still need the physical click.

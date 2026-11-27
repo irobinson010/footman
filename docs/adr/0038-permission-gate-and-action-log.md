@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-26
+- Amended by: 0047
 
 ## Context
 Until now `core.DefaultGate` refused every Destructive and Outward tool, the `[permissions]` config keys did nothing, and nothing wrote to the `action_log` table or pruned old rows. Design §14 and §29 and ADR-0015 say how permissions should work; issue #82 makes them real. The click-confirmation broker that actually asks the user (#83) is built in parallel against the shared `permissions.Request`, `Decision` and `Confirmer` types.
@@ -10,8 +11,8 @@ Until now `core.DefaultGate` refused every Destructive and Outward tool, the `[p
 
 **Gate.** `permissions.Gate` implements `core.Gate` and a new optional `core.Decider`, which also returns *how* a call was decided (`auto`, `click`, `voice`, `policy`, `timeout`) so the action log can record it. The daemon wires it in; `core.DefaultGate` stays as the pipeline's fallback when no gate is given (the default policy with nobody to ask).
 - The policy for a call's level is read from `permissions.read|act|destructive|outward` on every call, so config changes apply at once. `auto` runs it, `deny` refuses it, `confirm` asks the `Confirmer`.
-- **Untrusted content rule (ADR-0015):** once untrusted content is in the task's context, a Destructive or Outward call with policy `auto` is treated as `confirm`, and the request's `Reason` says why. `deny` stays `deny`.
-- A confirmation `Request` has `Kind` `tool`, a short `Title`, and a `Detail` with the tool name and its arguments exactly as they will be sent, indented and **not** redacted: the user must see what would be sent or deleted. `ClickOnly` is false for tool calls: design §29 allows a voice "yes" for destructive and outward actions. Settings that must never change by voice set it (#83).
+- **Untrusted content rule (ADR-0015):** once untrusted content is in the task's context, a Destructive, Outward **or Act** call with policy `auto` is treated as `confirm` (ADR-0047 added Act), and the request's `Reason` says why. `deny` stays `deny`. Read stays automatic.
+- A confirmation `Request` has `Kind` `tool`, a short `Title`, and a `Detail` with the tool name and its arguments exactly as they will be sent, indented and **not** redacted: the user must see what would be sent or deleted. `ClickOnly` is false for Act and Outward tool calls, which a spoken "yes" may approve (ADR-0047), and true for Destructive ones, which voice never approves (ADR-0047 changed this: design §29 had allowed a voice "yes" for destructive actions too). A request also carries a spoken `Question`. Settings that must never change by voice set it (#83).
 - The call is refused, and the AI told why in the tool result, when the policy is `deny`, when there is no confirmer or it fails to ask, when the user refuses, or when nobody answers within `Gate.Timeout` (default 2 minutes; `timeout`). A cancelled task refuses the call with the cancellation.
 - **Fast-path rules pass the gate too**, as a tool named after the rule with the command text as its argument, so `permissions.act = "deny"` also stops "open YouTube". A refused rule does not run and replies "I can't do that: …".
 - Until #83 lands the daemon has no confirmer, so Destructive and Outward calls are still refused by default (as before), now with policy-driven messages.

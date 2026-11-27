@@ -175,10 +175,11 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 	// The permission gate reads the policy live from the config (ADR-0038)
 	// and asks the confirmation broker, which shows a notification with
 	// Allow and Deny and answers `footman confirm` (ADR-0039). While it
-	// waits, the persona says its confirm line if the reply is spoken.
-	broker := &permissions.Broker{Bus: b, Logf: logf}
+	// waits, the persona asks the question aloud if the reply is spoken, and
+	// a spoken yes or no answers it (ADR-0047).
+	broker := &permissions.Broker{Bus: b, Logf: logf, Prompt: promptConfirm}
 	defer broker.Close()
-	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: speakingConfirmer{broker}}
+	gate := &permissions.Gate{Config: cfgFile.Current, Confirmer: broker}
 	deps.Gate = gate
 	// "open <file> and write" searches the home folder (ADR-0045).
 	if home, err := os.UserHomeDir(); err == nil && deps.Finder == nil {
@@ -230,6 +231,12 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 		return err
 	}
 	defer p.Close()
+	// A spoken yes or no answers a pending confirmation, unless it is
+	// click-only (ADR-0047); the action log records the path as "voice".
+	p.SetConfirmAnswerer(func(id string, allow bool) error {
+		return broker.Answer(id, allow, permissions.HowVoice)
+	})
+	p.SetFollowUp(cfg.Bool("speech.followup.enabled"), followUpTimeout(cfg))
 	// From here on the persona follows the config: the pipeline's voice,
 	// prompt and lines, the wake words, and the clip bank.
 	personas.OnChange(func(c PersonaChange) {
@@ -337,6 +344,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			p.SetReplyPolicy(c.String("replies.speak"), c.String("replies.quiet_hours"))
 			p.SetReplyNotify(c.Bool("replies.notify"))
 			p.SetDictation(dictationConfig(c))
+			p.SetFollowUp(c.Bool("speech.followup.enabled"), followUpTimeout(c))
 			personas.apply(c)
 			p.SetSystemContext(systemContext(c, facts))
 			p.SetWebSearch(c.Bool("ai.web_search"))
@@ -560,24 +568,26 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		mic = ""
 	}
 	return core.Config{
-		DictateHotkey: cfg.String("input.dictate.key"),
-		DictateMode:   core.TalkMode(cfg.String("input.dictate.mode")),
-		CommandHotkey: cfg.String("input.command.key"),
-		CommandMode:   core.TalkMode(cfg.String("input.command.mode")),
-		Mic:           mic,
-		AGC:           cfg.Bool("audio.agc"),
-		AGCMaxGainDB:  cfg.Float("audio.agc_max_gain_db"),
-		Insert:        dictation.InsertMode(cfg.String("dictation.insert")),
-		Language:      cfg.String("user.language"),
-		NoCommands:    cfg.String("dictation.commands") == "off",
-		NoTerminal:    !cfg.Bool("dictation.terminal_mode"),
-		MinCommand:    core.DefaultMinCommand,
-		VerifyWake:    cfg.Bool("speech.wake.verify"),
-		Quiet:         cfg.Bool("replies.quiet"),
-		Speak:         cfg.String("replies.speak"),
-		Notify:        cfg.Bool("replies.notify"),
-		QuietHours:    cfg.String("replies.quiet_hours"),
-		Dictation:     dictationConfig(cfg),
+		DictateHotkey:   cfg.String("input.dictate.key"),
+		DictateMode:     core.TalkMode(cfg.String("input.dictate.mode")),
+		CommandHotkey:   cfg.String("input.command.key"),
+		CommandMode:     core.TalkMode(cfg.String("input.command.mode")),
+		Mic:             mic,
+		AGC:             cfg.Bool("audio.agc"),
+		AGCMaxGainDB:    cfg.Float("audio.agc_max_gain_db"),
+		Insert:          dictation.InsertMode(cfg.String("dictation.insert")),
+		Language:        cfg.String("user.language"),
+		NoCommands:      cfg.String("dictation.commands") == "off",
+		NoTerminal:      !cfg.Bool("dictation.terminal_mode"),
+		MinCommand:      core.DefaultMinCommand,
+		VerifyWake:      cfg.Bool("speech.wake.verify"),
+		Quiet:           cfg.Bool("replies.quiet"),
+		Speak:           cfg.String("replies.speak"),
+		Notify:          cfg.Bool("replies.notify"),
+		QuietHours:      cfg.String("replies.quiet_hours"),
+		Dictation:       dictationConfig(cfg),
+		FollowUp:        cfg.Bool("speech.followup.enabled"),
+		FollowUpTimeout: followUpTimeout(cfg),
 	}
 }
 
@@ -614,6 +624,15 @@ func (b bankLine) Ack() (audio.Clip, bool) {
 	return c, ok
 }
 
+// followUpTimeout is speech.followup.timeout (validated as a duration).
+func followUpTimeout(cfg *config.Config) time.Duration {
+	d, err := time.ParseDuration(cfg.String("speech.followup.timeout"))
+	if err != nil || d < 0 {
+		return core.DefaultFollowUpTimeout
+	}
+	return d
+}
+
 // clipsDir is where the clip bank caches its clips: <cache>/clips (in tests
 // without a cache folder, <data>/cache/clips).
 func clipsDir(o daemonOptions) string {
@@ -624,13 +643,13 @@ func clipsDir(o daemonOptions) string {
 	return filepath.Join(cache, "clips")
 }
 
-// speakingConfirmer is the permission broker with the persona's confirm
-// line said (when the reply is spoken) as each confirmation is asked.
-type speakingConfirmer struct{ *permissions.Broker }
-
-func (c speakingConfirmer) Confirm(ctx context.Context, r permissions.Request) (permissions.Decision, error) {
-	core.Confirming(ctx)
-	return c.Broker.Confirm(ctx, r)
+// promptConfirm is the broker's Prompt: as a confirmation is asked, the
+// persona says the question when the reply is spoken, and listens for yes or
+// no. Destructive actions are click-only: it says so instead (ADR-0047).
+func promptConfirm(ctx context.Context, id string, r permissions.Request) func() {
+	return core.PromptConfirm(ctx, core.ConfirmPrompt{
+		ID: id, Question: r.Question, ClickOnly: r.ClickOnly, Level: r.Level.String(),
+	})
 }
 
 // hotkeyInfo describes the push-to-talk keys for status.get.

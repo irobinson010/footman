@@ -40,17 +40,22 @@ const (
 	RunningTool
 	// Replying speaks or shows the reply.
 	Replying
+	// FollowUp listens, with no wake word, for the answer to a question
+	// Footman just asked (ADR-0047). The microphone is live and the speech
+	// is transcribed.
+	FollowUp
 )
 
 var stateNames = [...]string{
 	Idle: "idle", Listening: "listening", Transcribing: "transcribing", Routing: "routing",
 	Cleaning: "cleaning", Inserting: "inserting", Acknowledging: "acknowledging",
 	FastPath: "fast_path", Thinking: "thinking", RunningTool: "running_tool", Replying: "replying",
+	FollowUp: "listening_followup",
 }
 
 // String returns the state's snake_case name, as used in API events.
 func (s State) String() string {
-	if s >= Idle && s <= Replying {
+	if s >= Idle && s <= FollowUp {
 		return stateNames[s]
 	}
 	return fmt.Sprintf("State(%d)", int(s))

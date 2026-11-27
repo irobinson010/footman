@@ -22,13 +22,17 @@ const (
 	// TriggerCommand is the command hotkey, or text sent as a command through
 	// the local API (`say.text`): always a command.
 	TriggerCommand
+	// TriggerFollowUp is speech heard in the follow-up window that opens
+	// after Footman asks a question (ADR-0047): no wake word, and always a
+	// command or an answer.
+	TriggerFollowUp
 )
 
-var triggerNames = [...]string{TriggerWake: "wake", TriggerDictate: "dictate", TriggerCommand: "command"}
+var triggerNames = [...]string{TriggerWake: "wake", TriggerDictate: "dictate", TriggerCommand: "command", TriggerFollowUp: "followup"}
 
 // String returns the trigger's lower-case name.
 func (t Trigger) String() string {
-	if t >= TriggerWake && t <= TriggerCommand {
+	if t >= TriggerWake && t <= TriggerFollowUp {
 		return triggerNames[t]
 	}
 	return fmt.Sprintf("Trigger(%d)", int(t))
@@ -323,6 +327,9 @@ func (r *Router) Route(t Trigger, text string) Route {
 		return route(RouteDictation, tokens)
 	case TriggerCommand:
 		return route(RouteCommand, tokens)
+	case TriggerFollowUp:
+		// Said without the wake word, but "Alfred, ..." is still fine.
+		return route(RouteCommand, r.stripWake(tokens))
 	}
 	tokens = r.stripWake(tokens)
 	// "write" alone, "take a note", "open notes and write": these start a

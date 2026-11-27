@@ -76,7 +76,9 @@ func TestGateTable(t *testing.T) {
 	answers := map[answer]string{yes: "yes", no: "no", none: "none", timeout: "timeout", broken: "broken"}
 	args := json.RawMessage(`{"path":"/home/me/report.txt"}`)
 	for _, level := range []plugins.Permission{plugins.Read, plugins.Act, plugins.Destructive, plugins.Outward} {
-		risky := level == plugins.Destructive || level == plugins.Outward
+		// Everything but Read asks once untrusted content is in the task
+		// (ADR-0047 extends ADR-0015 to Act).
+		risky := level != plugins.Read
 		for _, policy := range []string{"auto", "confirm", "deny"} {
 			for _, untrusted := range []bool{false, true} {
 				for _, ans := range []answer{yes, no, none, timeout, broken} {
@@ -144,7 +146,8 @@ func TestGateTable(t *testing.T) {
 							t.Fatal("the confirmer was not asked")
 						}
 						r := reqs[0]
-						if r.Kind != permissions.KindTool || r.Level != level || r.ClickOnly || r.ID == "" || r.Title == "" {
+						// Only a Destructive action is click-only (ADR-0047).
+						if r.Kind != permissions.KindTool || r.Level != level || r.ClickOnly != (level == plugins.Destructive) || r.ID == "" || r.Title == "" || r.Question == "" {
 							t.Errorf("request = %+v", r)
 						}
 						if !strings.Contains(r.Detail, "/home/me/report.txt") {

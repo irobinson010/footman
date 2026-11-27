@@ -10,13 +10,17 @@ import (
 // the gate wants confirmed, or a setting change that needs a click. A
 // Confirmer shows it (a notification, a spoken prompt) and returns a Decision.
 type Request struct {
-	ID        string
-	Kind      string // "tool" | "setting"
-	Level     plugins.Permission
-	Title     string // short, for a notification
-	Detail    string // exactly what will be sent, deleted or changed
-	Reason    string // why confirmation is needed
-	ClickOnly bool   // security-sensitive: a voice "yes" never counts
+	ID     string
+	Kind   string // "tool" | "setting"
+	Level  plugins.Permission
+	Title  string // short, for a notification
+	Detail string // exactly what will be sent, deleted or changed
+	Reason string // why confirmation is needed
+	// Question is the short yes/no question Footman speaks when the reply
+	// is spoken, such as "Shall I open example.com?" (ADR-0047). Empty
+	// means the persona's generic confirm line.
+	Question  string
+	ClickOnly bool // security-sensitive: a voice "yes" never counts
 }
 
 // Request kinds.

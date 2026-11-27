@@ -50,6 +50,8 @@
   "replies.quiet": false,
   "replies.quiet_hours": "",
   "replies.speak": "when-voice",
+  "speech.followup.enabled": true,
+  "speech.followup.timeout": "8s",
   "speech.stt.accelerator": "auto",
   "speech.stt.engine": "auto",
   "speech.stt.model": "auto",

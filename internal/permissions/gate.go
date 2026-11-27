@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -72,7 +74,9 @@ func (g *Gate) Decide(ctx context.Context, spec plugins.ToolSpec, args json.RawM
 	key := "permissions." + spec.Permission.String()
 	policy := g.config().String(key)
 	reason := fmt.Sprintf("%s actions need confirmation (%s = %q)", spec.Permission, key, policy)
-	risky := spec.Permission == plugins.Destructive || spec.Permission == plugins.Outward
+	// Everything but Read: once untrusted content is in the task, Act
+	// actions need confirmation too (ADR-0047, amending ADR-0015).
+	risky := spec.Permission != plugins.Read
 	if risky && untrusted && policy != PolicyDeny {
 		// The untrusted content rule (ADR-0015): whatever the config says.
 		policy = PolicyConfirm
@@ -99,6 +103,10 @@ func (g *Gate) Decide(ctx context.Context, spec plugins.ToolSpec, args json.RawM
 		Title:  fmt.Sprintf("Allow %s (%s)?", spec.Name, spec.Permission),
 		Detail: Detail(spec.Name, args),
 		Reason: reason,
+		// Voice may approve Act and Outward actions, never a Destructive
+		// one (ADR-0047).
+		Question:  Question(spec.Name, args),
+		ClickOnly: spec.Permission == plugins.Destructive,
 	}
 	timeout := g.Timeout
 	if timeout <= 0 {
@@ -127,6 +135,38 @@ func (g *Gate) Decide(ctx context.Context, spec plugins.ToolSpec, args json.RawM
 		return how, fmt.Errorf("%s: %w", spec.Name, ErrRefused)
 	}
 	return how, nil
+}
+
+// Question is the short yes/no question spoken for a call: "Shall I open
+// example.com?". It names the site, app or action when the arguments have
+// one, and otherwise the tool.
+func Question(name string, args json.RawMessage) string {
+	var a map[string]any
+	_ = json.Unmarshal(args, &a)
+	str := func(k string) string {
+		s, _ := a[k].(string)
+		return strings.TrimSpace(s)
+	}
+	switch {
+	case str("url") != "":
+		return "Shall I open " + spokenHost(str("url")) + "?"
+	case str("app") != "":
+		return "Shall I open " + str("app") + "?"
+	case str("command") != "": // a fast-path rule: the user's own words
+		return "Shall I " + strings.TrimRight(str("command"), ".!? ") + "?"
+	case str("action") != "":
+		return "Shall I do this: " + strings.TrimRight(str("action"), ".!? ") + "?"
+	}
+	return "Shall I go ahead with " + strings.ReplaceAll(name, "_", " ") + "?"
+}
+
+// spokenHost is the host of a URL without "www.", or the text itself when it
+// does not parse as one.
+func spokenHost(s string) string {
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		return strings.TrimPrefix(u.Hostname(), "www.")
+	}
+	return strings.TrimPrefix(s, "www.")
 }
 
 func (g *Gate) config() *config.Config {

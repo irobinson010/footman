@@ -104,10 +104,20 @@ type Config struct {
 	// Quiet is quiet mode: no earcon or acknowledgement sound, and replies
 	// are shown rather than spoken. See SetQuiet.
 	Quiet bool
-	// Earcon is a short sound played when the wake word is heard, unless
-	// quiet. Empty means none. It should be brief and soft: the microphone
-	// stays open while it plays.
+	// Earcon is a short sound played when the wake word is heard, and when a
+	// follow-up window opens, unless quiet. Empty means none. It should be
+	// brief and soft: the microphone stays open while it plays.
 	Earcon audio.Clip
+	// FollowUp turns on follow-up listening (config speech.followup.enabled,
+	// ADR-0047); FollowUpTimeout is how long a window waits in silence
+	// (default DefaultFollowUpTimeout) and FollowUpGuard the pause after
+	// Footman's own speech (default DefaultFollowUpGuard). Change them while
+	// running with SetFollowUp.
+	FollowUp        bool
+	FollowUpTimeout time.Duration
+	FollowUpGuard   time.Duration
+	// After is the timer for follow-up windows (default time.After).
+	After func(time.Duration) <-chan time.Time
 	// Insert is the dictation insert mode (default auto).
 	Insert dictation.InsertMode
 	// TypeMax is the longest text auto mode types (default
@@ -215,9 +225,10 @@ type Pipeline struct {
 	hotkeyErrs map[string]string // hotkeys that could not be registered
 	jobSeq     int
 	jobs       map[string]jobs.Job
-	persona    Persona // voice, system prompt and lines (SetPersona)
-	system     string  // facts about the computer for the AI, or "" (SetSystemContext)
-	webSearch  bool    // offer the AI web search, when the provider has it (SetWebSearch)
+	persona    Persona  // voice, system prompt and lines (SetPersona)
+	system     string   // facts about the computer for the AI, or "" (SetSystemContext)
+	webSearch  bool     // offer the AI web search, when the provider has it (SetWebSearch)
+	fu         followUp // the follow-up window and what goes with it (followup.go)
 }
 
 // New builds a pipeline in the Idle state.
@@ -276,6 +287,9 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	if cfg.FocusPoll <= 0 {
 		cfg.FocusPoll = DefaultFocusPoll
 	}
+	if cfg.FollowUpTimeout <= 0 {
+		cfg.FollowUpTimeout = DefaultFollowUpTimeout
+	}
 	if cfg.Cleaner == nil {
 		// Spoken commands are the formatter's job (ADR-0032).
 		cfg.Cleaner = dictation.NewCleaner(nil, []dictation.DictationCommand{})
@@ -297,6 +311,7 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 		turns:   map[uint64]context.CancelFunc{},
 		jobs:    map[string]jobs.Job{},
 		persona: Persona{Voice: cfg.Voice, System: cfg.System},
+		fu:      followUp{enabled: cfg.FollowUp, timeout: cfg.FollowUpTimeout},
 	}, nil
 }
 
@@ -363,6 +378,9 @@ func (p *Pipeline) arm(trig Trigger, at time.Duration, timed bool) {
 	defer p.mu.Unlock()
 	p.armed, p.armedAt, p.armedTimed = trig, at, timed
 	p.armedHead = speech.Audio{}
+	if !p.fu.confirm {
+		p.closeFollowLocked() // a wake word starts a command of its own
+	}
 	if timed && p.cfg.VerifyWake && p.recent.End > at-wakeLookback {
 		p.armedHead = trimFrom(p.recent, at-wakeLookback).Audio
 	}
@@ -398,6 +416,9 @@ type claim struct {
 	// verify means seg starts before the wake word and the transcript must
 	// begin with one (ADR-0041).
 	verify bool
+	// answer means seg came in a window that answers a confirmation, so it
+	// is only ever a yes or no (ADR-0047).
+	answer bool
 }
 
 // claimSegment hands seg to the armed trigger. For a wake word it first cuts
@@ -433,6 +454,9 @@ func (p *Pipeline) claimSegment(seg speech.Segment) (c claim, ok bool) {
 // claimLocked is claimSegment with p.mu held.
 func (p *Pipeline) claimLocked(seg speech.Segment) (c claim, ok bool) {
 	if p.armed == 0 {
+		if c, ok := p.claimFollowUpLocked(seg); ok {
+			return c, true
+		}
 		if p.cfg.VerifyWake {
 			p.recent = trimFrom(seg, seg.End-wakeLookback)
 		}
@@ -541,6 +565,8 @@ func (p *Pipeline) endTurn(id uint64) {
 	p.busy = 0
 	if p.armed != 0 {
 		p.setStateLocked(Listening, 0)
+	} else if p.fu.open {
+		p.setStateLocked(FollowUp, 0)
 	} else {
 		p.setStateLocked(Idle, 0)
 	}
@@ -591,17 +617,13 @@ func (p *Pipeline) handleSegment(ctx context.Context, c claim, ended time.Time) 
 	defer p.releaseLate()
 	id, tctx := p.beginTurn(ctx)
 	if id == 0 {
-		// Busy: only the break-glass stop can get through (ADR-0017).
-		if c.trig == TriggerWake {
-			t, err := p.d.STT.Transcribe(ctx, c.seg.Audio)
-			text, ok := t.Text, err == nil
-			if ok && c.verify {
-				text, ok = p.cfg.Router.MatchWake(text)
-			}
-			if ok && p.cfg.Router.BreakGlass(c.trig, text) {
-				p.stop(StopVoice)
-			}
-		}
+		p.handleBusySegment(ctx, c)
+		return
+	}
+	if c.answer {
+		// Said as the answer to a confirmation that has ended meanwhile:
+		// it is not a command.
+		p.endTurn(id)
 		return
 	}
 	defer p.endTurn(id)
@@ -639,11 +661,21 @@ func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, c claim, 
 		p.stop(StopVoice)
 		return
 	}
+	if c.trig == TriggerFollowUp && closesFollowUp(p.cfg.Router.Route(c.trig, text).Text) {
+		p.closeFollowUp() // "never mind"
+		return
+	}
 	_ = p.handle(ctx, id, Utterance{Trigger: c.trig, Text: text, Ended: ended})
 }
 
 // handle routes a transcribed utterance and acts on it.
 func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
+	if u.Trigger == TriggerFollowUp {
+		p.consumeFollowUp()
+		ctx = context.WithValue(ctx, followUpKey{}, true)
+	} else {
+		p.dropConvo() // a new request starts a new conversation
+	}
 	p.setState(id, Routing)
 	r := p.cfg.Router.Route(u.Trigger, u.Text)
 	bus.Publish(p.d.Bus, RouteChosen, Routed{Turn: id, Route: r})
@@ -764,7 +796,12 @@ func (p *Pipeline) command(ctx context.Context, id uint64, text string, ended ti
 		}
 		return handler, err
 	}
-	return handler, p.reply(ctx, id, reply)
+	rerr := p.reply(ctx, id, reply)
+	if rerr == nil && sp != nil && ctx.Err() == nil && endsWithQuestion(reply) {
+		// Footman asked something aloud: listen for the answer (ADR-0047).
+		p.openFollowUp(ctx, false)
+	}
+	return handler, rerr
 }
 
 // act runs the fast path or the AI and returns what to say back, and what
@@ -917,6 +954,8 @@ func (p *Pipeline) stop(src StopSource) {
 	clear(p.jobs)
 	p.busy = 0
 	p.clearArmLocked()
+	p.closeFollowLocked()
+	p.fu.conv = nil
 	if p.rec != nil {
 		p.rec.cancel() // the audio so far is discarded
 		p.rec = nil

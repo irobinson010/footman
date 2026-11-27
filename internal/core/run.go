@@ -263,11 +263,13 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 		p.mu.Unlock()
 	}()
 
-	defer p.disarm() // a wake word nothing followed before the stream ended
+	defer p.disarm()        // a wake word nothing followed before the stream ended
+	defer p.closeFollowUp() // and a follow-up window has no microphone without it
 	frames, err := p.d.Platform.Audio().Capture(mctx, p.cfg.Mic, audio.Speech)
 	if err != nil {
 		return false, err
 	}
+	frames = p.trackCapture(mctx, frames)
 	p.setMic(p.idleMic())
 	frames = p.level(mctx, frames)
 

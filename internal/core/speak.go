@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"io"
@@ -594,6 +595,33 @@ func (s *speaker) Finish() error {
 	case playErr != nil:
 		return playErr
 	}
+	return nil
+}
+
+// Sync speaks what has been fed so far, waits until the audio has ended, and
+// makes the speaker ready for more text. It is for a pause in the middle of
+// a reply that must not be spoken over, such as a question the owner must
+// answer (ADR-0047). It must be called from the goroutine that feeds the
+// speaker. An error means the speech failed or was cancelled, and the
+// speaker is finished.
+func (s *speaker) Sync() error {
+	s.Break()
+	s.closeIn.Do(func() { close(s.sentences) })
+	synthErr, playErr := s.wait()
+	s.sentences = make(chan string, 32)
+	s.streams = make(chan speech.AudioStream, 1)
+	s.synthDone = make(chan error, 1)
+	s.playDone = make(chan error, 1)
+	if err := cmp.Or(playErr, synthErr, s.ctx.Err()); err != nil {
+		// Finished: Finish and Abort must find the results waiting.
+		s.cancel()
+		s.synthDone <- synthErr
+		s.playDone <- playErr
+		return err
+	}
+	s.closeIn = sync.Once{}
+	go s.synth()
+	go s.play()
 	return nil
 }
 

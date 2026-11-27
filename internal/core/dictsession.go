@@ -240,6 +240,8 @@ func (p *Pipeline) startSession(phase, target string, choices []string) (*dictSe
 		done: make(chan struct{}), phase: phase, target: target, choices: choices,
 	}
 	p.sess = s
+	p.closeFollowLocked() // the session hears everything now (ADR-0047)
+	p.fu.conv = nil
 	p.codeMode, p.scratchLen = nil, 0 // follow the focused app afresh
 	// What was said while the start command was being handled belongs to
 	// the session (the user did not wait for the acknowledgement).

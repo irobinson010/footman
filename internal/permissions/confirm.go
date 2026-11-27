@@ -98,6 +98,14 @@ type Broker struct {
 	Timeout time.Duration
 	// Logf, if set, logs failures to show a notification.
 	Logf func(format string, args ...any)
+	// Prompt, if set, is called by Confirm right after a request is asked
+	// (its notification is already on its way), on the asking goroutine, so
+	// it can speak the question and open the voice answer window
+	// (ADR-0047). It returns a function Confirm calls when the request ends.
+	// It may block while it speaks; a click in the meantime is picked up as
+	// soon as it returns. Settings requests (AskSetting) are click-only and
+	// are not prompted.
+	Prompt func(ctx context.Context, id string, r Request) (end func())
 
 	mu      sync.Mutex
 	seq     uint64
@@ -120,6 +128,11 @@ func (b *Broker) Confirm(ctx context.Context, r Request) (Decision, error) {
 	id, err := b.Ask(r, func(d Decision) { ch <- d })
 	if err != nil {
 		return Decision{}, err
+	}
+	if b.Prompt != nil {
+		if end := b.Prompt(ctx, id, r); end != nil {
+			defer end()
+		}
 	}
 	select {
 	case d := <-ch:

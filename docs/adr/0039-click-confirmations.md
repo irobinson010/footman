@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-26
+- Amended by: 0047
 
 ## Context
 ADR-0038 added the permission gate, which asks a `permissions.Confirmer` before a call whose policy is `confirm`, but the daemon had no confirmer, so every such call was refused. Settings by voice refused security-sensitive changes and published `settings.confirm`, which nothing showed or answered. Design §29 says security-sensitive changes need a physical click and that tightening security takes effect at once by voice. Issue #83 builds the confirmation flow.
@@ -19,7 +20,7 @@ ADR-0038 added the permission gate, which asks a `permissions.Confirmer` before 
 - The **CLI**: `footman confirm` lists, `footman confirm allow|deny <id>` answers (through the API).
 - Later: the web UI button (Sprint 5) and a paired phone.
 
-`Broker.Answer(id, allow, how)` takes `click` or `voice`. A voice answer to a `ClickOnly` request fails with `ErrClickOnly` and leaves it pending. **For this sprint confirmations are click-only in practice:** nothing calls `Answer` with `voice`. A spoken "yes" for destructive and outward tool calls (allowed by design §29, and why ADR-0038 left `ClickOnly` false for tool requests) is a follow-up: it needs speaker recognition or at least a check that the "yes" came from the owner's microphone in the same task, and a persona prompt for it. When it lands it calls `Answer(id, allow, "voice")`, and setting requests stay click-only. The AI has no tool that answers a confirmation, and a spoken "yes" reaches the router as an ordinary utterance.
+`Broker.Answer(id, allow, how)` takes `click` or `voice`. A voice answer to a `ClickOnly` request fails with `ErrClickOnly` and leaves it pending. **For this sprint confirmations were click-only in practice** (ADR-0047 now calls `Answer` with `voice` for spoken yes and no on Act and Outward tool calls; see there). Originally: a spoken "yes" for destructive and outward tool calls (allowed by design §29, and why ADR-0038 left `ClickOnly` false for tool requests) was left as a follow-up: it needs speaker recognition or at least a check that the "yes" came from the owner's microphone in the same task, and a persona prompt for it. It calls `Answer(id, allow, "voice")`, and setting requests stay click-only. The AI has no tool that answers a confirmation, and a spoken "yes" reaches the router as an ordinary utterance.
 
 **Settings by voice.** `core.Settings.Set` parses and validates the value first (an invalid value is refused before anything is asked), then asks `config.VoiceChange(path, old, new)`:
 - Allowed: applied at once, published on `settings.changed` with how `voice`.

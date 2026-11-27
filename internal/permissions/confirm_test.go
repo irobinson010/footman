@@ -300,8 +300,12 @@ func TestGateWithBroker(t *testing.T) {
 		ch <- out{how, err}
 	}()
 	p := next(t, r.asked)
-	if p.ClickOnly || !strings.Contains(p.Detail, `"path": "/tmp/x"`) {
+	// A destructive call is click-only (ADR-0047): voice can never allow it.
+	if !p.ClickOnly || !strings.Contains(p.Detail, `"path": "/tmp/x"`) {
 		t.Errorf("pending %+v", p)
+	}
+	if err := r.b.Answer(p.ID, true, permissions.HowVoice); !errors.Is(err, permissions.ErrClickOnly) {
+		t.Errorf("a voice yes to a destructive call: %v, want ErrClickOnly", err)
 	}
 	shown(t, n, 0)
 	n.Click(0, permissions.ActionAllow)

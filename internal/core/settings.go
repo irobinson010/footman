@@ -251,6 +251,8 @@ var aliases = map[string]string{
 	"my name":             "user.name",
 	"location":            "user.location",
 	"web search":          "ai.web_search",
+	"follow up listening": "speech.followup.enabled",
+	"follow up timeout":   "speech.followup.timeout",
 	"name":                "user.name",
 	"action log":          "permissions.action_log",
 	"read actions":        "permissions.read",

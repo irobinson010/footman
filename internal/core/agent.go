@@ -43,7 +43,8 @@ const (
 
 // DefaultGate is the gate the pipeline uses when Deps.Gate is nil: the
 // default policy (design §29) with nobody to ask. It runs Read and Act tools
-// and refuses Destructive and Outward ones, which need confirmation. The
+// and refuses Destructive and Outward ones, which need confirmation; once
+// untrusted content is in the task it refuses Act ones too (ADR-0047). The
 // daemon uses permissions.Gate instead, which reads the policy from config
 // and asks a Confirmer (ADR-0038).
 type DefaultGate struct{}
@@ -55,9 +56,14 @@ func (g DefaultGate) Check(ctx context.Context, spec plugins.ToolSpec, args json
 }
 
 // Decide implements Decider.
-func (DefaultGate) Decide(_ context.Context, spec plugins.ToolSpec, _ json.RawMessage, _ bool) (string, error) {
+func (DefaultGate) Decide(_ context.Context, spec plugins.ToolSpec, _ json.RawMessage, untrusted bool) (string, error) {
 	switch spec.Permission {
-	case plugins.Read, plugins.Act:
+	case plugins.Read:
+		return howAuto, nil
+	case plugins.Act:
+		if untrusted {
+			return howPolicy, fmt.Errorf("%s is an act action and untrusted content is in this task: %w", spec.Name, ErrNeedsConfirmation)
+		}
 		return howAuto, nil
 	case plugins.Destructive, plugins.Outward:
 		return howPolicy, fmt.Errorf("%s is a %s action: %w", spec.Name, spec.Permission, ErrNeedsConfirmation)
@@ -107,6 +113,14 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	system, withSystem := p.systemPrompt(web)
 	msgs := []llm.Message{{Role: llm.User, Text: p.userTurn(text, withSystem)}}
 	untrusted := false
+	if followUp, _ := ctx.Value(followUpKey{}).(bool); followUp {
+		// The answer to a question the AI just asked: the same
+		// conversation, and the same untrusted content, if any (ADR-0047).
+		if c := p.takeConvo(); c != nil {
+			msgs = append(c.msgs, llm.Message{Role: llm.User, Text: text})
+			untrusted = c.untrusted
+		}
+	}
 	for range p.cfg.MaxToolRounds {
 		p.setState(id, Thinking)
 		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: system, Messages: msgs, Tools: defs, WebSearch: web})
@@ -134,6 +148,9 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			}
 			if sp != nil {
 				sp.streamedFinal = true
+			}
+			if endsWithQuestion(r.Message.Text) {
+				p.stashConvo(msgs, untrusted) // the answer continues this conversation
 			}
 			return r.Message.Text, nil
 		}

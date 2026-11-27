@@ -478,6 +478,10 @@ type Audio struct {
 	frames   []audio.Frame
 	played   []audio.Clip
 	keepOpen bool
+	live     bool
+	feed     chan struct{} // closed, and replaced, by QueueCapture
+	gate     chan struct{} // Play waits on it, when set (HoldPlayback)
+	gateMin  int
 	opened   int
 	// queued and delivered count frames queued and taken (or dropped) by
 	// a capture, so a test can wait until the microphone has been read.
@@ -500,6 +504,28 @@ func (a *Audio) KeepOpen() {
 	a.mu.Unlock()
 }
 
+// Live makes later Captures keep their channel open and send frames queued
+// after they opened too, as a real microphone keeps delivering. Frames
+// queued while no capture is open wait for the next one.
+func (a *Audio) Live() {
+	a.mu.Lock()
+	a.keepOpen, a.live = true, true
+	a.mu.Unlock()
+}
+
+// HoldPlayback makes Play block, after it has read its whole stream, until
+// release is called (or its context ends), as a speaker that is still
+// talking does. Only clips of at least minSamples samples are held, so short
+// cues and acknowledgements do not stop the test.
+func (a *Audio) HoldPlayback(minSamples int) (release func()) {
+	g := make(chan struct{})
+	a.mu.Lock()
+	a.gate, a.gateMin = g, minSamples
+	a.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(func() { close(g) }) }
+}
+
 // Opened returns how many times Capture has opened the microphone.
 func (a *Audio) Opened() int {
 	a.mu.Lock()
@@ -517,6 +543,10 @@ func (a *Audio) QueueCapture(frames ...audio.Frame) {
 	a.mu.Lock()
 	a.frames = append(a.frames, frames...)
 	a.queued += len(frames)
+	if a.feed != nil {
+		close(a.feed)
+		a.feed = nil
+	}
 	a.mu.Unlock()
 }
 
@@ -543,23 +573,42 @@ func (a *Audio) Capture(ctx context.Context, device string, f audio.Format) (<-c
 	frames := a.frames
 	a.frames = nil
 	a.opened++
-	keep := a.keepOpen
+	keep, live := a.keepOpen, a.live
 	a.mu.Unlock()
 	ch := make(chan audio.Frame)
 	go func() {
 		defer close(ch)
-		for i, f := range frames {
-			select {
-			case ch <- f:
-				a.mu.Lock()
-				a.delivered++
-				a.mu.Unlock()
-			case <-ctx.Done():
-				// Closed before they were read: they are gone, not pending.
-				a.mu.Lock()
-				a.delivered += len(frames) - i
-				a.mu.Unlock()
-				return
+		for {
+			for i, f := range frames {
+				select {
+				case ch <- f:
+					a.mu.Lock()
+					a.delivered++
+					a.mu.Unlock()
+				case <-ctx.Done():
+					// Closed before they were read: they are gone, not pending.
+					a.mu.Lock()
+					a.delivered += len(frames) - i
+					a.mu.Unlock()
+					return
+				}
+			}
+			if !live {
+				break
+			}
+			a.mu.Lock()
+			frames, a.frames = a.frames, nil
+			if len(frames) == 0 {
+				a.feed = make(chan struct{})
+			}
+			wake := a.feed
+			a.mu.Unlock()
+			if len(frames) == 0 {
+				select {
+				case <-wake:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 		if keep {
@@ -581,7 +630,17 @@ func (a *Audio) Play(ctx context.Context, device string, s audio.Stream) error {
 	}
 	a.mu.Lock()
 	a.played = append(a.played, clip)
+	gate := a.gate
+	if len(clip.Samples) < a.gateMin {
+		gate = nil
+	}
 	a.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+		}
+	}
 	return ctx.Err()
 }
 
