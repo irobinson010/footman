@@ -110,16 +110,9 @@ Every plugin row in design §34 needs the plugin host (ADR-0005). It needs no de
 
 Later platforms: [#136](https://github.com/irobinson010/footman/issues/136) (Windows UI Automation) and [#137](https://github.com/irobinson010/footman/issues/137) (macOS AXUIElement), under Sprint 10 ([#24](https://github.com/irobinson010/footman/issues/24)).
 
-## Decisions for the owner
+## Owner decisions
 
-These are written up in ADR-0046 under "Open questions"; the wrap-up (#129) records the answers.
-
-1. **Pointer permission** for the number overlay and pointer-only elements (re-prompts once; shows KDE's remote-control indicator).
-2. **Footman sets the accessibility switch** (`IsEnabled`) while hands-free is on, and setup may write a Brave/Chromium flag.
-3. **Dictating into password fields** is refused.
-4. **"Click Send" asks by default**; keep or loosen.
-5. **Control mode** (a sticky mode with no wake word) is left out; add it later or never.
-6. **Sprint numbering** (the note at the top).
+Decided 2026-11-27; see ADR-0046 "Owner decisions": pointer permission yes; Footman sets the accessibility switch and the Brave flag; password fields refused; risky labels ask (Act/Outward answerable by voice, Destructive click-only); no sticky control mode for now; this sprint numbering; taint gating kept.
 
 ## Out of scope
 - Screenshots plus a vision model (deferred, design §34).

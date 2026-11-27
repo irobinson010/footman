@@ -1,6 +1,6 @@
 # 0046. Hands-free control: the accessibility layer
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-27
 - Amends: 0003 (adds an optional `platform.Accessibility`), 0015 (the untrusted-content rule now covers actions that drive the screen)
 - Related: 0022, 0029 (Linux input), 0032 (dictation formatting), 0038, 0039 (permissions), 0043 (system context), 0044 (web answers), 0045 (voice-started dictation)
@@ -175,10 +175,11 @@ Epic #111 and the plan in [`docs/sprints/sprint-04.md`](../sprints/sprint-04.md)
 - The RemoteDesktop session may gain the pointer device later, which re-asks the permission once (owner decision).
 - Windows and macOS port the backend only.
 
-## Open questions (owner decisions)
-1. **Pointer permission.** Add the pointer device to the RemoteDesktop session so the overlay and pointer-only elements can be clicked? It re-prompts once, and shows KDE's remote-control indicator. Without it, "click 7" works only for elements with an `Action`.
-2. **Footman flips `IsEnabled`** while hands-free is on, and setup may write a Brave/Chromium flag. Fine, or confirm each time?
-3. **Dictating into password fields.** This ADR refuses (the owner says the password aloud in a room with a live microphone). Confirm.
-4. **Click on risky labels asks by default** (Outward and Destructive follow `confirm`). Loosen "Send" by default, or keep?
-5. **Control mode.** Allow an opt-in sticky mode with no wake word? It is convenient and weakens the played-back-audio defence; this ADR does not include it.
-6. **Sprint numbering.** Hands-free takes the name "Sprint 4"; the original Sprint 4 (assistant and jobs) and later sprints would move down by one. See `docs/sprints/sprint-04.md`.
+## Owner decisions (2026-11-27)
+1. **Pointer permission: yes.** The RemoteDesktop session adds the pointer device, so the overlay and pointer-only elements can be clicked. Setup re-asks the permission once.
+2. **Accessibility switch: yes.** Footman sets `IsEnabled` while hands-free is on, and setup writes the Brave/Chromium `--force-renderer-accessibility` flag (recorded in the install receipt so uninstall removes it).
+3. **Password fields: refused.** Footman never reads them and never dictates into them.
+4. **Risky labels keep asking.** "Click Send" (Outward) and "click Delete" (Destructive) ask by default. Act and Outward confirmations can be answered by voice ("yes" / "no") in the follow-up window (ADR-0047); Destructive confirmations stay click-only, so played-back audio cannot approve them.
+5. **No sticky control mode for now.** Only the short follow-up window (ADR-0047). Revisit as an opt-in later.
+6. **Sprint numbering: accepted.** Hands-free is Sprint 4; the original Sprint 4 (assistant and jobs) and later sprints move down by one.
+7. **UI-driving tools are gated by taint: kept.** Once untrusted content is in a task, clicks, key presses and text replacement need confirmation (`ToolSpec.Drives`, #115). Untrusted content also tightens Act tools (ADR-0047).
