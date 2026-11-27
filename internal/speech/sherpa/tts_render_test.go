@@ -39,9 +39,14 @@ func TestRenderSentences(t *testing.T) {
 	threads, _ := strconv.Atoi(os.Getenv("FOOTMAN_TTS_THREADS"))
 	rss0 := procStatus("VmRSS")
 	start := time.Now()
-	tts, err := OpenTTS(PiperName, TTSOptions{
-		Common: Common{ModelsDir: os.Getenv("FOOTMAN_RENDER_LEXICON_DIR"), Threads: threads},
-		Model:  os.Getenv("FOOTMAN_RENDER_MODEL"),
+	engine := os.Getenv("FOOTMAN_RENDER_ENGINE") // default piper; "kokoro" for the A/B baseline
+	if engine == "" {
+		engine = PiperName
+	}
+	tts, err := OpenTTS(engine, TTSOptions{
+		Common:  Common{ModelsDir: os.Getenv("FOOTMAN_RENDER_LEXICON_DIR"), Threads: threads},
+		Model:   os.Getenv("FOOTMAN_RENDER_MODEL"),
+		Speaker: os.Getenv("FOOTMAN_RENDER_SPEAKER"),
 	})
 	if err != nil {
 		t.Fatal(err)
