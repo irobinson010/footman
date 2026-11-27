@@ -9,7 +9,7 @@ Footman is an open-source voice layer for your computer. It has two jobs:
 1. **Dictation.** Speak, and clean text appears at your cursor. Filler words ("um", "uh", false starts) are removed. Optional speech coaching tracks your habits and suggests exercises.
 2. **Assistant.** Say the wake word ("Alfred, …") and Footman acts: it opens things, answers questions, and runs background jobs such as editing code in a project or replying to a message, while you keep typing.
 
-Each user picks a **persona**, which sets the wake word, voice, personality, and how Footman addresses them ("Yes, Master Ian").
+Each user picks a **persona**, which sets the wake word, voice, personality, and how Footman addresses them ("Yes, Master Alex").
 
 ## 2. Principles
 
@@ -524,7 +524,7 @@ model = "wake/ashford.onnx"      # optional; otherwise ready-made / keyword spot
 sensitivity = 0.5
 
 [address]                        # how the persona addresses the user
-form = "{title} {name}"          # → "Master Ian"
+form = "{title} {name}"          # → "Master Alex"
 title = "Master"
 fallback = "sir"                 # used until the user sets a name
 # Users can override all of this in their config.
@@ -574,7 +574,7 @@ quips   = ["I shall add it to my list of grievances."]
 | **Pettigrew** | An eager, slightly hapless valet (the comic one). |
 | **Lucy** | A calm, precise AI assistant. |
 
-**Klaus at launch:** speaks **English with a German accent and manner**, with an occasional German word ("Jawohl, Herr Ian"). A German-language Klaus comes with German language support later.
+**Klaus at launch:** speaks **English with a German accent and manner**, with an occasional German word ("Jawohl, Herr Alex"). A German-language Klaus comes with German language support later.
 
 ### Voice-creation workflow (voice kit, optional, phase 5)
 1. **Source:** a description (ElevenLabs voice design), Troupe / Resonance Lab, or the user's own recordings with consent.
@@ -597,7 +597,7 @@ quips   = ["I shall add it to my list of grievances."]
 version = 1
 
 [user]
-name = "Ian"
+name = "Alex"
 language = "en"
 
 [personas]
@@ -778,9 +778,9 @@ Method groups (sketch):
    - **Piper** (VITS) fine-tune from a base checkpoint.
    - Optional: any small model Troupe finds promising in the meantime.
 4. **Measure** on three machines:
-   - RTX 4080 GPU.
-   - Ryzen 9 7900X, CPU only.
-   - **ASUS ZenBook (Windows, Intel Core Ultra 7 155H: Arc iGPU + NPU)**: the integrated-GPU and low-power reference.
+   - 16 GB NVIDIA GPU.
+   - 12-core desktop CPU, CPU only.
+   - **the Windows laptop (Intel Core Ultra, Arc iGPU + NPU)**: the integrated-GPU and low-power reference.
 5. **Listen:** a blind A/B web page (reusing Troupe's listening tooling) compares each candidate with the reference clips. The owner listens first; friends later.
 
 **Pass bar**

@@ -17,7 +17,7 @@ Rendering runs the TTS the daemon gives it; the bank never selects an accelerato
 
 **Pipeline.** `core.Config.Ack` is a `core.AckSource` (`Ack() (audio.Clip, bool)`, which must not block); `core.FixedAck` wraps one clip. `playAck` publishes `pipeline.acknowledged` (`core.Acknowledged`) when the player first reads a sample, with `Latency` (end of speech to that sample), `Lead` (command start to that sample) and `Clip`. End of speech is the push-to-talk key release, or the moment the VAD hands over the segment for a wake-word turn (the first instant the pipeline knows speech has ended; the VAD's `min_silence`, 0.5 s by default, has already passed by then).
 
-**Timing: acknowledge after transcription.** On the workstation (Ryzen 9 7900X, CPU only, 12 threads, median of 21 runs after warm-up), speech-to-text for command-length speech:
+**Timing: acknowledge after transcription.** On the workstation (12-core desktop CPU, CPU only, 12 threads, median of 21 runs after warm-up), speech-to-text for command-length speech:
 
 | Engine on CPU | 1.5 s of speech | 3 s | 5 s |
 |---|---|---|---|

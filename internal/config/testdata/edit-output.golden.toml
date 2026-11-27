@@ -1,6 +1,6 @@
 # My footman config. Keep this comment!
 [user]
-name = "Ian"      # single-quoted on purpose
+name = "Alex"      # single-quoted on purpose
 language = "en"
 
 # How replies are spoken

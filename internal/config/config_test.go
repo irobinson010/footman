@@ -156,7 +156,7 @@ func TestEditKeepsCommentsAndOrder(t *testing.T) {
 		{"jobs.code_edits.show_diff", false},       // missing key inside missing inline-less table
 		{"coaching.enabled", true},                 // missing table appended
 		{"plugins.troupe.enabled", false},          // plugin key
-		{"user.name", "Ian"},                       // existing, quoted
+		{"user.name", "Alex"},                       // existing, quoted
 		{"ai.providers.claude.api_key", "keychain:claude"},
 	}
 	for _, e := range edits {
@@ -273,7 +273,7 @@ func TestRoundTripStable(t *testing.T) {
 
 func TestSetFile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.toml")
-	if err := SetFile(p, "user.name", "Ian"); err != nil {
+	if err := SetFile(p, "user.name", "Alex"); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetFile(p, "user.name", "Sam"); err != nil {

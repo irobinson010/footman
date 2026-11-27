@@ -138,7 +138,7 @@ func (v *vramSampler) Stop() (float64, string) {
 	return 0, "none-detected"
 }
 
-// Detection is printed by -detect and tells RUN.md / ZENBOOK.md readers what the
+// Detection is printed by -detect and tells RUN.md / LAPTOP.md readers what the
 // machine can do. Nothing here starts GPU work.
 type Detection struct {
 	OS, Arch     string

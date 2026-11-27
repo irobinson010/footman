@@ -11,7 +11,7 @@ Date: 2026-11-25. Status: done; the dataset is ready for part 2 (#10).
 | Dropped | 107 (106 WER, 1 speaking rate) |
 | Median speaker similarity to the reference (ECAPA) | 0.853; no line dropped for drift |
 | Engine | VoxCPM2, 20 inference steps, plain-reference mode, seed 1 |
-| RTF on the RTX 4080 | 0.84 (87 min wall for 1.72 h); the plan's 0.52 estimate was low |
+| RTF on the 16 GB NVIDIA GPU | 0.84 (87 min wall for 1.72 h); the plan's 0.52 estimate was low |
 | VRAM | about 9.3 GB |
 
 ## Steps and decisions

@@ -76,7 +76,7 @@ func TestShippedLinesNeverSpelled(t *testing.T) {
 		for _, lang := range p.Languages {
 			for _, k := range persona.Kinds {
 				for _, l := range p.Lines(k, lang) {
-					text := rs.apply(NormalizeText(l.Render("Herr Ian")))
+					text := rs.apply(NormalizeText(l.Render("Herr Alex")))
 					spelled = spelled[:0]
 					for _, piece := range splitSentences(text, 0, 25) {
 						if len(g.phonemize(piece)) == 0 {
@@ -101,7 +101,7 @@ func TestRespeller(t *testing.T) {
 		"gut":             "goot",
 	})
 	for _, c := range []struct{ in, want string }{
-		{"Jawohl, Herr Ian.", "yah vole, Herr Ian."},
+		{"Jawohl, Herr Alex.", "yah vole, Herr Alex."},
 		{"JAWOHL!", "yah vole!"},
 		{"Es tut  mir leid, sir.", "ess toot meer lide, sir."},
 		{"Es geht. Gut.", "ess geht. goot."},

@@ -18,7 +18,7 @@ import (
 // klaus is a persona with one line of each kind.
 func klaus() core.Persona {
 	lines := map[core.LineKind]string{
-		core.LineDone: "It is done, Herr Ian.", core.LineError: "That did not work, Herr Ian.", core.LineConfirm: "Shall I proceed, Herr Ian?",
+		core.LineDone: "It is done, Herr Alex.", core.LineError: "That did not work, Herr Alex.", core.LineConfirm: "Shall I proceed, Herr Alex?",
 	}
 	return core.Persona{
 		ID: "klaus", Name: "Klaus", System: "be Klaus",
@@ -90,7 +90,7 @@ func TestPersonaDoneAndErrorLines(t *testing.T) {
 	if err := r.p.Submit(r.ctx(), core.Utterance{Trigger: core.TriggerWake, Text: "footman, break"}); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("Submit = %v, want the failure", err)
 	}
-	equal(t, "spoken", spoken(r.tts), []string{"It is done, Herr Ian.", "That did not work, Herr Ian."})
+	equal(t, "spoken", spoken(r.tts), []string{"It is done, Herr Alex.", "That did not work, Herr Alex."})
 	s := shown(r)
 	if len(s) != 2 || !strings.Contains(s[1], "That did not work") || !strings.Contains(s[1], "boom") {
 		t.Errorf("shown = %q", s)
@@ -125,7 +125,7 @@ func TestConfirmLineWhileWaiting(t *testing.T) {
 	r.p.SetPersona(klaus())
 	r.ai.Queue(lfake.Reply{ToolCalls: []llm.ToolCall{{ID: "1", Name: "weather", Args: []byte(`{}`)}}}, lfake.Reply{Text: "Sunny."})
 	r.submit(core.TriggerWake, "footman, weather")
-	equal(t, "spoken", spoken(r.tts), []string{"Shall I proceed, Herr Ian?", "Sunny."})
+	equal(t, "spoken", spoken(r.tts), []string{"Shall I proceed, Herr Alex?", "Sunny."})
 }
 
 type fakeSwitcher map[string]string

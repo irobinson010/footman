@@ -132,7 +132,7 @@ Use it as a cheap "someone is speaking" gate and as the utterance endpointer for
 
 ### 3.6 CPU cost while idle-listening
 
-Process CPU time (user+sys, `getrusage` / `process_time`) while streaming the 61-minute hour at 100 ms chunks on the 7900X, one thread each. The machine had a load average of about 6 from other jobs, so the real-time factors are conservative.
+Process CPU time (user+sys, `getrusage` / `process_time`) while streaming the 61-minute hour at 100 ms chunks on the 12-core desktop CPU, one thread each. The machine had a load average of about 6 from other jobs, so the real-time factors are conservative.
 
 | what | CPU, % of one core | x real time |
 |---|---|---|

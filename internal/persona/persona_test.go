@@ -200,8 +200,8 @@ func TestAddress(t *testing.T) {
 	p, _ := load(t, goodFS())
 	for _, c := range []struct{ cfg, want string }{
 		{``, "sir"},
-		{"[user]\nname = \"Ian\"", "Master Ian"},
-		{"[user]\nname = \"Ian\"\n[personas.overrides.tester]\ntitle = \"Doctor\"", "Doctor Ian"},
+		{"[user]\nname = \"Alex\"", "Master Alex"},
+		{"[user]\nname = \"Alex\"\n[personas.overrides.tester]\ntitle = \"Doctor\"", "Doctor Alex"},
 		{"[personas.overrides.tester]\ntitle = \"Doctor\"", "sir"},
 	} {
 		if got := p.Address(cfg(t, c.cfg)); got != c.want {
@@ -215,7 +215,7 @@ func TestAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := q.Address(cfg(t, "[user]\nname = \"Ian\"")); got != "Ian" {
+	if got := q.Address(cfg(t, "[user]\nname = \"Alex\"")); got != "Alex" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -241,7 +241,7 @@ func TestLinesFallbackAndAddress(t *testing.T) {
 	var addr, static int
 	for _, l := range p.AddressLines("en") {
 		addr++
-		if !l.HasAddress() || strings.Contains(l.Render("Master Ian"), "{") {
+		if !l.HasAddress() || strings.Contains(l.Render("Master Alex"), "{") {
 			t.Errorf("bad address line %v", l)
 		}
 	}
@@ -333,7 +333,7 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 		if len(p.AddressLines("en")) == 0 {
 			t.Errorf("%s: no {address} lines", i.ID)
 		}
-		if got := p.Address(cfg(t, "[user]\nname = \"Ian\"")); !strings.Contains(got, "Ian") {
+		if got := p.Address(cfg(t, "[user]\nname = \"Alex\"")); !strings.Contains(got, "Alex") {
 			t.Errorf("%s: address %q", i.ID, got)
 		}
 		if len(p.Files()) > 3 {

@@ -10,7 +10,7 @@
 #   FOOTMAN_BASE_URL     where release files are downloaded from
 #
 # Anything after `--` is passed to `footman setup`, for example:
-#   sh install.sh -- --non-interactive --name Ian
+#   sh install.sh -- --non-interactive --name Alex
 set -eu
 
 # Placeholder until releases exist (S1 ships none yet).

@@ -1,21 +1,21 @@
 processor	: 0
 vendor_id	: AuthenticAMD
-model name	: AMD Ryzen 9 7900X 12-Core Processor
+model name	: AMD Ryzen 9 5900X 12-Core Processor
 physical id	: 0
 core id		: 0
 
 processor	: 1
-model name	: AMD Ryzen 9 7900X 12-Core Processor
+model name	: AMD Ryzen 9 5900X 12-Core Processor
 physical id	: 0
 core id		: 1
 
 processor	: 2
-model name	: AMD Ryzen 9 7900X 12-Core Processor
+model name	: AMD Ryzen 9 5900X 12-Core Processor
 physical id	: 0
 core id		: 0
 
 processor	: 3
-model name	: AMD Ryzen 9 7900X 12-Core Processor
+model name	: AMD Ryzen 9 5900X 12-Core Processor
 physical id	: 0
 core id		: 1
 

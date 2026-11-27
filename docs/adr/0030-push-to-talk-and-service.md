@@ -48,7 +48,7 @@ The measurements also showed that unloading a model (ADR-0028) did not lower the
 **Testing.** `TestE2EPushToTalk` (build tags `integration native`) runs the real binary in a nested KWin session with a private bus and XDG folders, a temporary HOME, and a `footman_test_*` null sink whose monitor is the configured microphone. It covers setup (`--no-service`), the daemon, an F8 press and release sent through the session's RemoteDesktop portal while a LibriSpeech clip plays into the sink, the text in a Qt field, idle memory, and `uninstall --purge` leaving nothing behind.
 
 ## Consequences
-Measured on the workstation (Ryzen 9 7900X, RTX 4080) in the nested session. The 10 s figures are for a 10.0 s LibriSpeech utterance, from F8 up to the last character in the field:
+Measured on the workstation (12-core desktop CPU, 16 GB NVIDIA GPU) in the nested session. The 10 s figures are for a 10.0 s LibriSpeech utterance, from F8 up to the last character in the field:
 
 | Speech-to-text | Release to text, 10 s (mean, min–max of 5) | Transcribe | Type 150 characters | Idle RSS, models unloaded |
 |---|---|---|---|---|

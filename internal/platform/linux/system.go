@@ -192,7 +192,7 @@ func (s *sysInfo) gpus(ctx context.Context) []string {
 }
 
 // parseLspci picks the display controllers from `lspci -mm` output and
-// names each by short vendor and model: "NVIDIA GeForce RTX 4080".
+// names each by short vendor and model: "NVIDIA GeForce RTX 4060 Ti".
 func parseLspci(out string) []string {
 	var gpus []string
 	for line := range strings.SplitSeq(out, "\n") {

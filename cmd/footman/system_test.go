@@ -11,7 +11,7 @@ import (
 )
 
 func TestSystemContextFollowsPolicy(t *testing.T) {
-	facts := platform.SystemFacts{OS: "Linux", Distro: "Ubuntu 26.04 LTS"}
+	facts := platform.SystemFacts{OS: "Linux", Distro: "Ubuntu 24.04 LTS"}
 	for _, tc := range []struct {
 		name, toml string
 		want       bool
@@ -29,7 +29,7 @@ func TestSystemContextFollowsPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := systemContext(cfg, facts)
-			if (got != "") != tc.want || (tc.want && !strings.Contains(got, "Ubuntu 26.04 LTS")) {
+			if (got != "") != tc.want || (tc.want && !strings.Contains(got, "Ubuntu 24.04 LTS")) {
 				t.Errorf("systemContext = %q, want on=%v", got, tc.want)
 			}
 		})

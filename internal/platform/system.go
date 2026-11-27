@@ -37,7 +37,7 @@ type SystemFacts struct {
 	GPUs []string
 	// Locale is the user's locale, such as "en_US.UTF-8".
 	Locale string
-	// TimeZone is the IANA time zone, such as "America/New_York".
+	// TimeZone is the IANA time zone, such as "America/Chicago".
 	TimeZone string
 	// Arch is the platform Footman runs on, such as "linux/amd64".
 	Arch string

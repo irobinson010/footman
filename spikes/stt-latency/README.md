@@ -3,7 +3,7 @@
 Throwaway spike code for issue #7. It is a separate Go module with its own `go.mod`, so
 `go test ./...` at the repo root does not see it, and nothing in `internal/` or `cmd/`
 imports it. Measurements are **pending**: only a CPU smoke test has run (below).
-`RUN.md` has the commands for the real run and `ZENBOOK.md` the Windows steps.
+`RUN.md` has the commands for the real run and `LAPTOP.md` the Windows steps.
 
 ## What it measures
 
@@ -43,13 +43,13 @@ scripts/fetch-models.sh     models + models.lock checksums -> ~/.cache/footman-s
 scripts/build.sh            sherpa, whispercpp-{cpu,cuda,vulkan}, nocgo
 scripts/fetch-sherpa-gpu.sh the CUDA onnxruntime libs the Go binding does not ship
 scripts/run-matrix.sh       the whole matrix, writes results/<label>.{jsonl,md}
-scripts/package-windows.sh  cross-compile + zip for the ZenBook
-scripts/zenbook-run.ps1     what runs on the ZenBook (shipped as run.ps1)
+scripts/package-windows.sh  cross-compile + zip for the laptop
+scripts/laptop-run.ps1     what runs on the laptop (shipped as run.ps1)
 ```
 
 ## Smoke test (2026-11-24, CPU only, 4 threads pinned with `taskset -c 0-3`)
 
-Ryzen 9 7900X, Whisper tiny.en, `05s-1580-141084-0011` (5.0 s), 2 timed runs. This only
+12-core desktop CPU, Whisper tiny.en, `05s-1580-141084-0011` (5.0 s), 2 timed runs. This only
 shows the harness works; it is not a measurement to decide anything with.
 
 | engine | load ms | first ms | latency ms | RTF | WER | peak RSS MB |

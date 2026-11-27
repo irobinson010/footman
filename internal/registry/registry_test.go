@@ -39,8 +39,8 @@ func TestRegistry(t *testing.T) {
 	if err != nil || g.Greet() != "hello world" {
 		t.Fatalf("New(nil) = %v, %v", g, err)
 	}
-	g, err = r.New("hello", registry.Map{"name": "Ian"})
-	if err != nil || g.Greet() != "hello Ian" {
+	g, err = r.New("hello", registry.Map{"name": "Alex"})
+	if err != nil || g.Greet() != "hello Alex" {
 		t.Fatalf("New(Map) = %v, %v", g, err)
 	}
 	g, err = r.New("hello", registry.JSON(`{"name":"json"}`))

@@ -1,4 +1,4 @@
-# Running the full S0-07 measurement (workstation: RTX 4080, Ryzen 9 7900X)
+# Running the full S0-07 measurement (workstation: 16 GB NVIDIA GPU, 12-core desktop CPU)
 
 The harness was smoke-tested on CPU only (see README.md). Nothing here has run on
 CUDA or Vulkan yet. Do these steps when the GPU is free. Run everything from
@@ -59,7 +59,7 @@ bin/stt-bench-sherpa -detect
 ```
 
 Look at `GPUs`, `NvidiaSMI`, `CUDALibs` and `VulkanLoader`. For Vulkan on this
-machine there may be several devices (the 4080, the 7900X's tiny iGPU, a CPU
+machine there may be several devices (the NVIDIA GPU, the desktop CPU's tiny iGPU, a CPU
 `llvmpipe`). whisper.cpp takes device 0 unless told otherwise, so find the
 NVIDIA index with `vulkaninfo --summary` and export it: `export VK_DEVICE=<index>`
 (run-matrix.sh turns that into `GGML_VK_VISIBLE_DEVICES`).
@@ -81,10 +81,10 @@ failing row does not stop the run. Results:
 - `results/workstation.jsonl`: one JSON line per clip per row
 - `results/workstation.md`: the summary table
 
-To add the ZenBook numbers to the table:
+To add the laptop numbers to the table:
 
 ```bash
-bin/stt-bench-nocgo -summarize results/workstation.jsonl results/zenbook.jsonl -md results/all.md
+bin/stt-bench-nocgo -summarize results/workstation.jsonl results/laptop.jsonl -md results/all.md
 ```
 
 ## 5. Sanity checks before trusting a GPU row

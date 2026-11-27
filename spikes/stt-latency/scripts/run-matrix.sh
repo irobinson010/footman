@@ -11,7 +11,7 @@
 #
 # Environment:
 #   LABEL         machine label stored in the results (default: workstation)
-#   CPU_THREADS   threads for CPU rows (default 12, the 7900X's cores)
+#   CPU_THREADS   threads for CPU rows (default 12, the desktop CPU cores)
 #   GPU_THREADS   threads for GPU rows (default 4; the GPU does the work)
 #   RUNS          timed runs per clip (default 3)
 #   MODELS        space separated model ids (default: all five main ones)
