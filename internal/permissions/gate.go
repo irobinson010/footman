@@ -166,6 +166,9 @@ func Question(name string, args json.RawMessage) string {
 			return "Shall I open " + strings.Join(hosts[:len(hosts)-1], ", ") + " and " + hosts[len(hosts)-1] + "?"
 		}
 	}
+	if name == "start_dictation" {
+		return "Shall I start dictation?"
+	}
 	switch {
 	case str("url") != "":
 		return "Shall I open " + spokenHost(str("url")) + "?"

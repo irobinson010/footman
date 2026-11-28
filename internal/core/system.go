@@ -102,7 +102,7 @@ func (p *Pipeline) SetSystemContext(block string) {
 func (p *Pipeline) systemPrompt(web bool) (prompt string, withSystem bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	parts := []string{p.persona.System, p.system, WebRules(web), ContextRules(p.mem.turns > 0)}
+	parts := []string{p.persona.System, p.system, WebRules(web), ContextRules(p.mem.turns > 0), DictationRules(p.d.Wake != nil)}
 	parts = slices.DeleteFunc(parts, func(s string) bool { return s == "" })
 	return strings.Join(parts, "\n\n"), p.system != ""
 }

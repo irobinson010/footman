@@ -262,8 +262,9 @@ func (p *Pipeline) startTask(turn uint64, call llm.ToolCall, untrusted bool) (st
 }
 
 // allTools returns the configured tools plus the built-in fast-path actions
-// (open_url, open_app, quick_action) and, when the platform can, the
-// read-only system_status, unless a configured tool already uses the name.
+// (open_url, open_app, quick_action), start_dictation when the always-on
+// microphone runs and, when the platform can, the read-only
+// system_status, unless a configured tool already uses the name.
 func (p *Pipeline) allTools() []plugins.Tool {
 	all := append([]plugins.Tool(nil), p.d.Tools...)
 	have := map[string]bool{}
@@ -271,6 +272,10 @@ func (p *Pipeline) allTools() []plugins.Tool {
 		have[t.Spec().Name] = true
 	}
 	builtin := []plugins.Tool{openURLTool{p}, openAppTool{p}, quickActionTool{p}}
+	if p.d.Wake != nil {
+		// A dictation session needs the always-on microphone (ADR-0045).
+		builtin = append(builtin, startDictationTool{p})
+	}
 	if _, ok := p.d.Platform.(platform.SystemInfo); ok {
 		builtin = append(builtin, systemStatusTool{p})
 	}

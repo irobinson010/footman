@@ -46,7 +46,7 @@ func TestSetPersonaVoicePromptAndNotify(t *testing.T) {
 	if len(sp) != 1 || sp[0].Text != "Jawohl." || sp[0].Voice.Speaker != "bm_lewis" {
 		t.Errorf("spoken = %+v", sp)
 	}
-	if reqs := r.ai.Requests(); len(reqs) != 1 || reqs[0].System != "be Klaus\n\n"+core.WebRules(false) {
+	if reqs := r.ai.Requests(); len(reqs) != 1 || reqs[0].System != "be Klaus\n\n"+core.WebRules(false)+"\n\n"+core.DictationRules(true) {
 		t.Errorf("system prompt = %+v", reqs)
 	}
 	equal(t, "shown", shown(r), []string{"Klaus: Jawohl."})
