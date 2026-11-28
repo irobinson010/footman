@@ -112,13 +112,13 @@ func openSTT(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware, avai
 		fb, ferr = planSTTWith(cfg, dirs, hw, avail, func(r *accel.Request) { cpu(r); r.Model = accel.Auto })
 	}
 	if ferr != nil {
-		return sttOpened{}, fmt.Errorf("%w\n(and no CPU fallback: %v)", err, ferr)
+		return sttOpened{}, fmt.Errorf("%w\n(and no CPU fallback: %w)", err, ferr)
 	}
 	reason := firstLine(err.Error())
 	logf("WARNING: speech-to-text on %s failed (%s); falling back to the CPU: %s. Set speech.stt.accelerator = \"cpu\" to skip the GPU attempt", plan.choice.Accelerator, reason, describePlan(fb))
 	stt, impl, ferr = open(fb)
 	if ferr != nil {
-		return sttOpened{}, fmt.Errorf("%w\n(the CPU fallback failed too: %v)", err, ferr)
+		return sttOpened{}, fmt.Errorf("%w\n(the CPU fallback failed too: %w)", err, ferr)
 	}
 	return sttOpened{stt: stt, impl: impl, plan: fb, fallback: fmt.Sprintf("%s on %s failed (%s)", plan.choice.Engine, plan.choice.Accelerator, reason)}, nil
 }
