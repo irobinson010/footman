@@ -125,7 +125,7 @@ func TestRefusedKeyIsForgotten(t *testing.T) {
 	var calls, keys atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
-			http.Error(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`, 401)
+			http.Error(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`, http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -165,7 +165,7 @@ func TestWarmResolvesKeyAndConnectsWithoutCredentials(t *testing.T) {
 		if r.Header.Get("X-Api-Key") != "" || r.Header.Get("Authorization") != "" {
 			withKey.Add(1)
 		}
-		w.WriteHeader(404)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
 	var keys atomic.Int32
