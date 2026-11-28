@@ -116,6 +116,15 @@ type (
 		Handler string `json:"handler,omitempty"`
 		Error   string `json:"error,omitempty"`
 	}
+	timingData struct {
+		Turn         uint64  `json:"turn"`
+		Trigger      string  `json:"trigger"`
+		WakeToEndMS  float64 `json:"wake_to_end_ms,omitempty"`
+		STTMS        float64 `json:"stt_ms"`
+		AckMS        float64 `json:"ack_ms,omitempty"`
+		FirstTokenMS float64 `json:"first_token_ms,omitempty"`
+		FirstAudioMS float64 `json:"first_audio_ms,omitempty"`
+	}
 	micData struct {
 		Mic string `json:"mic"`
 	}
@@ -182,6 +191,9 @@ func eventData(data any) any {
 		return wakeRejectedData{Turn: d.Turn, Reason: d.Reason, AudioMS: ms(d.Audio), STTMS: ms(d.Took)}
 	case core.Outcome:
 		return outcomeData{Turn: d.Turn, Trigger: d.Trigger.String(), Route: d.Route.String(), Handler: d.Handler, Error: d.Err}
+	case core.TurnTiming:
+		return timingData{Turn: d.Turn, Trigger: d.Trigger.String(), WakeToEndMS: ms(d.WakeToEnd), STTMS: ms(d.Transcribe),
+			AckMS: ms(d.Ack), FirstTokenMS: ms(d.FirstToken), FirstAudioMS: ms(d.FirstAudio)}
 	case platform.TrayStatus:
 		return micData{Mic: micName(d)}
 	case core.DictationStatus:

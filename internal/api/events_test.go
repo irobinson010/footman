@@ -29,6 +29,11 @@ func TestEventData(t *testing.T) {
 		{core.Wake{Keyword: "alfred", At: 1500 * time.Millisecond}, `{"keyword":"alfred","at_ms":1500}`},
 		{core.WakeRejection{Turn: 4, Reason: core.WakeNoMatch, Audio: 2 * time.Second, Took: 70 * time.Millisecond},
 			`{"turn":4,"reason":"no_wake_word","audio_ms":2000,"stt_ms":70}`},
+		// The debug transcript never goes over the API.
+		{core.WakeRejection{Turn: 4, Reason: core.WakeNoMatch, Audio: 2 * time.Second, Took: 70 * time.Millisecond, Text: "secret"},
+			`{"turn":4,"reason":"no_wake_word","audio_ms":2000,"stt_ms":70}`},
+		{core.TurnTiming{Turn: 8, Trigger: core.TriggerWake, WakeToEnd: 2300 * time.Millisecond, Transcribe: 200 * time.Millisecond, FirstAudio: 3 * time.Second},
+			`{"turn":8,"trigger":"wake","wake_to_end_ms":2300,"stt_ms":200,"first_audio_ms":3000}`},
 		{core.Outcome{Turn: 5, Trigger: core.TriggerWake, Route: core.RouteCommand, Handler: core.HandlerAI, Err: "boom"},
 			`{"turn":5,"trigger":"wake","route":"command","handler":"ai","error":"boom"}`},
 		{core.Outcome{Turn: 6, Trigger: core.TriggerDictate, Route: core.RouteDictation}, `{"turn":6,"trigger":"dictate","route":"dictation"}`},

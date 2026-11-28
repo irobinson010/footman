@@ -128,7 +128,7 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			return "", fmt.Errorf("ai: %w", err)
 		}
 		sp := speakerFrom(ctx)
-		r, err := collectStreaming(s, sp)
+		r, err := collectStreaming(s, sp, func() { markToken(ctx) })
 		if err != nil {
 			return "", fmt.Errorf("ai: %w", err)
 		}
@@ -176,7 +176,8 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 
 // collectStreaming reads s to the end like llm.Collect, handing each text
 // delta to sp (if any) as it arrives so speech starts before the reply ends.
-func collectStreaming(s llm.Stream, sp *speaker) (llm.Reply, error) {
+// onFirst is called at the first text.
+func collectStreaming(s llm.Stream, sp *speaker, onFirst func()) (llm.Reply, error) {
 	defer func() { _ = s.Close() }()
 	r := llm.Reply{Message: llm.Message{Role: llm.Assistant}}
 	var text strings.Builder
@@ -191,6 +192,9 @@ func collectStreaming(s llm.Stream, sp *speaker) (llm.Reply, error) {
 		}
 		switch e.Kind {
 		case llm.TextDelta:
+			if text.Len() == 0 && e.Text != "" {
+				onFirst()
+			}
 			text.WriteString(e.Text)
 			if sp != nil {
 				sp.Feed(e.Text)

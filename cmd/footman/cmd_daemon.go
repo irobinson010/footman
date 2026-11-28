@@ -322,6 +322,13 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			logf("%s", wakeRejectedLine(ev.Data))
 		}
 	})
+	timings := bus.Subscribe(b, core.Timing, 64)
+	defer timings.Close()
+	bg.Go(func() {
+		for ev := range timings.C() {
+			logf("%s", timingLine(ev.Data))
+		}
+	})
 	outcomes := bus.Subscribe(b, core.TurnDone, 64)
 	defer outcomes.Close()
 	bg.Go(func() {
@@ -345,6 +352,8 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			p.SetReplyNotify(c.Bool("replies.notify"))
 			p.SetDictation(dictationConfig(c))
 			p.SetFollowUp(c.Bool("speech.followup.enabled"), followUpTimeout(c))
+			p.SetEarcon(c.Bool("speech.wake.earcon"))
+			p.SetWakeDebug(c.Bool("speech.wake.debug"))
 			personas.apply(c)
 			p.SetSystemContext(systemContext(c, facts))
 			p.SetWebSearch(c.Bool("ai.web_search"))
@@ -593,6 +602,10 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		MinCommand:      core.DefaultMinCommand,
 		VerifyWake:      cfg.Bool("speech.wake.verify"),
 		Quiet:           cfg.Bool("replies.quiet"),
+		Earcon:          audio.WakeEarcon(audio.CueRate),
+		MissCue:         audio.MissCue(audio.CueRate),
+		NoEarcon:        !cfg.Bool("speech.wake.earcon"),
+		WakeDebug:       cfg.Bool("speech.wake.debug"),
 		Speak:           cfg.String("replies.speak"),
 		Notify:          cfg.Bool("replies.notify"),
 		QuietHours:      cfg.String("replies.quiet_hours"),
@@ -683,9 +696,54 @@ func hotkeyInfo(c core.Config) []api.HotkeyInfo {
 }
 
 // wakeRejectedLine is the journal line for a wake the second stage dropped.
+// With speech.wake.debug on, Text is the transcript, quoted and cut to
+// wakeDebugMax characters; otherwise the text is never logged.
 func wakeRejectedLine(r core.WakeRejection) string {
-	return fmt.Sprintf("turn %d: wake word not confirmed by speech-to-text (%s; %.1f s checked in %d ms), dropped",
+	line := fmt.Sprintf("turn %d: wake word not confirmed by speech-to-text (%s; %.1f s checked in %d ms), dropped",
 		r.Turn, r.Reason, r.Audio.Seconds(), r.Took.Milliseconds())
+	if r.Text != "" {
+		line += fmt.Sprintf("; heard %q", truncateRunes(r.Text, wakeDebugMax))
+	}
+	return line
+}
+
+// wakeDebugMax is how many characters of a rejected wake's transcript the
+// debug line keeps.
+const wakeDebugMax = 60
+
+// truncateRunes cuts s to n characters, ending it with an ellipsis if it was
+// longer.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
+// timingLine is the journal line for where a spoken command's time went:
+// wake word to end of speech, speech-to-text, then (counted from the end of
+// speech) the acknowledgement, the AI's first token and the first spoken
+// audio, and the whole wake-to-first-audio time. Steps that did not happen
+// are left out. Never the text.
+func timingLine(t core.TurnTiming) string {
+	line := fmt.Sprintf("turn %d: timing (ms)", t.Turn)
+	sep := ":"
+	add := func(name string, d time.Duration) {
+		if d > 0 {
+			line += fmt.Sprintf("%s %s %d", sep, name, d.Milliseconds())
+			sep = ","
+		}
+	}
+	add("wake->speech end", t.WakeToEnd)
+	add("transcribe", t.Transcribe)
+	add("ack", t.Ack)
+	add("first token", t.FirstToken)
+	add("first audio", t.FirstAudio)
+	if w := t.WakeToAudio(); w > 0 {
+		line += fmt.Sprintf("; wake->first audio %d", w.Milliseconds())
+	}
+	return line
 }
 
 // outcomeLine is the journal line for how a turn ended: the trigger, the

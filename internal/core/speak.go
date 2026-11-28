@@ -538,6 +538,7 @@ func (s *speaker) play() {
 	}
 	js := &joinStream{ctx: s.ctx, cur: first, rest: s.streams, onFirst: func() {
 		bus.Publish(s.p.d.Bus, SpeechStarted, SpeechStart{Turn: s.turn, After: time.Since(s.start)})
+		markAudio(s.ctx)
 	}}
 	err := s.p.d.Platform.Audio().Play(s.ctx, s.p.cfg.Speaker, js)
 	if err != nil {

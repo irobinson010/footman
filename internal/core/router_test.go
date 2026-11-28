@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/irobinson010/footman/internal/core"
@@ -109,6 +110,43 @@ func TestMatchWake(t *testing.T) {
 		rest, ok := r.MatchWake(c.text)
 		if ok != c.ok || rest != c.rest {
 			t.Errorf("MatchWake(%q) = %q, %v; want %q, %v", c.text, rest, ok, c.rest, c.ok)
+		}
+	}
+}
+
+// TestMatchWakeRenderings checks the spellings speech-to-text gives the
+// shipped and common extra wake words, and the near misses that must not
+// count. The spotter has already fired before this check, so it only has to
+// tell a wake word from other speech.
+func TestMatchWakeRenderings(t *testing.T) {
+	r := core.NewRouter([]string{"ashford", "hey ashford", "alfred", "klaus", "lucy", "hey footman", "footman"}, nil, nil)
+	for _, text := range []string{
+		// Alfred
+		"Alfred, open YouTube", "Al Fred, open YouTube", "Al-fred open YouTube", "All Fred open YouTube",
+		"Alfredo open YouTube", "Alfred's open YouTube", "Alfie, open YouTube", "Alfreed open YouTube",
+		"Elfred open YouTube", "Alford open YouTube", "Fred, open YouTube", "Hey Alfred, open YouTube",
+		"Hey, Alfred open YouTube", "Okay Alfred open YouTube", "Hello Alfred, open YouTube",
+		// Klaus
+		"Klaus, open YouTube", "Klaus open YouTube", "Claus, open YouTube", "Claws open YouTube",
+		"Close open YouTube", "Klaas open YouTube", "Hey Klaus, open YouTube",
+		// Ashford
+		"Ashford, open YouTube", "Ash ford, open YouTube", "Ash Ford open YouTube", "Ashfort open YouTube",
+		"Ashferd open YouTube", "Ashford's open YouTube", "Hey Ashford, open YouTube", "Hey Ash ford open YouTube",
+		"Ash for open YouTube", "ford, open YouTube",
+	} {
+		if rest, ok := r.MatchWake(text); !ok || !strings.Contains(rest, "open YouTube") {
+			t.Errorf("MatchWake(%q) = %q, %v; want a match leaving the command", text, rest, ok)
+		}
+	}
+	for _, text := range []string{
+		"Open YouTube", "Alpha, open YouTube", "Albany open YouTube", "Alfa Romeo is a car",
+		"Ashley, open YouTube", "Ashworth open YouTube", "Ash, open YouTube", "Asphalt open YouTube",
+		"Cloud open YouTube", "Clean up open YouTube",
+		"Lucas open YouTube", "I think Alfred said so", "She told Klaus to open YouTube", "The Alfred Hitchcock film",
+		"Hey you, open YouTube", "Hi there, open YouTube",
+	} {
+		if rest, ok := r.MatchWake(text); ok {
+			t.Errorf("MatchWake(%q) = %q, true; want no match", text, rest)
 		}
 	}
 }

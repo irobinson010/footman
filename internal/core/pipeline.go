@@ -108,6 +108,19 @@ type Config struct {
 	// follow-up window opens, unless quiet. Empty means none. It should be
 	// brief and soft: the microphone stays open while it plays.
 	Earcon audio.Clip
+	// MissCue is a softer sound played when the second stage of the wake
+	// word rejects a wake because speech was heard that did not start with a
+	// wake word (ADR-0041), so the user knows to say it again. Empty means
+	// none; quiet mode silences it too.
+	MissCue audio.Clip
+	// NoEarcon switches Earcon and MissCue off (config speech.wake.earcon
+	// false). Change it while running with SetEarcon.
+	NoEarcon bool
+	// WakeDebug adds the transcript of a rejected wake to WakeRejection.Text,
+	// so wake matching can be tuned (config speech.wake.debug). Off by
+	// default: the text of speech that was not a command is otherwise never
+	// logged. Change it while running with SetWakeDebug.
+	WakeDebug bool
 	// FollowUp turns on follow-up listening (config speech.followup.enabled,
 	// ADR-0047); FollowUpTimeout is how long a window waits in silence
 	// (default DefaultFollowUpTimeout) and FollowUpGuard the pause after
@@ -416,6 +429,9 @@ type claim struct {
 	// verify means seg starts before the wake word and the transcript must
 	// begin with one (ADR-0041).
 	verify bool
+	// wakeAt is when the wake word was heard, for the latency line; zero for
+	// the other triggers.
+	wakeAt time.Time
 	// answer means seg came in a window that answers a confirmation, so it
 	// is only ever a yes or no (ADR-0047).
 	answer bool
@@ -644,6 +660,7 @@ func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, c claim, 
 	}
 	took := time.Since(start)
 	text := t.Text
+	ctx = withClock(ctx, &turnClock{wakeAt: c.wakeAt, ended: ended, transcribe: took})
 	if c.verify {
 		rest, ok := p.cfg.Router.MatchWake(text)
 		if !ok {
@@ -651,7 +668,20 @@ func (p *Pipeline) transcribeAndHandle(ctx context.Context, id uint64, c claim, 
 			if len(dictation.NormWords(text)) == 0 {
 				reason = WakeNoSpeech
 			}
-			bus.Publish(p.d.Bus, WakeRejected, WakeRejection{Turn: id, Reason: reason, Audio: c.seg.Audio.Duration(), Took: took})
+			rej := WakeRejection{Turn: id, Reason: reason, Audio: c.seg.Audio.Duration(), Took: took}
+			p.mu.Lock()
+			debug := p.cfg.WakeDebug
+			p.mu.Unlock()
+			if debug {
+				rej.Text = text // opt-in, for tuning the match (speech.wake.debug)
+			}
+			bus.Publish(p.d.Bus, WakeRejected, rej)
+			if reason == WakeNoMatch {
+				// Speech was heard, but not a wake word: tell the user to
+				// say it again. Silence (no_speech) is most likely a false
+				// wake of the spotter, which needs no answer.
+				p.playCue(p.ctx, p.cfg.MissCue)
+			}
 			return
 		}
 		text = rest
@@ -694,6 +724,11 @@ func (p *Pipeline) handle(ctx context.Context, id uint64, u Utterance) error {
 		out.Err = err.Error()
 	}
 	bus.Publish(p.d.Bus, TurnDone, out)
+	if r.Kind == RouteCommand {
+		if tm, ok := clockFrom(ctx).timing(id, u.Trigger); ok {
+			bus.Publish(p.d.Bus, Timing, tm)
+		}
+	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return p.fail(id, err)
 	}
@@ -882,6 +917,7 @@ func (p *Pipeline) playAck(ctx context.Context, id uint64, ended time.Time) <-ch
 			a.Latency = at.Sub(ended)
 		}
 		bus.Publish(p.d.Bus, Acknowledged, a)
+		markAck(ctx)
 	}}
 	go func() {
 		defer close(done)
@@ -1042,6 +1078,35 @@ func (p *Pipeline) WakeListening() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.d.Wake != nil && !p.wakeOff
+}
+
+// SetEarcon turns the wake earcon, the follow-up listening cue and the
+// "didn't catch that" cue on or off while running (speech.wake.earcon). Quiet
+// mode silences them as well.
+func (p *Pipeline) SetEarcon(on bool) {
+	p.mu.Lock()
+	p.cfg.NoEarcon = !on
+	p.mu.Unlock()
+}
+
+// SetWakeDebug turns the transcript in rejected-wake reports on or off while
+// running (speech.wake.debug).
+func (p *Pipeline) SetWakeDebug(on bool) {
+	p.mu.Lock()
+	p.cfg.WakeDebug = on
+	p.mu.Unlock()
+}
+
+// cueClip returns c, the clip of a cue, if it should play now: it is not
+// empty, cues are not switched off and quiet mode is off.
+func (p *Pipeline) cueClip(c audio.Clip) (audio.Clip, bool) {
+	p.mu.Lock()
+	off := p.cfg.NoEarcon
+	p.mu.Unlock()
+	if off || len(c.Samples) == 0 || p.Quiet() {
+		return audio.Clip{}, false
+	}
+	return c, true
 }
 
 // SetQuiet turns quiet mode on or off: no earcon or acknowledgement sound,

@@ -284,11 +284,27 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 
 	// A wake word that no command follows is dropped when this fires.
 	var expire <-chan time.Time
+	// The tray shows the microphone as capturing speech from a wake word
+	// until the command is claimed or the wake expires.
+	capturing := false
+	defer func() {
+		if capturing {
+			p.setMic(p.idleMic())
+		}
+	}()
+	idle := func() {
+		if capturing {
+			capturing = false
+			p.setMic(p.idleMic())
+		}
+	}
+	var wakeAt time.Time // when the last wake word was heard
 	for segs != nil || wakes != nil {
 		select {
 		case <-expire:
 			expire = nil
 			p.disarm()
+			idle()
 		case w, ok := <-wakes:
 			if !ok {
 				wakes = nil
@@ -307,7 +323,10 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 			bus.Publish(p.d.Bus, WakeHeard, Wake{Keyword: w.Keyword, At: w.At})
 			p.arm(TriggerWake, w.At, true)
 			expire = time.After(p.cfg.WakeWindow)
+			wakeAt = time.Now()
 			p.earcon(mctx)
+			capturing = true
+			p.setMic(platform.Recording)
 		case seg, ok := <-segs:
 			if !ok {
 				segs = nil
@@ -319,19 +338,32 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 				continue // not addressed to Footman, or only the wake word
 			}
 			expire = nil
+			idle()
+			if c.trig == TriggerWake {
+				c.wakeAt = wakeAt
+			}
 			turns.Go(func() { p.handleSegment(ctx, c, segAt) })
 		}
 	}
 	return mctx.Err() == nil, nil
 }
 
-// earcon plays the short wake sound, unless there is none or quiet mode is on.
-func (p *Pipeline) earcon(ctx context.Context) {
-	if len(p.cfg.Earcon.Samples) == 0 || p.Quiet() {
+// earcon plays the short wake sound, unless there is none, it is switched off
+// or quiet mode is on. It does not wait for the sound to end. The microphone
+// stays open while it plays, so it is short and soft (audio.WakeEarcon); a
+// speaker that leaks into the microphone adds a faint blip to the start of
+// the command, which the second stage and the speech-to-text engine ignore,
+// and a blip alone is shorter than MinCommand, so it never starts a turn.
+func (p *Pipeline) earcon(ctx context.Context) { p.playCue(ctx, p.cfg.Earcon) }
+
+// playCue plays a cue in the background if cueClip says it should play.
+func (p *Pipeline) playCue(ctx context.Context, c audio.Clip) {
+	c, ok := p.cueClip(c)
+	if !ok {
 		return
 	}
 	go func() {
-		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(p.cfg.Earcon, 320))
+		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(c, 320))
 	}()
 }
 

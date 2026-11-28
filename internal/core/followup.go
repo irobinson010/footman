@@ -146,8 +146,8 @@ func (p *Pipeline) openFollowUp(ctx context.Context, confirm bool) {
 	}
 	// The cue is a sound too: the guard is measured after it. It is the
 	// optional listening cue (Config.Earcon); the clip bank has none.
-	if len(p.cfg.Earcon.Samples) > 0 && !p.Quiet() {
-		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(p.cfg.Earcon, 320))
+	if c, ok := p.cueClip(p.cfg.Earcon); ok {
+		_ = p.d.Platform.Audio().Play(ctx, p.cfg.Speaker, audio.NewClipStream(c, 320))
 	}
 	guard := p.cfg.FollowUpGuard
 	if guard <= 0 {

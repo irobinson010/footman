@@ -159,11 +159,14 @@ func (r *Router) stripWake(tokens []string) []string {
 }
 
 // wakeFillers may come before the wake word in a transcript MatchWake
-// accepts ("okay, Alfred, ..."), up to two of them. Other words may not: "the
+// accepts ("okay, Alfred, ..."), up to two of them. Greetings count as fillers,
+// so "Hey Alfred" works for any name, not only "hey footman". Other words may not: "the
 // Alfred Hitchcock film" is talk about Alfred, not to him.
 var wakeFillers = map[string]bool{
 	"um": true, "umm": true, "uh": true, "uhh": true, "uhm": true, "er": true, "erm": true,
 	"ah": true, "hmm": true, "mm": true, "oh": true, "okay": true, "ok": true, "so": true, "well": true,
+	// A greeting is how people address a name: "Hey, Alfred", "Hello Klaus".
+	"hey": true, "hi": true, "hello": true, "yo": true, "hay": true,
 }
 
 // MatchWake is the second stage of the wake word (ADR-0041): it reports
@@ -243,7 +246,9 @@ func letters(w string) string {
 // wakeLike reports whether got is close enough to the wake word want: at
 // most three letters in ten different (edit distance), or consonants that
 // sound the same (consonantCode) with about the same length. It also returns
-// the edit distance, to pick the closest of several matches.
+// the edit distance, to pick the closest of several matches. A wake word of
+// six or more letters also matches a word that starts with the same three
+// letters and is within two edits ("Alfie" for "Alfred").
 func wakeLike(got, want string) (int, bool) {
 	if got == "" {
 		return 0, false
@@ -253,6 +258,13 @@ func wakeLike(got, want string) (int, bool) {
 		return d, true
 	}
 	n := len(got) - len(want)
+	if len(want) >= 6 && d <= 2 && n >= -2 && n <= 2 && got[:3] == want[:3] {
+		// The same start and a different ending: "Alfie" for "Alfred".
+		// Speech-to-text often hears the first syllable well and guesses
+		// the rest; only names of six or more letters, where three shared
+		// letters are half the word.
+		return d, true
+	}
 	wc := consonantCode(want)
 	return d, len(wc) >= 3 && consonantCode(got) == wc && n >= -2 && n <= 2
 }

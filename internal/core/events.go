@@ -214,13 +214,18 @@ const (
 
 // WakeRejection is published when the second stage drops a wake: the
 // transcript of the audio around the wake word did not start with one. The
-// text is not included.
+// text is not included, unless Config.WakeDebug is on.
 type WakeRejection struct {
 	Turn   uint64
 	Reason string
 	// Audio is how long the checked audio was, and Took how long
 	// speech-to-text took.
 	Audio, Took time.Duration
+	// Text is the transcript that did not start with a wake word. It is set
+	// only with Config.WakeDebug (speech.wake.debug), so that wake matching
+	// can be tuned; otherwise it is empty and never logged. The local API
+	// does not send it.
+	Text string
 }
 
 // What handled a command, in Outcome.Handler, besides a fast-path rule's
