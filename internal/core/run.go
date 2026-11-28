@@ -256,10 +256,16 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 		return false, nil
 	}
 	p.micCancel = cancel
+	var ring *rawRing
+	if p.d.Wake != nil {
+		ring = newRawRing(rawRingLen)
+		p.raw = ring
+	}
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
 		p.micCancel = nil
+		p.raw = nil
 		p.mu.Unlock()
 	}()
 
@@ -277,7 +283,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 	vadIn := frames
 	if p.d.Wake != nil {
 		var wakeIn <-chan audio.Frame
-		wakeIn, vadIn = tee(mctx, frames)
+		wakeIn, vadIn = tee(mctx, frames, ring)
 		wakes = p.d.Wake.Listen(mctx, wakeIn)
 	}
 	segs := p.d.VAD.Detect(mctx, vadIn)
@@ -370,13 +376,18 @@ func (p *Pipeline) playCue(ctx context.Context, c audio.Clip) {
 // tee copies every frame to two unbuffered channels, the wake-word spotter's
 // first. Because the copy to the spotter blocks until it is taken, a wake
 // word is always reported before the VAD sees the frames after it, so the
-// utterance that follows is never mistaken for unaddressed speech.
-func tee(ctx context.Context, in <-chan audio.Frame) (first, second <-chan audio.Frame) {
+// utterance that follows is never mistaken for unaddressed speech. Each
+// frame is also written to ring (if any) before the spotter gets it, so the
+// ring holds the audio up to a wake word when it is reported.
+func tee(ctx context.Context, in <-chan audio.Frame, ring *rawRing) (first, second <-chan audio.Frame) {
 	a, b := make(chan audio.Frame), make(chan audio.Frame)
 	go func() {
 		defer close(a)
 		defer close(b)
 		for f := range in {
+			if ring != nil {
+				ring.write(f)
+			}
 			for _, ch := range []chan audio.Frame{a, b} {
 				select {
 				case ch <- f:

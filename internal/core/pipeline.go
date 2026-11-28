@@ -212,6 +212,13 @@ type Pipeline struct {
 	// second stage to check together with the command that follows
 	// (VerifyWake).
 	armedHead speech.Audio
+	// armedRaw is the raw microphone audio around the wake word, taken from
+	// rawRing when it was heard, so the second stage hears the wake word
+	// even when the VAD never put it in a segment. When it is empty the
+	// head comes from armedHead alone.
+	armedRaw speech.Segment
+	// raw is the ring of the microphone session in progress, or nil.
+	raw *rawRing
 	// recent is the last segment nothing claimed, cut to its last
 	// wakeLookback, in case the spotter reports a wake word after the VAD
 	// has ended its segment (VerifyWake). It is never transcribed unless a
@@ -391,11 +398,19 @@ func (p *Pipeline) arm(trig Trigger, at time.Duration, timed bool) {
 	defer p.mu.Unlock()
 	p.armed, p.armedAt, p.armedTimed = trig, at, timed
 	p.armedHead = speech.Audio{}
+	p.armedRaw = speech.Segment{}
 	if !p.fu.confirm {
 		p.closeFollowLocked() // a wake word starts a command of its own
 	}
 	if timed && p.cfg.VerifyWake && p.recent.End > at-wakeLookback {
 		p.armedHead = trimFrom(p.recent, at-wakeLookback).Audio
+	}
+	if timed && p.cfg.VerifyWake && p.raw != nil {
+		// One copy per wake word, not per frame.
+		if s, start := p.raw.slice(at-wakeRawHead, at); len(s) > 0 {
+			p.armedRaw = speech.Segment{Start: start, End: start + audio.Speech.Duration(len(s)),
+				Audio: speech.Audio{Format: audio.Speech, Samples: s}}
+		}
 	}
 	p.recent = speech.Segment{}
 	if p.busy == 0 {
@@ -420,6 +435,7 @@ func (p *Pipeline) disarm() {
 func (p *Pipeline) clearArmLocked() {
 	p.armed, p.armedTimed = 0, false
 	p.armedHead = speech.Audio{}
+	p.armedRaw = speech.Segment{}
 }
 
 // claim is a segment handed to the armed trigger.
@@ -516,11 +532,15 @@ func (p *Pipeline) claimLocked(seg speech.Segment) (c claim, ok bool) {
 		if n := audio.Speech.Samples(limit); len(seg.Audio.Samples) > n {
 			seg.Audio.Samples = seg.Audio.Samples[:n]
 		}
-		if verify && needHead && len(p.armedHead.Samples) > 0 {
-			joined := make([]float32, 0, len(p.armedHead.Samples)+audio.Speech.Samples(wakeGap)+len(seg.Audio.Samples))
-			joined = append(joined, p.armedHead.Samples...)
-			joined = append(joined, make([]float32, audio.Speech.Samples(wakeGap))...)
-			seg.Audio.Samples = append(joined, seg.Audio.Samples...)
+		if verify {
+			if h := p.armedRaw; len(h.Audio.Samples) > 0 && seg.Start > h.Start {
+				seg = withRawHead(h, seg)
+			} else if needHead && len(p.armedHead.Samples) > 0 {
+				joined := make([]float32, 0, len(p.armedHead.Samples)+audio.Speech.Samples(wakeGap)+len(seg.Audio.Samples))
+				joined = append(joined, p.armedHead.Samples...)
+				joined = append(joined, make([]float32, audio.Speech.Samples(wakeGap))...)
+				seg.Audio.Samples = append(joined, seg.Audio.Samples...)
+			}
 		}
 		c = claim{trig: p.armed, seg: seg, verify: verify}
 	} else {
@@ -539,6 +559,23 @@ func (p *Pipeline) releaseLate() {
 	p.mu.Lock()
 	p.holding, p.late = false, nil
 	p.mu.Unlock()
+}
+
+// withRawHead puts the raw audio around the wake word in front of seg, which
+// starts after the raw audio does. If seg starts within the raw audio the two
+// join with nothing between them; otherwise a short gap separates them, as it
+// does a wake word said on its own.
+func withRawHead(head, seg speech.Segment) speech.Segment {
+	n := audio.Speech.Samples(seg.Start - head.Start)
+	gap := 0
+	if n > len(head.Audio.Samples) {
+		n, gap = len(head.Audio.Samples), audio.Speech.Samples(wakeGap)
+	}
+	joined := make([]float32, 0, n+gap+len(seg.Audio.Samples))
+	joined = append(joined, head.Audio.Samples[:n]...)
+	joined = append(joined, make([]float32, gap)...)
+	seg.Audio.Samples = append(joined, seg.Audio.Samples...)
+	return seg
 }
 
 // trimFrom drops the audio of seg before the stream offset from.

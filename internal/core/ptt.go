@@ -60,6 +60,12 @@ const (
 	// second stage checks starts, at most (ADR-0041). It covers a slowly
 	// said "hey footman" and the spotter's lateness.
 	wakeLookback = 3 * time.Second
+	// wakeRawHead is how much raw microphone audio before the end of the
+	// wake word the second stage is given, when the wake word is not in a
+	// speech segment of its own (ADR-0050). It covers a slowly said "hey
+	// footman" and the spotter's lateness, without taking in much that was
+	// said before it.
+	wakeRawHead = 2 * time.Second
 	// wakeGap is the silence put between a wake word said alone and the
 	// command after it, when they are checked together.
 	wakeGap = 300 * time.Millisecond
