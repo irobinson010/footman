@@ -19,6 +19,7 @@ func newClaude(cfg *config.Config, plat platform.Platform) llm.Provider {
 	p := claude.New(claude.Options{
 		Model:   model,
 		BaseURL: cfg.String(base + "url"),
+		Effort:  cfg.String(base + "effort"),
 		APIKey: func(ctx context.Context) (string, error) {
 			ref, ok := cfg.Secret(base + "api_key")
 			if !ok || ref.Name == "" {

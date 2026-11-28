@@ -129,6 +129,9 @@ func (p *Pipeline) talkKey(ctx context.Context, recs *sync.WaitGroup, ev platfor
 		p.setStateLocked(Listening, 0)
 	}
 	p.mu.Unlock()
+	if trig == TriggerCommand {
+		p.warmUp()
+	}
 	recs.Go(func() { p.record(ctx, rctx, r) })
 }
 

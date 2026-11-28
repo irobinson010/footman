@@ -70,6 +70,60 @@ func TestNumberWords(t *testing.T) {
 	}
 }
 
+// A first sentence with no comma is cut in front of its first connecting word
+// once it has first+2 words: Kokoro needs about 0.15 s per second of speech,
+// and nothing is heard until the first piece is done.
+func TestSplitSentencesFirstPieceWithoutComma(t *testing.T) {
+	text := "The capital of France is Paris and it sits on the river Seine in the north of the country."
+	got := splitSentences(text, 4, 25)
+	want := []string{"The capital of France is Paris", "and it sits on the river Seine in the north of the country."}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q", got)
+	}
+	// A comma still wins when it comes first.
+	got = splitSentences("The capital of France is Paris, and it sits on the river Seine.", 4, 25)
+	want = []string{"The capital of France is Paris,", "and it sits on the river Seine."}
+	if !slices.Equal(got, want) {
+		t.Errorf("comma: got %q", got)
+	}
+	// Too early, too late to leave three words, or never cut.
+	for _, tc := range []struct {
+		text  string
+		first int
+	}{
+		{"Paris and the Seine are lovely in the spring.", 4},      // only 2 words before "and"
+		{"It is lovely and it is warm.", 4},                       // fewer than first+2 words before "and"
+		{"The capital of France is Paris and so.", 4},          // fewer than three words after the cut
+		{"The capital of France is Paris and it sits there.", -1}, // cutting is off
+	} {
+		if got := splitSentences(tc.text, tc.first, 25); len(got) != 1 {
+			t.Errorf("%q (first %d): got %q, want one piece", tc.text, tc.first, got)
+		}
+	}
+	// Only the first sentence is cut this way.
+	got = splitSentences("Right. The capital of France is Paris and it sits on the river Seine.", 4, 25)
+	if len(got) != 2 {
+		t.Errorf("second sentence: got %q", got)
+	}
+}
+
+func TestRunsOn(t *testing.T) {
+	for _, tc := range []struct {
+		prev, p string
+		want    bool
+	}{
+		{"The capital of France is Paris", "and it sits on the Seine.", true},
+		{"The capital of France is Paris,", "and it sits on the Seine.", false},
+		{"The capital of France is Paris.", "And it sits on the Seine.", false},
+		{"A heading", "Next line here", false}, // a line break keeps its pause
+		{`He said "stop"`, "which was odd.", true},
+	} {
+		if got := runsOn(tc.prev, tc.p); got != tc.want {
+			t.Errorf("runsOn(%q, %q) = %v, want %v", tc.prev, tc.p, got, tc.want)
+		}
+	}
+}
+
 func TestSplitSentences(t *testing.T) {
 	text := "Very good, sir. Shall I proceed? I have tidied the study, filed the reports, and booked the train!\nNew line here"
 	got := splitSentences(text, -1, 25)

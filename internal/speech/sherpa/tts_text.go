@@ -543,8 +543,20 @@ func splitSentences(s string, firstWords, maxWords int) []string {
 	return pieces
 }
 
+// connectors are the words a first piece may end in front of when the
+// sentence has no comma (splitClauses): a spoken phrase breaks naturally
+// before them.
+var connectors = map[string]bool{
+	"and": true, "but": true, "or": true, "so": true, "because": true, "which": true,
+	"that": true, "who": true, "while": true, "when": true, "where": true, "as": true,
+	"with": true, "then": true, "if": true, "though": true, "although": true, "since": true,
+}
+
 // splitClauses cuts one sentence into pieces. With first >= 0 the first
-// piece ends at the first clause pause (, ; :) after first words. A sentence
+// piece ends at the first clause pause (, ; :) after first words; with no
+// pause it ends in front of the first connector (and, but, which ...) once it
+// has first+2 words, since Kokoro takes about 0.15 s of CPU time per second
+// of speech and nothing is heard until the first piece is done. A sentence
 // longer than maxW words is cut at pauses into pieces of at least maxW/2
 // words, and, where it has no pause, every maxW*3/2 words. No piece after a
 // cut has fewer than three words.
@@ -566,6 +578,8 @@ func splitClauses(s string, first, maxW int) []string {
 		switch {
 		case len(out) == 0 && first >= 0 && n >= first && pause:
 			cut = true
+		case len(out) == 0 && first >= 0 && n >= first+2 && connectors[strings.ToLower(words[i+1])]:
+			cut = true
 		case long && n >= maxW/2 && pause:
 			cut = true
 		case long && n >= maxW*3/2:
@@ -577,6 +591,18 @@ func splitClauses(s string, first, maxW int) []string {
 		}
 	}
 	return append(out, strings.Join(words[start:], " "))
+}
+
+// runsOn reports whether piece p continues prev with no pause: prev was cut
+// in front of a connecting word (and, which ...; see splitClauses) rather
+// than at punctuation.
+func runsOn(prev, p string) bool {
+	t := strings.TrimRight(prev, `"')]}`)
+	if t == "" || strings.ContainsAny(t[len(t)-1:], ".!?,;:") {
+		return false
+	}
+	w, _, _ := strings.Cut(p, " ")
+	return connectors[strings.ToLower(w)]
 }
 
 func hasWord(s string) bool {

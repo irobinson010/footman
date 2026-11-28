@@ -131,6 +131,40 @@ func TestFirstSentenceSpokenBeforeReplyEnds(t *testing.T) {
 	}
 }
 
+// The first clause of a streamed reply is spoken as soon as its comma has
+// arrived, without waiting for the end of the sentence (ADR-0051).
+func TestFirstClauseSpokenBeforeSentenceEnds(t *testing.T) {
+	spy := &playerSpy{first: make(chan struct{})}
+	gate := make(chan struct{})
+	r := newRig(t, func(d *core.Deps, c *core.Config) {
+		pl := d.Platform.(*pfake.Platform)
+		spy.Audio = pl.Audio()
+		d.Platform = spyPlatform{pl, spy}
+		d.LLM = gatedLLM{first: "The capital of France is Paris, which ", rest: "has been so for centuries.", gate: gate}
+		c.Ack = nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		done <- r.p.Submit(r.ctx(), core.Utterance{Trigger: core.TriggerWake, Text: "footman, capital of france"})
+	}()
+	select {
+	case <-spy.first:
+	case err := <-done:
+		t.Fatalf("reply ended (%v) before its first clause was played", err)
+	case <-time.After(guard):
+		t.Fatal("first clause never reached the player")
+	}
+	equal(t, "spoken so far", spoken(r.tts), []string{"The capital of France is Paris,"})
+	close(gate)
+	if err := <-done; err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	equal(t, "spoken", spoken(r.tts), []string{"The capital of France is Paris,", "which has been so for centuries."})
+	if played := r.speaker().Played(); len(played) != 1 {
+		t.Errorf("played %d clips, want the reply as one", len(played))
+	}
+}
+
 func TestReplyPolicy(t *testing.T) {
 	at := func(h, m int) func() time.Time {
 		return func() time.Time { return time.Date(2026, 11, 26, h, m, 0, 0, time.Local) }

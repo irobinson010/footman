@@ -112,6 +112,7 @@ var schema = []Key{
 	{Path: "ai.web_search", Type: Bool, Default: true, Description: "Let the AI search the web to answer questions about current things (weather, prices, scores, opening hours, news), when its provider can. Search queries go to the provider. Turning it off by voice is always allowed; turning it on needs a click.", VoiceSettable: true, Reload: Live, Sensitive: true},
 	{Path: "ai.providers.*.api_key", Type: Secret, Description: "Keychain reference such as keychain:claude. Never the key itself.", Reload: Live},
 	{Path: "ai.providers.*.model", Type: String, Description: "Model name.", Reload: Live},
+	{Path: "ai.providers.*.effort", Type: String, Enum: []string{"low", "medium", "high", "xhigh", "max", "default"}, Description: "How hard the model thinks before it answers, for providers and models that have the setting (Claude 4.6 and newer). Empty means low, the fastest, which suits a spoken reply; \"default\" leaves it to the model (Claude Haiku 5.5 uses medium, which adds seconds before the first word).", Reload: Live},
 	{Path: "ai.providers.*.url", Type: String, Description: "Base URL for self-hosted providers.", Reload: Live},
 	{Path: "ai.budget.*.monthly_usd", Type: Float, Description: "Monthly spend limit in US dollars.", Min: f(0), Reload: Live},
 	{Path: "ai.budget.*.warn_at", Type: Float, Description: "Warn when this fraction of the budget is used.", Min: f(0), Max: f(1), Reload: Live},

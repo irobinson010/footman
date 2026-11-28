@@ -58,8 +58,9 @@ type TTSOptions struct {
 	// 0.15).
 	SentencePause float32 `json:"sentence_pause"`
 	// FirstWords: the first sentence is cut at its first comma (or ; :)
-	// after this many words, so the first audio comes sooner (default 4;
-	// -1 never cuts it).
+	// after this many words, or, with no comma, in front of the first
+	// connecting word (and, but, which ...) after two more, so the first
+	// audio comes sooner (default 4; -1 never cuts it).
 	FirstWords int `json:"first_words"`
 	// Warmup synthesizes one short sentence at load (default false).
 	Warmup bool `json:"warmup"`

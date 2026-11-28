@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -40,7 +41,36 @@ const (
 	defaultMaxTokens = 1024
 	defaultRetries   = 2
 	defaultTimeout   = 60 * time.Second
+
+	// keyTTL is how long a resolved API key is kept in memory. Resolving it
+	// is a keyring round trip (several D-Bus calls), too slow to repeat
+	// before every spoken request; a key that was rotated is picked up after
+	// this long, or at once after the API refuses the old one.
+	keyTTL = 5 * time.Minute
+	// warmEvery is the least time between two connection warm-ups.
+	warmEvery = 30 * time.Second
+	// defaultAPIURL is the Messages API host, which Warm connects to when
+	// Options.BaseURL is empty.
+	defaultAPIURL = "https://api.anthropic.com"
 )
+
+// Effort levels (config ai.providers.claude.effort). EffortDefault leaves the
+// parameter out, so the model uses its own default.
+const (
+	EffortDefault = "default"
+	// defaultEffort suits a spoken exchange: the reply is a sentence or two,
+	// and Haiku 5.5 thinks first at its default (medium) effort, which
+	// delays the first word (ADR-0051).
+	defaultEffort = "low"
+)
+
+// effortModels are the model families that accept output_config.effort. It is
+// an error on older ones (Haiku 4.5, Sonnet 4.5), so nothing is sent for a
+// model not named here.
+var effortModels = []string{
+	"claude-haiku-5", "claude-sonnet-5", "claude-opus-5", "claude-opus-4-6", "claude-opus-4-7",
+	"claude-opus-4-8", "claude-sonnet-4-6", "claude-fable-5", "claude-mythos-5",
+}
 
 // Options configure a Provider.
 type Options struct {
@@ -58,10 +88,21 @@ type Options struct {
 	MaxRetries int
 	// Timeout caps one whole request (default 60s).
 	Timeout time.Duration
+	// Effort is the output_config.effort level: low, medium, high, xhigh or
+	// max, or EffortDefault to send none. Empty means low. It is sent only
+	// to models that take it.
+	Effort string
 }
 
 // Provider talks to the Claude Messages API.
-type Provider struct{ o Options }
+type Provider struct {
+	o Options
+
+	mu       sync.Mutex
+	key      string
+	keyAt    time.Time
+	warmedAt time.Time
+}
 
 // New builds a Provider.
 func New(o Options) *Provider {
@@ -87,9 +128,9 @@ func (p *Provider) Chat(ctx context.Context, req llm.Request) (llm.Stream, error
 	if p.o.APIKey == nil {
 		return nil, errors.New("claude: no API key configured (set ai.providers.claude.api_key = \"keychain:claude\")")
 	}
-	key, err := p.o.APIKey(ctx)
+	key, err := p.apiKey(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("claude: API key: %w", err)
+		return nil, err
 	}
 	opts := []option.RequestOption{
 		option.WithAPIKey(key),
@@ -108,7 +149,93 @@ func (p *Provider) Chat(ctx context.Context, req llm.Request) (llm.Stream, error
 	}
 	client := anthropic.NewClient(opts...)
 	ctx, cancel := context.WithCancel(ctx)
-	return &stream{s: client.Messages.NewStreaming(ctx, params), cancel: cancel, blocks: map[int64]*toolBlock{}}, nil
+	return &stream{s: client.Messages.NewStreaming(ctx, params), cancel: cancel, blocks: map[int64]*toolBlock{}, onAuth: p.dropKey}, nil
+}
+
+// apiKey returns the API key, from memory when it was resolved less than
+// keyTTL ago. A failure is never kept, so a key stored later is found.
+func (p *Provider) apiKey(ctx context.Context) (string, error) {
+	p.mu.Lock()
+	if p.key != "" && time.Since(p.keyAt) < keyTTL {
+		k := p.key
+		p.mu.Unlock()
+		return k, nil
+	}
+	p.mu.Unlock()
+	key, err := p.o.APIKey(ctx)
+	if err != nil {
+		return "", fmt.Errorf("claude: API key: %w", err)
+	}
+	p.mu.Lock()
+	p.key, p.keyAt = key, time.Now()
+	p.mu.Unlock()
+	return key, nil
+}
+
+// dropKey forgets the kept key, after the API refused it.
+func (p *Provider) dropKey() {
+	p.mu.Lock()
+	p.key, p.keyAt = "", time.Time{}
+	p.mu.Unlock()
+}
+
+// Warm gets the provider ready for a request that is about to come (the
+// wake word was just heard): it resolves the API key, which is a slow keyring
+// round trip, and opens the connection to the API, so the TCP and TLS
+// handshakes are not part of the request. It sends no credentials and no
+// content, only a HEAD request to the API host, and does nothing more than
+// once in warmEvery. It never fails; the request itself reports problems.
+func (p *Provider) Warm(ctx context.Context) {
+	if p.o.APIKey == nil {
+		return
+	}
+	if _, err := p.apiKey(ctx); err != nil {
+		return
+	}
+	p.mu.Lock()
+	if time.Since(p.warmedAt) < warmEvery {
+		p.mu.Unlock()
+		return
+	}
+	p.warmedAt = time.Now()
+	p.mu.Unlock()
+	url := p.o.BaseURL
+	if url == "" {
+		url = defaultAPIURL
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+	if err != nil {
+		return
+	}
+	c := p.o.HTTPClient
+	if c == nil {
+		c = http.DefaultClient
+	}
+	if resp, err := c.Do(req); err == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+}
+
+// effortFor is the effort level to send for model: the configured one
+// (default low), or none for a model that does not take the parameter or
+// when the setting is EffortDefault.
+func (p *Provider) effortFor(model string) anthropic.OutputConfigEffort {
+	e := strings.ToLower(strings.TrimSpace(p.o.Effort))
+	switch e {
+	case "":
+		e = defaultEffort
+	case EffortDefault:
+		return ""
+	}
+	for _, m := range effortModels {
+		if strings.HasPrefix(model, m) {
+			return anthropic.OutputConfigEffort(e)
+		}
+	}
+	return ""
 }
 
 func (p *Provider) params(req llm.Request) (anthropic.MessageNewParams, error) {
@@ -121,6 +248,7 @@ func (p *Provider) params(req llm.Request) (anthropic.MessageNewParams, error) {
 		max = defaultMaxTokens
 	}
 	params := anthropic.MessageNewParams{Model: model, MaxTokens: int64(max)}
+	params.OutputConfig.Effort = p.effortFor(model)
 	if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{
 			Text:         req.System,
@@ -256,6 +384,7 @@ type stream struct {
 	usage   llm.Usage
 	stop    llm.StopReason
 	done    bool
+	onAuth  func() // called when the API refuses the key
 }
 
 func (s *stream) Recv() (llm.Event, error) {
@@ -270,6 +399,10 @@ func (s *stream) Recv() (llm.Event, error) {
 		}
 		if !s.s.Next() {
 			if err := s.s.Err(); err != nil {
+				var ae *anthropic.Error
+				if errors.As(err, &ae) && (ae.StatusCode == http.StatusUnauthorized || ae.StatusCode == http.StatusForbidden) && s.onAuth != nil {
+					s.onAuth()
+				}
 				return llm.Event{}, fmt.Errorf("claude: %w", err)
 			}
 			return llm.Event{}, io.ErrUnexpectedEOF

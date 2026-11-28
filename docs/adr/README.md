@@ -54,3 +54,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0048](0048-stt-falls-back-to-cpu-when-the-gpu-does-not-open.md) | Speech-to-text falls back to the CPU when the GPU does not open | Accepted |
 | [0049](0049-wake-feedback-and-latency-journal.md) | Wake feedback: earcon, "didn't catch that" cue, tray, latency line, debug aid | Accepted |
 | [0050](0050-second-stage-hears-raw-audio-around-the-wake-word.md) | The second wake stage hears the raw audio around the wake word | Accepted |
+| [0051](0051-faster-first-spoken-word.md) | Faster first spoken word: low effort, key and connection warm-up, early first clause | Accepted |

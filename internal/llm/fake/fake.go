@@ -53,6 +53,22 @@ type Provider struct {
 	caps     llm.Caps
 	queue    []Reply
 	requests []llm.Request
+	warms    int
+}
+
+// Warm records that the caller got the provider ready for a request that is
+// about to come (see Warms).
+func (p *Provider) Warm(context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.warms++
+}
+
+// Warms is how often Warm was called.
+func (p *Provider) Warms() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.warms
 }
 
 // New builds a Provider from cfg (key "replies": a list of reply texts to

@@ -57,6 +57,14 @@ type metered struct {
 	model string
 }
 
+// Warm passes on to the wrapped provider, if it can get ready ahead of a
+// request (the claude provider does).
+func (m *metered) Warm(ctx context.Context) {
+	if w, ok := m.Provider.(interface{ Warm(context.Context) }); ok {
+		w.Warm(ctx)
+	}
+}
+
 func (m *metered) Chat(ctx context.Context, req Request) (Stream, error) {
 	s, err := m.Provider.Chat(ctx, req)
 	if err != nil {

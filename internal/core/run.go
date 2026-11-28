@@ -328,6 +328,7 @@ func (p *Pipeline) listen(ctx context.Context, turns *sync.WaitGroup) (ended boo
 			}
 			bus.Publish(p.d.Bus, WakeHeard, Wake{Keyword: w.Keyword, At: w.At})
 			p.arm(TriggerWake, w.At, true)
+			p.warmUp()
 			expire = time.After(p.cfg.WakeWindow)
 			wakeAt = time.Now()
 			p.earcon(mctx)

@@ -116,6 +116,31 @@ func TestTTSEngines(t *testing.T) {
 	}
 }
 
+// Warm loads an engine that was unloaded for being idle, so the first spoken
+// reply after a quiet spell does not wait for the model (ADR-0051).
+func TestTTSEnginesWarmReloads(t *testing.T) {
+	builds := 0
+	te := newTTSEngines(func(engine string, v speech.Voice) (speech.TTS, string, error) {
+		builds++
+		return closeCounter{nil, new(int)}, engine, nil
+	}, idle.Options{})
+	te.Warm(context.Background()) // nothing in use yet: no panic
+	if err := te.Use("kokoro", speech.Voice{}); err != nil {
+		t.Fatal(err)
+	}
+	te.Warm(context.Background())
+	if builds != 1 {
+		t.Fatalf("a loaded engine was rebuilt: %d builds", builds)
+	}
+	if !te.holders["kokoro"].Unload() {
+		t.Fatal("could not unload")
+	}
+	te.Warm(context.Background())
+	if builds != 2 || !te.States()[0].Loaded {
+		t.Errorf("builds %d, loaded %v after Warm", builds, te.States()[0].Loaded)
+	}
+}
+
 type wakeStub struct {
 	words  []string
 	closed chan struct{}

@@ -459,6 +459,21 @@ func (t *ttsEngines) Speak(ctx context.Context, text string, v speech.Voice) (sp
 	return idle.TTS{H: h}.Speak(ctx, text, v)
 }
 
+// Warm loads the engine in use if it was unloaded for being idle, so the
+// reload overlaps the user speaking instead of delaying the first spoken
+// word. It holds the engine only for the moment; the idle clock restarts.
+func (t *ttsEngines) Warm(context.Context) {
+	t.mu.Lock()
+	h := t.holders[t.cur]
+	t.mu.Unlock()
+	if h == nil {
+		return
+	}
+	if _, release, err := h.Acquire(); err == nil {
+		release()
+	}
+}
+
 // States reports every engine built, for status.
 func (t *ttsEngines) States() []idle.State {
 	t.mu.Lock()

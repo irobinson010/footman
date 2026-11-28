@@ -29,6 +29,11 @@ const (
 // end is split at a clause.
 const maxSentence = 200
 
+// earlyClauseWords is how many words the first spoken chunk of a reply needs
+// before it may end at a clause break rather than at the end of the sentence.
+// It matches the text to speech engine's first_words default.
+const earlyClauseWords = 4
+
 // SpeechStart is published when the first audio of a reply reaches the
 // player.
 type SpeechStart struct {
@@ -180,6 +185,22 @@ func rulesFor(lang string) splitRules {
 type Splitter struct {
 	rules splitRules
 	buf   string
+	// early, if above zero, lets the first chunk of the text end at a clause
+	// break once it has this many words (EarlyClause).
+	early   int
+	emitted bool
+}
+
+// EarlyClause makes the first chunk of the text end at its first clause
+// break (a comma, semicolon, colon or dash followed by a space) once the
+// chunk has at least words words, instead of waiting for the end of the
+// sentence. Speech can then start while the rest of the first sentence is
+// still arriving; it is the same idea as the text to speech engine's own
+// first_words cut, which can only act once the whole sentence has been
+// handed to it (ADR-0051). Only the first chunk is cut this way. It returns s.
+func (s *Splitter) EarlyClause(words int) *Splitter {
+	s.early = words
+	return s
 }
 
 // NewSplitter returns a Splitter with the rules of language lang ("" is
@@ -198,7 +219,13 @@ func (s *Splitter) Flush() []string { return s.drain(true) }
 func (s *Splitter) drain(final bool) []string {
 	var out []string
 	for s.buf != "" {
-		end, ok := s.next(final)
+		end, ok := 0, false
+		if s.early > 0 && !s.emitted {
+			end, ok = s.earlyCut()
+		}
+		if !ok {
+			end, ok = s.next(final)
+		}
 		if !ok {
 			if !final {
 				break
@@ -209,12 +236,48 @@ func (s *Splitter) drain(final bool) []string {
 		s.buf = s.buf[end:]
 		if chunk != "" {
 			out = append(out, chunk)
+			s.emitted = true
 		}
 	}
 	if final {
 		s.buf = ""
 	}
 	return out
+}
+
+// earlyCut finds the end of the first clause of the buffer for EarlyClause: a
+// clause break after at least s.early words, with no sentence end, line break
+// or code fence before it. The break must be followed by a space, so "1,000"
+// and "7:45" are not cut and a break still being typed waits for its next
+// character.
+func (s *Splitter) earlyCut() (int, bool) {
+	b := s.buf
+	if strings.HasPrefix(strings.TrimLeft(b, " \t\r\n"), "```") {
+		return 0, false
+	}
+	words, inWord := 0, false
+	for i, r := range b {
+		switch {
+		case strings.ContainsRune(".!?…\n", r):
+			return 0, false // the sentence ends first: the usual rules apply
+		case unicode.IsSpace(r):
+			inWord = false
+		default:
+			if !inWord {
+				words++
+				inWord = true
+			}
+		}
+		if !strings.ContainsRune(",;:—–", r) || words < s.early {
+			continue
+		}
+		end := i + utf8.RuneLen(r)
+		next, size := utf8.DecodeRuneInString(b[end:])
+		if size > 0 && unicode.IsSpace(next) && next != '\n' {
+			return end, true
+		}
+	}
+	return 0, false
 }
 
 // next finds the end of the first chunk in the buffer.
@@ -548,6 +611,11 @@ func (s *speaker) play() {
 	s.playDone <- err
 }
 
+// Streaming says the text that follows arrives as the AI writes it, so the
+// first clause may be spoken before its sentence ends (Splitter.EarlyClause).
+// Text that is complete from the start gains nothing from it.
+func (s *speaker) Streaming() { s.split.EarlyClause(earlyClauseWords) }
+
 // Feed adds reply text as it arrives.
 func (s *speaker) Feed(delta string) {
 	s.text.WriteString(delta)
@@ -564,6 +632,9 @@ func (s *speaker) emit(chunks []string) {
 		s.spoken += utf8.RuneCountInString(t)
 		if t == "" {
 			continue
+		}
+		if last, _ := utf8.DecodeLastRuneInString(strings.TrimSpace(c)); strings.ContainsRune(",;:", last) && !strings.HasSuffix(t, string(last)) {
+			t += string(last) // a clause cut keeps its mark: it is where the voice pauses
 		}
 		select {
 		case s.sentences <- t:

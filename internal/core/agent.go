@@ -180,6 +180,9 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 func collectStreaming(s llm.Stream, sp *speaker, onFirst func()) (llm.Reply, error) {
 	defer func() { _ = s.Close() }()
 	r := llm.Reply{Message: llm.Message{Role: llm.Assistant}}
+	if sp != nil {
+		sp.Streaming()
+	}
 	var text strings.Builder
 	for {
 		e, err := s.Recv()

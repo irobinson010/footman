@@ -22,6 +22,42 @@ func split(t *testing.T, chunks ...string) []string {
 	return append(out, s.Flush()...)
 }
 
+func TestSplitterEarlyClause(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks []string
+		want   []string
+	}{
+		{"first clause at the comma", []string{"The capital of France is Paris, which is large."}, []string{"The capital of France is Paris,", "which is large."}},
+		{"as it streams", []string{"The capital of ", "France is Paris", ", which is ", "large."}, []string{"The capital of France is Paris,", "which is large."}},
+		{"too few words", []string{"Very good, sir. Done."}, []string{"Very good, sir.", "Done."}},
+		{"no space after the comma yet", []string{"The capital of France is Paris,"}, []string{"The capital of France is Paris,"}},
+		{"number", []string{"It costs 1,000 dollars and more. Done."}, []string{"It costs 1,000 dollars and more.", "Done."}},
+		{"time", []string{"It is now 7:45 in the evening. Done."}, []string{"It is now 7:45 in the evening.", "Done."}},
+		{"sentence ends first", []string{"Yes it is so. And then, we see more here."}, []string{"Yes it is so.", "And then, we see more here."}},
+		{"only the first chunk", []string{"One two three four, five six seven eight, nine ten eleven twelve."}, []string{"One two three four,", "five six seven eight, nine ten eleven twelve."}},
+		{"semicolon", []string{"I found five files called budget; the top three follow."}, []string{"I found five files called budget;", "the top three follow."}},
+		{"code fence", []string{"```\none two three four, five\n```\nDone."}, []string{"```\none two three four, five\n```", "Done."}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewSplitter("en").EarlyClause(4)
+			var out []string
+			for _, c := range tc.chunks {
+				out = append(out, s.Push(c)...)
+			}
+			out = append(out, s.Flush()...)
+			if !slices.Equal(out, tc.want) {
+				t.Errorf("got %q, want %q", out, tc.want)
+			}
+		})
+	}
+	// Without EarlyClause the text is cut at sentences only.
+	if got := split(t, "The capital of France is Paris, which is large."); len(got) != 1 {
+		t.Errorf("default splitter cut at the comma: %q", got)
+	}
+}
+
 func TestSplitter(t *testing.T) {
 	long := strings.Repeat("word ", 30) + "and, " + strings.Repeat("more ", 30) + "end"
 	tests := []struct {

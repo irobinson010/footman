@@ -186,7 +186,7 @@ func (t *TTS) Speak(ctx context.Context, text string, v speech.Voice) (speech.Au
 		defer t.active.Done()
 		defer stopWithEngine()
 		defer cancel()
-		said := false
+		prev := ""
 		for _, p := range pieces {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -195,7 +195,7 @@ func (t *TTS) Speak(ctx context.Context, text string, v speech.Voice) (speech.Au
 			if len(cps) == 0 {
 				continue
 			}
-			if said && !emit(pause) {
+			if prev != "" && !runsOn(prev, p) && !emit(pause) {
 				return ctx.Err()
 			}
 			ok, err := t.synthesize(m, cps, sid, speed, emit)
@@ -205,7 +205,7 @@ func (t *TTS) Speak(ctx context.Context, text string, v speech.Voice) (speech.Au
 			if !ok {
 				return ctx.Err()
 			}
-			said = true
+			prev = p
 		}
 		return nil
 	}), nil
