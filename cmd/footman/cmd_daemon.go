@@ -415,9 +415,10 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 // the config names when it is registered, otherwise (with devFakes) the fake.
 // Speech-to-text "auto" (the default) is resolved by planSTT. It returns the
 // pipeline dependencies (without the bus), per area the name of what it
-// chose ("" for none), and a line saying which speech-to-text path it took
-// (engine, model, accelerator, and the fallback if the GPU did not open).
-func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(string, ...any)) (d core.Deps, impl map[string]string, rl reloaders, sttPath string, err error) {
+// chose ("" for none), and a function giving a line saying which speech-to-text path it took
+// (engine, model, accelerator, and the fallback if the GPU did not open),
+// as a function because a reload can change it.
+func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(string, ...any)) (d core.Deps, impl map[string]string, rl reloaders, sttPath func() string, err error) {
 	impl = map[string]string{}
 	devFakes, fakesOnly := o.devFakes || o.fakesOnly, o.fakesOnly
 	name := func(want string) string {
@@ -452,7 +453,7 @@ func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(str
 	// Only the speech engines take options from config so far; every other
 	// factory gets none.
 	if d.Platform, impl["platform"], err = pick(platform.Platforms, name(runtime.GOOS), nil, devFakes); err != nil {
-		return d, nil, rl, "", err
+		return d, nil, rl, nil, err
 	}
 
 	// Speech-to-text: "auto" and the native engines go through planSTT.
@@ -467,14 +468,13 @@ func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(str
 			logf("speech-to-text: %s", describePlan(plan))
 		}
 	}
-	avail := accel.Engines()
-	opened, err := openSTT(cfg, dirs, hw, avail, plan, func(p sttPlan) (speech.STT, string, error) {
-		return pick(speech.STTs, p.name, p.opts, devFakes)
-	}, logf)
+	src := &sttSource{cfg: cfg, dirs: dirs, hw: hw, avail: accel.Engines(), first: plan, logf: logf,
+		open: func(p sttPlan) (speech.STT, string, error) { return pick(speech.STTs, p.name, p.opts, devFakes) }}
+	opened, err := src.Open()
 	if err != nil {
-		return d, nil, rl, "", fmt.Errorf("%w\n(for development, run with --dev-fakes to use fakes)", err)
+		return d, nil, rl, nil, fmt.Errorf("%w\n(for development, run with --dev-fakes to use fakes)", err)
 	}
-	d.STT, impl["stt"], plan, sttPath = opened.stt, opened.impl, opened.plan, opened.path()
+	d.STT, impl["stt"], plan, sttPath = opened.stt, opened.impl, opened.plan, src.Path
 	// The VAD is optional: without it the microphone is not used.
 	vadName := speechName(defaultVAD)
 	vadOpts := vadOptions(vadName, dirs, cfg.Float("speech.vad.min_silence"))
@@ -483,7 +483,12 @@ func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(str
 		d.VAD, impl["vad"], err = nil, "", nil
 	}
 
-	rl.stt = reloader(speech.STTs, impl["stt"], plan.opts)
+	if src.first.choice != nil {
+		// Chosen by hardware: reloads fall back to the CPU as the start does.
+		rl.stt, rl.sttEngine = src.Reload, src.Engine
+	} else {
+		rl.stt = reloader(speech.STTs, impl["stt"], plan.opts)
+	}
 	rl.vad = reloader(speech.VADs, impl["vad"], vadOpts)
 
 	if cfg.Bool("input.wake_word") {
@@ -510,13 +515,13 @@ func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(str
 		return pick(speech.TTSs, name(engine), ttsOptions(name(engine), dirs, v), devFakes)
 	}
 	if d.LLM, impl["llm"], err = pick(llm.Providers, name(cfg.String("ai.provider")), nil, devFakes); err != nil {
-		return d, nil, rl, "", err
+		return d, nil, rl, nil, err
 	}
 	if cfg.String("ai.provider") == claude.Name && (!devFakes || impl["llm"] != fakeName) {
 		d.LLM, impl["llm"] = newClaude(cfg, d.Platform), claude.Name
 	}
 	if d.Worker, impl["worker"], err = pick(jobs.Workers, name(cfg.String("jobs.worker")), nil, devFakes); err != nil {
-		return d, nil, rl, "", err
+		return d, nil, rl, nil, err
 	}
 
 	// The pipeline cannot run without a platform and speech-to-text.
@@ -528,7 +533,7 @@ func wire(cfg *config.Config, o daemonOptions, wakeWords []string, logf func(str
 		{"stt", sttWhat, speech.STTs.Names()},
 	} {
 		if impl[area.key] == "" {
-			return d, nil, rl, "", fmt.Errorf("this build has no %s (registered: %v); "+
+			return d, nil, rl, nil, fmt.Errorf("this build has no %s (registered: %v); "+
 				"for development, run with --dev-fakes to use fakes", area.what, area.names)
 		}
 	}

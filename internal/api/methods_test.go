@@ -78,7 +78,7 @@ func newFixture(t *testing.T) *fixture {
 	s := NewServer()
 	Register(s, Deps{
 		Pipeline: p, Bus: b, Config: NewConfigFile(cfgPath, cfg),
-		Info: Info{Version: "test", Started: started, Implementations: map[string]string{"platform": "fake"}, STTPath: "sherpa-parakeet parakeet-tdt-0.6b-v2 on cpu (test)", Socket: "/run/test.sock", ConfigPath: cfgPath},
+		Info: Info{Version: "test", Started: started, Implementations: map[string]string{"platform": "fake"}, STTPath: func() string { return "sherpa-parakeet parakeet-tdt-0.6b-v2 on cpu (test)" }, Socket: "/run/test.sock", ConfigPath: cfgPath},
 		Now:  func() time.Time { return started.Add(90 * time.Second) },
 	})
 	a, bconn := net.Pipe()

@@ -12,9 +12,9 @@ ADR-0010 and ADR-0024 pick the GPU engine (whisper.cpp on Vulkan) whenever the h
 - **An explicit accelerator does not fall back.** With `gpu`, `vulkan` or `cuda` the daemon still exits, and its error now says to set `speech.stt.accelerator = "cpu"` (or `"auto"`).
 - **If the CPU engine fails too**, the daemon exits with both errors.
 - **The path taken is visible.** The startup log shows the first choice, then the warning when it fell back. `status.get` has a new optional `stt_path` field (engine, model, accelerator, reason, and `fell back from ...`), and `footman status` prints it as `stt:`.
-- **No retry.** The daemon does not try the GPU again until it restarts; the idle unload (ADR-0028) reloads the engine it fell back to. Re-trying the GPU later is left for a follow-up if wanted.
+- **Idle reloads do the same.** The GPU is shared and can fill up while Footman is idle (ADR-0028 unloads the model), so a GPU engine that loaded at start can fail to reload. With `auto`, each reload starts from the first choice again: if the GPU opens, it is used; if not, the CPU engine is built and `status.get`'s `stt_path` and the model's engine name follow. The warning is logged when the engine falls back, not on each reload that stays on the CPU, and a line is logged when the GPU opens again. With an explicit accelerator a failed reload is an error, as before.
 
 ## Consequences
-- A full GPU no longer takes dictation down; it costs the CPU engine's latency (about 470 ms for Parakeet, ADR-0024) until the daemon is restarted with the GPU free. The warning and `footman status` say that this happened, so it is not silent.
+- A full GPU no longer takes dictation down; it costs the CPU engine's latency (about 470 ms for Parakeet, ADR-0024) until the next reload finds the GPU free (each reload after an idle unload tries it first). The warning and `footman status` say that this happened, so it is not silent.
 - A user who sets `accelerator = "gpu"` accepts that failure is fatal, as before.
 - `status.get` gains a field (additive, so the API stays v1).

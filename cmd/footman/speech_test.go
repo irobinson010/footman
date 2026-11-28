@@ -266,3 +266,100 @@ func TestOpenSTTCPUFallbackFailsToo(t *testing.T) {
 		t.Errorf("both errors should be reported: %v", err)
 	}
 }
+
+// newSource is an sttSource for config toml on gpuBox, whose GPU engine
+// fails to open while *gpuErr is set.
+func newSource(t *testing.T, toml string, gpuErr *error, tried, logs *[]string) *sttSource {
+	t.Helper()
+	cfg := loadConfig(t, toml)
+	plan, err := planSTTWith(cfg, speechDirs{}, gpuBox, sttEngines, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &sttSource{cfg: cfg, hw: gpuBox, avail: sttEngines, first: plan,
+		logf: func(f string, a ...any) { *logs = append(*logs, fmt.Sprintf(f, a...)) },
+		open: func(p sttPlan) (speech.STT, string, error) {
+			*tried = append(*tried, p.name+"/"+p.choice.Accelerator)
+			if p.choice.Accelerator != accel.CPU && *gpuErr != nil {
+				return nil, "", *gpuErr
+			}
+			return stubSTT{p.name}, p.name, nil
+		}}
+}
+
+func TestSTTSourceReloadFallsBackAndRetriesTheGPU(t *testing.T) {
+	var gpuErr error
+	var tried, logs []string
+	src := newSource(t, "", &gpuErr, &tried, &logs)
+
+	// Start with a free GPU.
+	if o, err := src.Open(); err != nil || o.impl != accel.EngineWhisperCpp || len(logs) != 0 {
+		t.Fatalf("open: %+v, %v, %q", o, err, logs)
+	}
+	if src.Engine() != accel.EngineWhisperCpp || !strings.Contains(src.Path(), "on vulkan") {
+		t.Fatalf("engine %q, path %q", src.Engine(), src.Path())
+	}
+
+	// The GPU fills up while Footman is idle: the reload falls back, with
+	// one warning, and status reflects it.
+	gpuErr = errors.New("ggml_vulkan: ErrorOutOfDeviceMemory")
+	tried, logs = nil, nil
+	stt, err := src.Reload()
+	if err != nil || stt != (stubSTT{accel.EngineSherpaParakeet}) {
+		t.Fatalf("reload with a full GPU: %v, %v", stt, err)
+	}
+	if len(logs) != 1 || !strings.HasPrefix(logs[0], "WARNING: ") || strings.Contains(logs[0], "\n") {
+		t.Errorf("logs %q, want one warning", logs)
+	}
+	if src.Engine() != accel.EngineSherpaParakeet || !strings.Contains(src.Path(), "on cpu") || !strings.Contains(src.Path(), "fell back from whispercpp on vulkan") {
+		t.Errorf("engine %q, path %q", src.Engine(), src.Path())
+	}
+
+	// The next reload tries the GPU first, and says nothing when it is
+	// still full.
+	tried, logs = nil, nil
+	if _, err := src.Reload(); err != nil || strings.Join(tried, ",") != "whispercpp/vulkan,sherpa-parakeet/cpu" || len(logs) != 0 {
+		t.Errorf("second reload: %v, tried %v, logs %q", err, tried, logs)
+	}
+
+	// Once the GPU is free again, it is used again.
+	gpuErr = nil
+	tried, logs = nil, nil
+	stt, err = src.Reload()
+	if err != nil || stt != (stubSTT{accel.EngineWhisperCpp}) || len(logs) != 1 || !strings.Contains(logs[0], "opened again") {
+		t.Errorf("reload with a free GPU: %v, %v, logs %q", stt, err, logs)
+	}
+	if src.Engine() != accel.EngineWhisperCpp || strings.Contains(src.Path(), "fell back") {
+		t.Errorf("engine %q, path %q", src.Engine(), src.Path())
+	}
+}
+
+func TestSTTSourceStartedOnFallbackWarnsOnceAndRetries(t *testing.T) {
+	gpuErr := errors.New("out of memory")
+	var tried, logs []string
+	src := newSource(t, "", &gpuErr, &tried, &logs)
+	if o, err := src.Open(); err != nil || o.fallback == "" || len(logs) != 1 {
+		t.Fatalf("open: %+v, %v, %q", o, err, logs)
+	}
+	tried, gpuErr = nil, nil
+	if _, err := src.Reload(); err != nil || strings.Join(tried, ",") != "whispercpp/vulkan" {
+		t.Errorf("reload: %v, tried %v", err, tried)
+	}
+}
+
+func TestSTTSourceExplicitAcceleratorKeepsFailingOnReload(t *testing.T) {
+	var gpuErr error
+	var tried, logs []string
+	src := newSource(t, "[speech.stt]\naccelerator = \"vulkan\"\n", &gpuErr, &tried, &logs)
+	if _, err := src.Open(); err != nil {
+		t.Fatal(err)
+	}
+	gpuErr = errors.New("ErrorOutOfDeviceMemory")
+	tried = nil
+	if _, err := src.Reload(); !errors.Is(err, gpuErr) || !strings.Contains(err.Error(), `"cpu"`) || len(tried) != 1 || len(logs) != 0 {
+		t.Errorf("reload: %v, tried %v, logs %q", err, tried, logs)
+	}
+	if src.Engine() != accel.EngineWhisperCpp {
+		t.Errorf("engine %q after a failed reload", src.Engine())
+	}
+}

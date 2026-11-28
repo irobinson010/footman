@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/irobinson010/footman/internal/config"
@@ -120,6 +121,71 @@ func openSTT(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware, avai
 		return sttOpened{}, fmt.Errorf("%w\n(the CPU fallback failed too: %v)", err, ferr)
 	}
 	return sttOpened{stt: stt, impl: impl, plan: fb, fallback: fmt.Sprintf("%s on %s failed (%s)", plan.choice.Engine, plan.choice.Accelerator, reason)}, nil
+}
+
+// sttSource builds the speech-to-text engine at start and again after each
+// idle unload (ADR-0028). It always starts from what accel.Choose picked
+// first, so after a fallback to the CPU the next load tries the GPU again
+// (the GPU may have been freed), and falls back again if it is still full.
+// The warning is logged when the engine falls back, not on every retry.
+type sttSource struct {
+	cfg   *config.Config
+	dirs  speechDirs
+	hw    func() accel.Hardware
+	avail map[string][]string
+	open  func(sttPlan) (speech.STT, string, error)
+	logf  func(string, ...any)
+	// first is the plan from planSTT.
+	first sttPlan
+
+	mu  sync.Mutex
+	cur sttOpened // the engine built last
+}
+
+// Open builds the engine for the first time.
+func (s *sttSource) Open() (sttOpened, error) {
+	o, err := openSTT(s.cfg, s.dirs, s.hw, s.avail, s.first, s.open, s.logf)
+	if err == nil {
+		s.set(o)
+	}
+	return o, err
+}
+
+// Reload builds the engine again after it was unloaded.
+func (s *sttSource) Reload() (speech.STT, error) {
+	was := s.current()
+	logf := s.logf
+	if was.fallback != "" {
+		// Already on the CPU: trying the GPU again and failing is not news.
+		logf = func(string, ...any) {}
+	}
+	o, err := openSTT(s.cfg, s.dirs, s.hw, s.avail, s.first, s.open, logf)
+	if err != nil {
+		return nil, err
+	}
+	if was.fallback != "" && o.fallback == "" {
+		s.logf("speech-to-text: the GPU opened again; using %s", describePlan(o.plan))
+	}
+	s.set(o)
+	return o.stt, nil
+}
+
+// Engine is the registry name of the engine built last.
+func (s *sttSource) Engine() string { return s.current().impl }
+
+// Path is the speech-to-text path of the engine built last, for status.
+func (s *sttSource) Path() string { return s.current().path() }
+
+func (s *sttSource) current() sttOpened {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cur
+}
+
+func (s *sttSource) set(o sttOpened) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cur = o
 }
 
 // firstLine is s up to its first line break.

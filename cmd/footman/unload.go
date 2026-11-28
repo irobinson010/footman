@@ -19,7 +19,10 @@ import (
 // managed by ttsEngines, which keeps an idle Holder per engine.
 type reloaders struct {
 	stt func() (speech.STT, error)
-	vad func() (speech.VAD, error)
+	// sttEngine, if set, is the registry name of the engine stt built last
+	// (a reload can fall back to another engine).
+	sttEngine func() string
+	vad       func() (speech.VAD, error)
 	// tts builds a text-to-speech engine for newTTSEngines: the one
 	// registered as engine (or its stand-in), loading v's model first, and
 	// the registry name it built ("" for none).
@@ -70,7 +73,9 @@ func manageSpeech(d *core.Deps, impl map[string]string, rl reloaders, after func
 		m.closes = append(m.closes, h.Close)
 	}
 	if d.STT != nil && rl.stt != nil {
-		h := idle.New("stt", impl["stt"], d.STT, rl.stt, o)
+		so := o
+		so.Engine = rl.sttEngine
+		h := idle.New("stt", impl["stt"], d.STT, rl.stt, so)
 		d.STT = idle.STT{H: h}
 		add(h)
 	}
