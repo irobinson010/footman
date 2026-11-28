@@ -51,3 +51,40 @@ func TestHistoryFollowsTheCachedPrefix(t *testing.T) {
 		}
 	}
 }
+
+// Thinking from an earlier turn is not replayed: memory compacts earlier
+// exchanges between requests, which breaks the signature binding a thinking
+// block to what came before it (a 400 "bound to a different conversation").
+// The current turn's tool loop keeps its thinking unchanged.
+func TestOldTurnsDropThinking(t *testing.T) {
+	old := json.RawMessage(`[{"type":"thinking","thinking":"","signature":"sig-old"},{"type":"redacted_thinking","data":"x"},{"type":"text","text":"Here are three."}]`)
+	onlyThinking := json.RawMessage(`[{"type":"thinking","thinking":"","signature":"sig-only"}]`)
+	cur := json.RawMessage(`[{"type":"thinking","thinking":"","signature":"sig-new"},{"type":"tool_use","id":"t1","name":"open_url","input":{}}]`)
+	api := NewFakeAPI(t, join(start(1, 0), textBlock(0, "Done."), finish("end_turn", 1)))
+	chat(t, api, llm.Request{Messages: []llm.Message{
+		{Role: llm.User, Text: "best vacuums"},
+		{Role: llm.Assistant, Raw: old, Text: "Here are three."},
+		{Role: llm.User, Text: "and the cheapest?"},
+		{Role: llm.Assistant, Raw: onlyThinking, Text: "The first one."},
+		{Role: llm.User, Text: "open them"},
+		{Role: llm.Assistant, Raw: cur, ToolCalls: []llm.ToolCall{{ID: "t1", Name: "open_url"}}},
+		{Role: llm.ToolResult, ToolCallID: "t1", Text: "opened"},
+	}})
+	msgs := api.Bodies[0]["messages"].([]any)
+	types := func(i int) []string {
+		var out []string
+		for _, b := range msgs[i].(map[string]any)["content"].([]any) {
+			out = append(out, b.(map[string]any)["type"].(string))
+		}
+		return out
+	}
+	if got := types(1); !reflect.DeepEqual(got, []string{"text"}) {
+		t.Errorf("old turn blocks = %v, want only text", got)
+	}
+	if got := types(3); !reflect.DeepEqual(got, []string{"text"}) {
+		t.Errorf("old thinking-only turn = %v, want its text", got)
+	}
+	if got := types(5); !reflect.DeepEqual(got, []string{"thinking", "tool_use"}) {
+		t.Errorf("current turn blocks = %v, want thinking kept", got)
+	}
+}

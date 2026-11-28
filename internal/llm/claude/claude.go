@@ -302,6 +302,36 @@ func webSearchTool() anthropic.ToolUnionParam {
 	}}
 }
 
+// withoutThinking returns the content blocks of a raw assistant message with
+// its thinking and redacted_thinking blocks removed, or nil when nothing else
+// is left.
+func withoutThinking(content json.RawMessage) (json.RawMessage, error) {
+	var blocks []json.RawMessage
+	if err := json.Unmarshal(content, &blocks); err != nil {
+		return nil, fmt.Errorf("claude: assistant message: %w", err)
+	}
+	kept := blocks[:0]
+	for _, b := range blocks {
+		var t struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(b, &t); err != nil {
+			return nil, fmt.Errorf("claude: assistant block: %w", err)
+		}
+		if t.Type != "thinking" && t.Type != "redacted_thinking" {
+			kept = append(kept, b)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, nil
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return nil, fmt.Errorf("claude: assistant message: %w", err)
+	}
+	return out, nil
+}
+
 // messages converts the conversation. Consecutive tool results are merged
 // into one user message, as the API requires.
 func messages(in []llm.Message) ([]anthropic.MessageParam, error) {
@@ -313,7 +343,19 @@ func messages(in []llm.Message) ([]anthropic.MessageParam, error) {
 			results = nil
 		}
 	}
-	for _, m := range in {
+	// The current turn starts at the last user message: its tool loop must
+	// replay its thinking blocks unchanged. Earlier turns (short-term memory,
+	// ADR-0052) are compacted between requests, which breaks the signature
+	// that binds a thinking block to everything before it, so their thinking
+	// is dropped. Dropping blocks from the front keeps the rest a contiguous
+	// window, which the API accepts.
+	current := 0
+	for i, m := range in {
+		if m.Role == llm.User {
+			current = i
+		}
+	}
+	for i, m := range in {
 		if m.Role != llm.ToolResult {
 			flush()
 		}
@@ -321,13 +363,20 @@ func messages(in []llm.Message) ([]anthropic.MessageParam, error) {
 		case llm.User:
 			out = append(out, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Text)))
 		case llm.Assistant:
-			if len(m.Raw) > 0 {
+			content := m.Raw
+			if len(content) > 0 && i < current {
+				var err error
+				if content, err = withoutThinking(content); err != nil {
+					return nil, err
+				}
+			}
+			if len(content) > 0 {
 				// A reply that used a server tool goes back exactly as it
 				// came, with its encrypted search results and citations.
 				raw, err := json.Marshal(struct {
 					Role    string          `json:"role"`
 					Content json.RawMessage `json:"content"`
-				}{"assistant", m.Raw})
+				}{"assistant", content})
 				if err != nil {
 					return nil, fmt.Errorf("claude: assistant message: %w", err)
 				}
