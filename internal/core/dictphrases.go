@@ -32,13 +32,16 @@ type startSpec struct {
 }
 
 var focusedStarts = map[string]bool{
-	"write": true, "dictate": true, "take a note": true, "start dictation": true,
+	// Speech-to-text often hears "Alfred, write" as the name "Alfred Wright"
+	// ("right" is left out: it answers a question in the follow-up window).
+	"write": true, "wright": true, "rite": true, "write it": true,
+	"dictate": true, "dictation": true, "start writing": true, "begin writing": true, "take a note": true, "start dictation": true,
 	"start dictating": true, "begin dictation": true, "begin dictating": true,
 }
 
 var (
-	newNoteRE  = regexp.MustCompile(`^(?:(?:write|dictate|take|start|make|create) (?:(?:in|into|on|a|an|the) )*)?new (note|document|doc)$`)
-	openFileRE = regexp.MustCompile(`^open (.+?) and (?:write|dictate|start dictation|start dictating|take a note|type)(?: (?:in|into|to) it)?$`)
+	newNoteRE  = regexp.MustCompile(`^(?:(?:write|wright|rite|dictate|take|start|make|create|open) (?:(?:in|into|on|a|an|the) )*)?new (note|document|doc)$`)
+	openFileRE = regexp.MustCompile(`^open (.+?) and (?:write|wright|rite|dictate|start dictation|start dictating|take a note|type)(?: (?:in|into|to) it)?$`)
 )
 
 // matchStart recognizes a dictation start phrase in the words of a command

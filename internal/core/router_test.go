@@ -22,6 +22,8 @@ func TestRouter(t *testing.T) {
 		{core.TriggerWake, "dictate", core.Route{Kind: core.RouteCommand, Text: "dictate"}},
 		{core.TriggerWake, "Alfred, write.", core.Route{Kind: core.RouteCommand, Text: "write."}},
 		{core.TriggerWake, "Alfred take a note", core.Route{Kind: core.RouteCommand, Text: "take a note"}},
+		{core.TriggerWake, "Alfred Wright.", core.Route{Kind: core.RouteCommand, Text: "Wright."}},
+		{core.TriggerWake, "Alfred, Wright in a new note.", core.Route{Kind: core.RouteCommand, Text: "Wright in a new note."}},
 		{core.TriggerWake, "Alfred write in a new note", core.Route{Kind: core.RouteCommand, Text: "write in a new note"}},
 		{core.TriggerWake, "Alfred open meeting notes and write", core.Route{Kind: core.RouteCommand, Text: "open meeting notes and write"}},
 		{core.TriggerWake, "Alfred write a new note to Sam", core.Route{Kind: core.RouteDictation, Text: "a new note to Sam"}},

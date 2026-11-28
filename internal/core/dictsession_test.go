@@ -101,6 +101,11 @@ func TestDictationStartPhrases(t *testing.T) {
 		{"alfred", "Alfred, start dictation."},
 		{"klaus", "Klaus write"},
 		{"klaus", "klaus, take a note."},
+		// How speech-to-text often hears "Alfred, write".
+		{"alfred", "Alfred Wright."},
+		{"alfred", "Alfred, rite."},
+		{"alfred", "Alfred, start writing."},
+		{"alfred", "Alfred, dictation."},
 	} {
 		t.Run(c.text, func(t *testing.T) {
 			r := dictRig(t, func(_ *core.Deps, cfg *core.Config) { cfg.WakeWords = []string{c.wake} })
