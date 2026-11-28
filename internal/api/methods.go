@@ -31,6 +31,10 @@ type Info struct {
 	// Implementations maps each area (platform, stt, tts, vad, wake, llm,
 	// worker) to the registered implementation in use; "" means none.
 	Implementations map[string]string
+	// STTPath says how speech-to-text was set up: engine, model and
+	// accelerator, and the fallback to the CPU if the GPU did not open.
+	// Empty for engines that are not chosen by hardware.
+	STTPath string
 	// Socket and ConfigPath are the socket and config file in use.
 	Socket, ConfigPath string
 	// Hotkeys are the push-to-talk keys the pipeline registers.
@@ -138,8 +142,13 @@ type StatusResult struct {
 	Jobs            []string          `json:"jobs"`
 	DevFakes        bool              `json:"dev_fakes"`
 	Implementations map[string]string `json:"implementations"`
-	Socket          string            `json:"socket"`
-	Config          string            `json:"config"`
+	// STTPath is how speech-to-text was set up, for example "whispercpp
+	// whisper-turbo-q5 on vulkan (GPU with Vulkan)", or, after the GPU
+	// failed to open with accelerator "auto", "sherpa-parakeet ... on cpu
+	// (...); fell back from whispercpp on vulkan failed (...)".
+	STTPath string `json:"stt_path,omitempty"`
+	Socket  string `json:"socket"`
+	Config  string `json:"config"`
 	// Models says whether each speech model is in memory (ADR-0028).
 	Models ModelsStatus `json:"models"`
 	// Hotkeys are the push-to-talk keys (ADR-0030).
@@ -235,6 +244,7 @@ func (m *methods) statusGet(ctx context.Context, c *Conn, params json.RawMessage
 		Jobs:            jobs,
 		DevFakes:        m.d.Info.DevFakes,
 		Implementations: impl,
+		STTPath:         m.d.Info.STTPath,
 		Socket:          m.d.Info.Socket,
 		Config:          m.d.Info.ConfigPath,
 	}, nil

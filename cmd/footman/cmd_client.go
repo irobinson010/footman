@@ -126,6 +126,9 @@ func cmdStatus(ctx context.Context, args []string, stdout, stderr io.Writer) int
 		parts = append(parts, a+"="+name)
 	}
 	_, _ = fmt.Fprintf(stdout, "  engines:     %s\n", strings.Join(parts, " "))
+	if s.STTPath != "" {
+		_, _ = fmt.Fprintf(stdout, "  stt:         %s\n", s.STTPath)
+	}
 	_, _ = fmt.Fprintf(stdout, "  models:      %s\n", modelsLine(s.Models, time.Now()))
 	if s.DevFakes {
 		_, _ = fmt.Fprintf(stdout, "  WARNING:     started with --dev-fakes (development only)\n")

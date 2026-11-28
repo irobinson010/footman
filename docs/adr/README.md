@@ -51,3 +51,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0045](0045-voice-started-dictation.md) | Voice-started dictation: sessions, stop phrases, navigation keys, notes and files | Accepted |
 | [0046](0046-hands-free-accessibility-layer.md) | Hands-free control: the accessibility layer (AT-SPI2, clicks, windows, keys, safety) | Accepted |
 | [0047](0047-followup-listening-and-voice-confirmation.md) | Follow-up listening and voice confirmation | Accepted |
+| [0048](0048-stt-falls-back-to-cpu-when-the-gpu-does-not-open.md) | Speech-to-text falls back to the CPU when the GPU does not open | Accepted |

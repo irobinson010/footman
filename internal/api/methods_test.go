@@ -78,7 +78,7 @@ func newFixture(t *testing.T) *fixture {
 	s := NewServer()
 	Register(s, Deps{
 		Pipeline: p, Bus: b, Config: NewConfigFile(cfgPath, cfg),
-		Info: Info{Version: "test", Started: started, Implementations: map[string]string{"platform": "fake"}, Socket: "/run/test.sock", ConfigPath: cfgPath},
+		Info: Info{Version: "test", Started: started, Implementations: map[string]string{"platform": "fake"}, STTPath: "sherpa-parakeet parakeet-tdt-0.6b-v2 on cpu (test)", Socket: "/run/test.sock", ConfigPath: cfgPath},
 		Now:  func() time.Time { return started.Add(90 * time.Second) },
 	})
 	a, bconn := net.Pipe()
@@ -152,7 +152,7 @@ func TestStatusGet(t *testing.T) {
 	var s StatusResult
 	f.mustCall("status.get", nil, &s)
 	if s.Version != "test" || s.API != "v1" || s.State != "idle" || s.Muted || len(s.Jobs) != 0 ||
-		s.UptimeSeconds != 90 || s.Implementations["platform"] != "fake" || s.Socket != "/run/test.sock" || s.PID != os.Getpid() {
+		s.UptimeSeconds != 90 || s.Implementations["platform"] != "fake" || s.STTPath != "sherpa-parakeet parakeet-tdt-0.6b-v2 on cpu (test)" || s.Socket != "/run/test.sock" || s.PID != os.Getpid() {
 		t.Errorf("status = %+v", s)
 	}
 	if err := f.call("status.get", map[string]int{"x": 1}, nil); code(err) != CodeInvalidParams {

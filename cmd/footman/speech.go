@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/irobinson010/footman/internal/config"
 	"github.com/irobinson010/footman/internal/install"
 	"github.com/irobinson010/footman/internal/registry"
+	"github.com/irobinson010/footman/internal/speech"
 	"github.com/irobinson010/footman/internal/speech/accel"
 	"github.com/irobinson010/footman/internal/speech/sherpa"
 )
@@ -43,21 +46,99 @@ type sttPlan struct {
 // detected hardware and the engines in this build; any other name is used
 // as is.
 func planSTT(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware) (sttPlan, error) {
+	return planSTTWith(cfg, dirs, hw, accel.Engines(), nil)
+}
+
+// planSTTWith is planSTT for the engines avail, with adjust (if not nil)
+// applied to the request read from the config.
+func planSTTWith(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware, avail map[string][]string, adjust func(*accel.Request)) (sttPlan, error) {
 	engine := cfg.String("speech.stt.engine")
-	avail := accel.Engines()
 	if _, native := avail[engine]; engine != "" && engine != accel.Auto && !native {
 		return sttPlan{name: engine}, nil
 	}
-	c, err := accel.Choose(hw(), accel.Request{
+	req := accel.Request{
 		Engine:      engine,
 		Model:       cfg.String("speech.stt.model"),
 		Accelerator: cfg.String("speech.stt.accelerator"),
 		Language:    cfg.String("user.language"),
-	}, avail)
+	}
+	if adjust != nil {
+		adjust(&req)
+	}
+	c, err := accel.Choose(hw(), req, avail)
 	if err != nil {
 		return sttPlan{}, err
 	}
 	return sttPlan{name: c.Engine, opts: sttOptions(c, cfg.String("user.language"), dirs), choice: &c}, nil
+}
+
+// onGPU reports whether the plan runs on a GPU.
+func (p sttPlan) onGPU() bool {
+	return p.choice != nil && p.choice.Accelerator != accel.CPU
+}
+
+// sttOpened is a speech-to-text engine the daemon built.
+type sttOpened struct {
+	stt speech.STT
+	// impl is the registry name it was built under ("" for none).
+	impl string
+	// plan is what it was built from; after a fallback, the CPU plan.
+	plan sttPlan
+	// fallback is non-empty when speech.stt.accelerator is "auto" and the
+	// GPU engine failed to open, so the CPU one was built instead. It says
+	// why.
+	fallback string
+}
+
+// openSTT builds the speech-to-text engine for plan with open. When the plan
+// is a GPU one and speech.stt.accelerator is "auto" (or unset), a failure to
+// open it (a full GPU, a broken driver) is not fatal: it logs one warning
+// and builds what accel.Choose picks for accelerator "cpu". With an explicit
+// accelerator (gpu, vulkan, cuda) the failure is returned, with a hint to try
+// "cpu". hw and avail are the hardware and engines the plan was made from.
+func openSTT(cfg *config.Config, dirs speechDirs, hw func() accel.Hardware, avail map[string][]string, plan sttPlan, open func(sttPlan) (speech.STT, string, error), logf func(string, ...any)) (sttOpened, error) {
+	stt, impl, err := open(plan)
+	if err == nil || !plan.onGPU() {
+		return sttOpened{stt: stt, impl: impl, plan: plan}, err
+	}
+	if a := cfg.String("speech.stt.accelerator"); a != "" && a != accel.Auto {
+		return sttOpened{}, fmt.Errorf("%w\n(speech.stt.accelerator is %q, so there is no fallback; set it to \"cpu\" to run speech-to-text on the CPU, or to \"auto\" to fall back to it)", err, a)
+	}
+	cpu := func(r *accel.Request) { r.Accelerator = accel.CPU }
+	fb, ferr := planSTTWith(cfg, dirs, hw, avail, cpu)
+	if ferr == nil && fb.choice.Engine != plan.choice.Engine {
+		// A model chosen for the GPU engine does not suit another engine.
+		fb, ferr = planSTTWith(cfg, dirs, hw, avail, func(r *accel.Request) { cpu(r); r.Model = accel.Auto })
+	}
+	if ferr != nil {
+		return sttOpened{}, fmt.Errorf("%w\n(and no CPU fallback: %v)", err, ferr)
+	}
+	reason := firstLine(err.Error())
+	logf("WARNING: speech-to-text on %s failed (%s); falling back to the CPU: %s. Set speech.stt.accelerator = \"cpu\" to skip the GPU attempt", plan.choice.Accelerator, reason, describePlan(fb))
+	stt, impl, ferr = open(fb)
+	if ferr != nil {
+		return sttOpened{}, fmt.Errorf("%w\n(the CPU fallback failed too: %v)", err, ferr)
+	}
+	return sttOpened{stt: stt, impl: impl, plan: fb, fallback: fmt.Sprintf("%s on %s failed (%s)", plan.choice.Engine, plan.choice.Accelerator, reason)}, nil
+}
+
+// firstLine is s up to its first line break.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
+}
+
+// path is the one-line description of the speech-to-text path for status:
+// what is in use, and why it is not the first choice after a fallback.
+func (o sttOpened) path() string {
+	if o.plan.choice == nil {
+		return ""
+	}
+	s := o.plan.choice.String()
+	if o.fallback != "" {
+		s += "; fell back from " + o.fallback
+	}
+	return s
 }
 
 // sttOptions are the options a native speech-to-text engine takes for a
