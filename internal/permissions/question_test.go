@@ -11,6 +11,9 @@ func TestQuestion(t *testing.T) {
 	for _, c := range []struct{ name, args, want string }{
 		{"open_url", `{"url":"https://www.example.com/a/b?q=1"}`, "Shall I open example.com?"},
 		{"open_url", `{"url":"example.org"}`, "Shall I open example.org?"},
+		{"open_url", `{"urls":["https://www.example.com/a","https://example.org/b","http://third.example/c"]}`, "Shall I open example.com, example.org and third.example?"},
+		{"open_url", `{"url":"https://a.example","urls":["https://b.example"]}`, "Shall I open a.example and b.example?"},
+		{"open_url", `{"urls":["https://www.example.com/a"]}`, "Shall I open example.com?"},
 		{"open_app", `{"app":"Firefox"}`, "Shall I open Firefox?"},
 		{"quick_action", `{"action":"volume down"}`, "Shall I do this: volume down?"},
 		{"open", `{"command":"open youtube."}`, "Shall I open youtube?"},

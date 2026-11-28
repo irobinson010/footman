@@ -55,6 +55,10 @@ Answer for the user's own computer. When the prompt describes this computer, use
 func (p *Pipeline) SetPersona(pc Persona) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if old := p.persona; old.System != pc.System || old.Voice.ID != pc.Voice.ID || old.Voice.Speaker != pc.Voice.Speaker {
+		// Another persona has not said what is in the conversation so far.
+		p.forgetLocked()
+	}
 	p.persona = pc
 }
 

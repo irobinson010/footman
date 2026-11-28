@@ -39,6 +39,8 @@ type Reply struct {
 	// Raw is replayed with the reply (llm.Event.Raw), as for a reply that
 	// used a server-side web search.
 	Raw json.RawMessage
+	// Sources are the pages the reply drew on (llm.Event.Sources).
+	Sources []llm.Source
 	// WebResults marks the reply as drawing on web search results
 	// (llm.Event.Untrusted) and counts one search in its usage.
 	WebResults bool
@@ -152,7 +154,7 @@ func (p *Provider) Chat(ctx context.Context, req llm.Request) (llm.Stream, error
 	if r.WebResults {
 		usage.WebSearches = 1
 	}
-	events = append(events, llm.Event{Kind: llm.Done, Stop: stop, Usage: usage, Raw: r.Raw, Untrusted: r.WebResults})
+	events = append(events, llm.Event{Kind: llm.Done, Stop: stop, Usage: usage, Raw: r.Raw, Sources: r.Sources, Untrusted: r.WebResults})
 	return &stream{ctx: ctx, events: events}, nil
 }
 

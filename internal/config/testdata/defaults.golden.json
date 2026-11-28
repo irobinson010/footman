@@ -1,4 +1,6 @@
 {
+  "ai.context.ttl": "10m",
+  "ai.context.turns": 6,
   "ai.mode": "cloud",
   "ai.provider": "claude",
   "ai.web_search": true,

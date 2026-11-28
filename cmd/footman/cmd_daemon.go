@@ -352,6 +352,7 @@ func runDaemon(ctx context.Context, o daemonOptions, logw io.Writer) (err error)
 			p.SetReplyNotify(c.Bool("replies.notify"))
 			p.SetDictation(dictationConfig(c))
 			p.SetFollowUp(c.Bool("speech.followup.enabled"), followUpTimeout(c))
+			p.SetContext(contextTurns(c), contextTTL(c))
 			p.SetEarcon(c.Bool("speech.wake.earcon"))
 			p.SetWakeDebug(c.Bool("speech.wake.debug"))
 			personas.apply(c)
@@ -612,6 +613,8 @@ func pipelineConfig(cfg *config.Config) core.Config {
 		Dictation:       dictationConfig(cfg),
 		FollowUp:        cfg.Bool("speech.followup.enabled"),
 		FollowUpTimeout: followUpTimeout(cfg),
+		ContextTurns:    contextTurns(cfg),
+		ContextTTL:      contextTTL(cfg),
 	}
 }
 
@@ -653,6 +656,22 @@ func followUpTimeout(cfg *config.Config) time.Duration {
 	d, err := time.ParseDuration(cfg.String("speech.followup.timeout"))
 	if err != nil || d < 0 {
 		return core.DefaultFollowUpTimeout
+	}
+	return d
+}
+
+// contextTurns is ai.context.turns: how many exchanges the AI remembers.
+func contextTurns(cfg *config.Config) int { return int(cfg.Int("ai.context.turns")) }
+
+// contextTTL is ai.context.ttl (validated as a duration); 0s means the
+// memory never expires, which core spells as a negative duration.
+func contextTTL(cfg *config.Config) time.Duration {
+	d, err := time.ParseDuration(cfg.String("ai.context.ttl"))
+	switch {
+	case err != nil || d < 0:
+		return core.DefaultContextTTL
+	case d == 0:
+		return -1
 	}
 	return d
 }

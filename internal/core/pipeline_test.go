@@ -433,8 +433,12 @@ func TestFastPathVolumeMedia(t *testing.T) {
 
 func TestFastRulesDeclareAct(t *testing.T) {
 	for _, rule := range core.DefaultFastRules(map[string]string{"Docs": "https://go.dev"}) {
-		if rule.Permission != plugins.Act {
-			t.Errorf("rule %s permission = %v, want act", rule.Name, rule.Permission)
+		want := plugins.Act
+		if rule.Name == "forget" {
+			want = plugins.Read // it only clears Footman's own memory
+		}
+		if rule.Permission != want {
+			t.Errorf("rule %s permission = %v, want %v", rule.Name, rule.Permission, want)
 		}
 	}
 	var open core.FastRule

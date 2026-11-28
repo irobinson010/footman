@@ -55,3 +55,4 @@ Each significant decision is recorded here, numbered and never deleted. A change
 | [0049](0049-wake-feedback-and-latency-journal.md) | Wake feedback: earcon, "didn't catch that" cue, tray, latency line, debug aid | Accepted |
 | [0050](0050-second-stage-hears-raw-audio-around-the-wake-word.md) | The second wake stage hears the raw audio around the wake word | Accepted |
 | [0051](0051-faster-first-spoken-word.md) | Faster first spoken word: low effort, key and connection warm-up, early first clause | Accepted |
+| [0052](0052-short-term-conversation-memory.md) | Short-term conversation memory | Accepted |

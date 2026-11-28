@@ -44,6 +44,19 @@ type Message struct {
 	// ToolCalls. It is opaque to everyone else and empty for ordinary
 	// replies.
 	Raw json.RawMessage
+	// Sources are the web pages a reply with Raw drew on (its search
+	// results and citations), in the order the reply used them, so the core
+	// can keep their titles and addresses when it drops Raw from an old
+	// exchange (ADR-0052).
+	Sources []Source
+}
+
+// Source is a web page an answer drew on.
+type Source struct {
+	// Title is the page title, possibly empty.
+	Title string
+	// URL is the page address (http or https).
+	URL string
 }
 
 // ToolCall is the model asking to run a tool.
@@ -143,6 +156,8 @@ type Event struct {
 	// Raw is the assistant message to replay, or nil when Text and
 	// ToolCalls are enough (Done). See Message.Raw.
 	Raw json.RawMessage
+	// Sources are the pages the reply drew on (Done); see Message.Sources.
+	Sources []Source
 	// Untrusted is true when the reply drew on content from outside, such
 	// as web search results (Done). The core then treats the task as
 	// holding untrusted content (ADR-0015, ADR-0044).
@@ -227,7 +242,7 @@ func Collect(s Stream) (Reply, error) {
 			r.Message.ToolCalls = append(r.Message.ToolCalls, e.ToolCall)
 		case Done:
 			r.Stop, r.Usage, r.Untrusted = e.Stop, e.Usage, e.Untrusted
-			r.Message.Raw = e.Raw
+			r.Message.Raw, r.Message.Sources = e.Raw, e.Sources
 		}
 	}
 }

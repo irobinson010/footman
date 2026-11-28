@@ -147,6 +147,25 @@ func Question(name string, args json.RawMessage) string {
 		s, _ := a[k].(string)
 		return strings.TrimSpace(s)
 	}
+	if list, _ := a["urls"].([]any); len(list) > 0 {
+		// Several pages are one question, so one confirmation opens them all.
+		var hosts []string
+		if u := str("url"); u != "" {
+			hosts = append(hosts, spokenHost(u))
+		}
+		for _, x := range list {
+			if u, _ := x.(string); strings.TrimSpace(u) != "" {
+				hosts = append(hosts, spokenHost(strings.TrimSpace(u)))
+			}
+		}
+		switch len(hosts) {
+		case 0:
+		case 1:
+			return "Shall I open " + hosts[0] + "?"
+		default:
+			return "Shall I open " + strings.Join(hosts[:len(hosts)-1], ", ") + " and " + hosts[len(hosts)-1] + "?"
+		}
+	}
 	switch {
 	case str("url") != "":
 		return "Shall I open " + spokenHost(str("url")) + "?"

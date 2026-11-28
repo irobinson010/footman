@@ -280,6 +280,23 @@ func TestVoiceYesApproves(t *testing.T) {
 	}
 }
 
+// Several pages are one question and one spoken yes (ADR-0052).
+func TestVoiceYesApprovesSeveralPagesAtOnce(t *testing.T) {
+	r := newVRig(t, plugins.Act, "version = 1\n[permissions]\nact = \"confirm\"\n")
+	r.ask(`{"urls":["https://vacs.example/a","https://www.shark.example/b","https://dyson.example/c"]}`)
+	r.awaitState(core.FollowUp)
+	if got := r.spokenText(); len(got) != 1 || got[0] != "Shall I open vacs.example, shark.example and dyson.example?" {
+		t.Fatalf("spoken %q", got)
+	}
+	r.say("yes", 2*time.Second)
+	if ev := r.outcome(); ev.IsError || ev.Confirmation != permissions.HowVoice {
+		t.Fatalf("ToolRan = %+v, want allowed by voice", ev)
+	}
+	if r.tool.runs() != 1 {
+		t.Errorf("the tool ran %d times, want 1", r.tool.runs())
+	}
+}
+
 // "no", "cancel", "don't" and "never mind" refuse it, by voice.
 func TestVoiceNoDenies(t *testing.T) {
 	for _, phrase := range []string{"no", "No.", "cancel", "don't", "Don’t.", "never mind"} {

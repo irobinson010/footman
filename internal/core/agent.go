@@ -111,16 +111,22 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 	}
 	web, webHow := p.webSearching(ctx)
 	system, withSystem := p.systemPrompt(web)
-	msgs := []llm.Message{{Role: llm.User, Text: p.userTurn(text, withSystem)}}
-	untrusted := false
-	if followUp, _ := ctx.Value(followUpKey{}).(bool); followUp {
+	// The recent exchanges come first (ADR-0052), then this request. Their
+	// untrusted content taints this one: open_url on a page from an earlier
+	// search needs a confirmation (ADR-0047).
+	msgs, untrusted, memGen, remembering := p.recall()
+	histLen := len(msgs)
+	if followUp, _ := ctx.Value(followUpKey{}).(bool); followUp && !remembering {
 		// The answer to a question the AI just asked: the same
 		// conversation, and the same untrusted content, if any (ADR-0047).
 		if c := p.takeConvo(); c != nil {
-			msgs = append(c.msgs, llm.Message{Role: llm.User, Text: text})
-			untrusted = c.untrusted
+			msgs, untrusted = c.msgs, c.untrusted
+			histLen = len(msgs)
+			withSystem = false
 		}
 	}
+	msgs = append(msgs, llm.Message{Role: llm.User, Text: p.userTurn(text, withSystem)})
+	ownUntrusted := false // this request brought in untrusted content itself
 	for range p.cfg.MaxToolRounds {
 		p.setState(id, Thinking)
 		s, err := p.d.LLM.Chat(ctx, llm.Request{Model: p.cfg.Model, System: system, Messages: msgs, Tools: defs, WebSearch: web})
@@ -137,7 +143,7 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			// Search results are web content (ADR-0015, ADR-0044): from
 			// here on, outward and destructive actions need confirmation,
 			// whatever the config says.
-			untrusted = true
+			untrusted, ownUntrusted = true, true
 		}
 		if r.Usage.WebSearches > 0 {
 			bus.Publish(p.d.Bus, ToolCalled, ToolRan{Turn: id, Name: WebSearchTool, Result: fmt.Sprintf("%d web searches", r.Usage.WebSearches), Confirmation: webHow})
@@ -149,7 +155,11 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			if sp != nil {
 				sp.streamedFinal = true
 			}
-			if endsWithQuestion(r.Message.Text) {
+			if remembering {
+				if strings.TrimSpace(r.Message.Text) != "" {
+					p.remember(memGen, msgs[histLen:], ownUntrusted)
+				}
+			} else if endsWithQuestion(r.Message.Text) {
 				p.stashConvo(msgs, untrusted) // the answer continues this conversation
 			}
 			return r.Message.Text, nil
@@ -163,7 +173,7 @@ func (p *Pipeline) converse(ctx context.Context, id uint64, text string) (string
 			}
 			p.setState(id, RunningTool)
 			res, how := p.runTool(ctx, tools[call.Name], call, untrusted)
-			untrusted = untrusted || res.Untrusted
+			untrusted, ownUntrusted = untrusted || res.Untrusted, ownUntrusted || res.Untrusted
 			bus.Publish(p.d.Bus, ToolCalled, ToolRan{Turn: id, Name: call.Name, Args: call.Args, Result: res.Text, IsError: res.IsError, Confirmation: how})
 			msgs = append(msgs, llm.Message{Role: llm.ToolResult, ToolCallID: call.ID, Text: res.Text, IsError: res.IsError})
 		}
@@ -206,7 +216,7 @@ func collectStreaming(s llm.Stream, sp *speaker, onFirst func()) (llm.Reply, err
 			r.Message.ToolCalls = append(r.Message.ToolCalls, e.ToolCall)
 		case llm.Done:
 			r.Stop, r.Usage, r.Untrusted = e.Stop, e.Usage, e.Untrusted
-			r.Message.Raw = e.Raw
+			r.Message.Raw, r.Message.Sources = e.Raw, e.Sources
 		}
 	}
 }
@@ -272,34 +282,57 @@ func (p *Pipeline) allTools() []plugins.Tool {
 	return all
 }
 
+// MaxOpenURLs is how many pages one open_url call may open.
+const MaxOpenURLs = 5
+
 // openURLTool and openAppTool expose the fast-path "open" action to the AI.
 type openURLTool struct{ p *Pipeline }
 
 func (openURLTool) Spec() plugins.ToolSpec {
 	return plugins.ToolSpec{
-		Name:        "open_url",
-		Description: "Open a web page in the user's default browser, for example when they say \"open YouTube\".",
+		Name: "open_url",
+		Description: "Open a web page in the user's default browser, for example when they say \"open YouTube\". " +
+			"To open several pages (such as the links from an earlier answer), pass urls with up to 5 addresses in one call, so the user confirms once.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
-			`"url":{"type":"string","description":"Full URL, such as https://www.youtube.com."}},"required":["url"]}`),
+			`"url":{"type":"string","description":"Full URL, such as https://www.youtube.com."},` +
+			`"urls":{"type":"array","maxItems":5,"items":{"type":"string"},"description":"Several full URLs to open together, instead of url."}}}`),
 		Permission: plugins.Act,
 	}
 }
 
 func (t openURLTool) Run(ctx context.Context, args json.RawMessage) (plugins.Result, error) {
 	var a struct {
-		URL string `json:"url"`
+		URL  string   `json:"url"`
+		URLs []string `json:"urls"`
 	}
-	if err := json.Unmarshal(args, &a); err != nil || a.URL == "" {
-		return plugins.Result{Text: "url is required", IsError: true}, nil
+	if err := json.Unmarshal(args, &a); err != nil {
+		return plugins.Result{Text: "url or urls is required", IsError: true}, nil
 	}
-	u, ok := asURL(a.URL)
-	if !ok {
-		return plugins.Result{Text: "not a valid URL: " + a.URL, IsError: true}, nil
+	list := a.URLs
+	if a.URL != "" {
+		list = append([]string{a.URL}, list...)
 	}
-	if err := t.p.d.Platform.Launcher().OpenURL(ctx, u); err != nil {
-		return plugins.Result{}, err
+	if len(list) == 0 {
+		return plugins.Result{Text: "url or urls is required", IsError: true}, nil
 	}
-	return plugins.Result{Text: "opened " + u}, nil
+	if len(list) > MaxOpenURLs {
+		return plugins.Result{Text: fmt.Sprintf("at most %d pages at once", MaxOpenURLs), IsError: true}, nil
+	}
+	// Check them all before opening any, so a bad one opens nothing.
+	urls := make([]string, 0, len(list))
+	for _, raw := range list {
+		u, ok := asURL(strings.TrimSpace(raw))
+		if !ok {
+			return plugins.Result{Text: "not a valid URL: " + raw, IsError: true}, nil
+		}
+		urls = append(urls, u)
+	}
+	for i, u := range urls {
+		if err := t.p.d.Platform.Launcher().OpenURL(ctx, u); err != nil {
+			return plugins.Result{}, fmt.Errorf("open %s (%d of %d opened): %w", u, i, len(urls), err)
+		}
+	}
+	return plugins.Result{Text: "opened " + strings.Join(urls, ", ")}, nil
 }
 
 type openAppTool struct{ p *Pipeline }

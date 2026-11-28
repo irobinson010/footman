@@ -485,6 +485,7 @@ func (s *stream) handle(ev anthropic.MessageStreamEventUnion) error {
 		done := llm.Event{Kind: llm.Done, Stop: s.stop, Usage: s.usage, Untrusted: s.outside}
 		if s.server {
 			done.Raw = s.replay()
+			done.Sources = sources(done.Raw)
 		}
 		s.pending = append(s.pending, done)
 	}
@@ -501,6 +502,59 @@ func (s *stream) replay() json.RawMessage {
 		return nil
 	}
 	return m.Content
+}
+
+// maxSources caps how many pages sources returns.
+const maxSources = 10
+
+// sources lists the web pages in a reply's content blocks: the pages its
+// text cited, in the order they were cited, then the other search results.
+// Only http and https addresses are kept, each once.
+func sources(content json.RawMessage) []llm.Source {
+	var blocks []struct {
+		Type      string `json:"type"`
+		Citations []struct {
+			URL   string `json:"url"`
+			Title string `json:"title"`
+		} `json:"citations"`
+		// A web_search_tool_result's content is a list of results, or an
+		// error object.
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(content, &blocks); err != nil {
+		return nil
+	}
+	var cited, found []llm.Source
+	seen := map[string]bool{}
+	add := func(dst *[]llm.Source, url, title string) {
+		if seen[url] || len(seen) >= maxSources || (!strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://")) {
+			return
+		}
+		seen[url] = true
+		*dst = append(*dst, llm.Source{Title: strings.TrimSpace(title), URL: url})
+	}
+	// Citations first, so the order is the one the answer used.
+	for _, b := range blocks {
+		for _, c := range b.Citations {
+			add(&cited, c.URL, c.Title)
+		}
+	}
+	for _, b := range blocks {
+		if b.Type != "web_search_tool_result" {
+			continue
+		}
+		var results []struct {
+			URL   string `json:"url"`
+			Title string `json:"title"`
+		}
+		if json.Unmarshal(b.Content, &results) != nil {
+			continue
+		}
+		for _, r := range results {
+			add(&found, r.URL, r.Title)
+		}
+	}
+	return append(cited, found...)
 }
 
 func (s *stream) Close() error {

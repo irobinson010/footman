@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -24,7 +25,7 @@ type FastRule struct {
 	// Name identifies the rule in events and logs.
 	Name string
 	// Permission is the level of what the rule does (design §29). Every
-	// built-in rule is Act.
+	// built-in rule is Act, except forget, which is Read.
 	Permission plugins.Permission
 	// Match recognizes the command.
 	Match func(text string) (FastAction, bool)
@@ -66,6 +67,9 @@ func OpenRule(sites map[string]string) FastRule {
 		if u, ok := asURL(target); ok {
 			return openURL(u, target), true
 		}
+		if refersToEarlier(target) {
+			return nil, false // "open those links": the AI knows which (ADR-0052)
+		}
 		return func(ctx context.Context, p *Pipeline) (string, error) {
 			if err := p.d.Platform.Launcher().OpenApp(ctx, target); err != nil {
 				if errors.Is(err, platform.ErrNotFound) {
@@ -76,6 +80,21 @@ func OpenRule(sites map[string]string) FastRule {
 			return "Opening " + target + ".", nil
 		}, true
 	}}
+}
+
+// referenceWords make "open ..." about something said earlier, not an app:
+// "open those links", "open the first two", "open it".
+var referenceWords = []string{
+	"link", "links", "page", "pages", "site", "sites", "website", "websites",
+	"source", "sources", "result", "results", "article", "articles",
+	"those", "these", "them", "that", "it", "first", "second", "third", "fourth", "fifth", "last",
+}
+
+// refersToEarlier reports whether target points back at an earlier answer.
+func refersToEarlier(target string) bool {
+	return slices.ContainsFunc(dictation.NormWords(target), func(w string) bool {
+		return slices.Contains(referenceWords, w)
+	})
 }
 
 func openURL(u, name string) FastAction {
@@ -209,7 +228,7 @@ func DefaultFastRules(sites map[string]string) []FastRule {
 	for k, v := range sites {
 		all[dictation.Norm(k)] = v
 	}
-	return []FastRule{DictationRule(), OpenRule(all), VolumeRule(), MediaRule()}
+	return []FastRule{DictationRule(), OpenRule(all), VolumeRule(), MediaRule(), ForgetRule()}
 }
 
 // fillers are words people start a command with that change nothing, as in

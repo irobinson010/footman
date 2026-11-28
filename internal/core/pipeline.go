@@ -129,6 +129,13 @@ type Config struct {
 	FollowUp        bool
 	FollowUpTimeout time.Duration
 	FollowUpGuard   time.Duration
+	// ContextTurns is how many exchanges the AI remembers across commands
+	// (config ai.context.turns, ADR-0052); 0 means none. ContextTTL is how
+	// long after the last one they are forgotten (config ai.context.ttl;
+	// default DefaultContextTTL, negative means never). Change them while
+	// running with SetContext.
+	ContextTurns int
+	ContextTTL   time.Duration
 	// After is the timer for follow-up windows (default time.After).
 	After func(time.Duration) <-chan time.Time
 	// Insert is the dictation insert mode (default auto).
@@ -245,10 +252,11 @@ type Pipeline struct {
 	hotkeyErrs map[string]string // hotkeys that could not be registered
 	jobSeq     int
 	jobs       map[string]jobs.Job
-	persona    Persona  // voice, system prompt and lines (SetPersona)
-	system     string   // facts about the computer for the AI, or "" (SetSystemContext)
-	webSearch  bool     // offer the AI web search, when the provider has it (SetWebSearch)
-	fu         followUp // the follow-up window and what goes with it (followup.go)
+	persona    Persona   // voice, system prompt and lines (SetPersona)
+	system     string    // facts about the computer for the AI, or "" (SetSystemContext)
+	webSearch  bool      // offer the AI web search, when the provider has it (SetWebSearch)
+	fu         followUp  // the follow-up window and what goes with it (followup.go)
+	mem        shortTerm // the AI's conversation across commands (memory.go)
 }
 
 // New builds a pipeline in the Idle state.
@@ -325,14 +333,16 @@ func New(d Deps, cfg Config) (*Pipeline, error) {
 	if lang == "" {
 		lang = "en"
 	}
-	return &Pipeline{
+	pl := &Pipeline{
 		d: d, cfg: cfg, formatter: dictation.NewFormatter(lang), ctx: ctx, cancel: cancel,
 		state: Idle, quiet: cfg.Quiet, changed: make(chan struct{}),
 		turns:   map[uint64]context.CancelFunc{},
 		jobs:    map[string]jobs.Job{},
 		persona: Persona{Voice: cfg.Voice, System: cfg.System},
 		fu:      followUp{enabled: cfg.FollowUp, timeout: cfg.FollowUpTimeout},
-	}, nil
+	}
+	pl.setContextLocked(cfg.ContextTurns, cfg.ContextTTL)
+	return pl, nil
 }
 
 // Close cancels every background job and waits for them to wind down. The
@@ -1028,7 +1038,7 @@ func (p *Pipeline) stop(src StopSource) {
 	p.busy = 0
 	p.clearArmLocked()
 	p.closeFollowLocked()
-	p.fu.conv = nil
+	p.forgetLocked() // the break-glass stop forgets the conversation too
 	if p.rec != nil {
 		p.rec.cancel() // the audio so far is discarded
 		p.rec = nil
