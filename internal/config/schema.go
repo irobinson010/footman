@@ -94,7 +94,7 @@ var schema = []Key{
 
 	{Path: "speech.stt.engine", Type: String, Default: "auto", Description: "Speech-to-text engine (whispercpp, sherpa-parakeet), or \"auto\" to pick by hardware.", Reload: Restart},
 	{Path: "speech.stt.model", Type: String, Default: "auto", Description: "Speech-to-text model, or \"auto\".", Reload: Restart},
-	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text: auto, cpu, gpu, vulkan or cuda.", Reload: Restart},
+	{Path: "speech.stt.accelerator", Type: String, Default: "auto", Description: "Accelerator for speech-to-text: auto, cpu, gpu, vulkan or cuda. With auto, the CPU is used if the GPU engine cannot open; the others do not fall back.", Reload: Restart},
 	{Path: "speech.vad.min_silence", Type: Float, Default: 0.5, Min: f(0.1), Max: f(5), Description: "Seconds of silence that end an utterance. Lower ends dictation sooner but splits it at short pauses.", Reload: Restart},
 	{Path: "speech.wake.boost", Type: Float, Default: 3.0, Min: f(0.5), Max: f(4), Description: "Wake-word sensitivity: the boost given to the wake word's sounds. Higher wakes more often, including by mistake; 1 is strict, 3 normal (with speech.wake.verify), 4 loose.", Reload: Restart},
 	{Path: "speech.wake.extra", Type: StringList, Default: []string{}, Description: "Extra wake words besides the listening and default personas' wake words and \"hey footman\", such as \"alfred\". They wake the default persona.", Reload: Live},

@@ -318,3 +318,21 @@ func TestTTSHeldUntilStreamClosed(t *testing.T) {
 		t.Fatal("not unloaded after the stream closed")
 	}
 }
+
+func TestStateEngineFollowsTheEngineOption(t *testing.T) {
+	c := newClock()
+	f := &factory{}
+	first, _ := f.load()
+	engine := "whispercpp"
+	h := New[speech.STT]("stt", engine, first, f.load, Options{
+		After: func() time.Duration { return time.Minute }, AfterFunc: c.AfterFunc, Now: c.Now,
+		Engine: func() string { return engine },
+	})
+	if got := h.State().Engine; got != "whispercpp" {
+		t.Errorf("engine = %q", got)
+	}
+	engine = "sherpa-parakeet"
+	if got := h.State().Engine; got != "sherpa-parakeet" {
+		t.Errorf("engine after a reload fell back = %q", got)
+	}
+}

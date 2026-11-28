@@ -54,6 +54,9 @@ type Options struct {
 	// closed because it was idle, such as to give the freed memory back to
 	// the operating system.
 	OnUnload func()
+	// Engine, if set, gives the engine's registry name for State, for a
+	// load function that can build a different engine than the first.
+	Engine func() string
 }
 
 // Holder keeps one engine and unloads it when idle. It is safe for
@@ -176,7 +179,11 @@ func (h *Holder[T]) Close() error {
 func (h *Holder[T]) State() State {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return State{Name: h.name, Engine: h.engine, Loaded: h.loaded, Since: h.since, Loads: h.loads, InUse: h.users}
+	engine := h.engine
+	if h.o.Engine != nil {
+		engine = h.o.Engine()
+	}
+	return State{Name: h.name, Engine: engine, Loaded: h.loaded, Since: h.since, Loads: h.loads, InUse: h.users}
 }
 
 func (h *Holder[T]) stopTimerLocked() {
